@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Realtime Translator</title>
+  <link rel="manifest" href="/static/manifest.json" />
+  <link rel="stylesheet" href="/static/styles.css" />
+  <meta name="theme-color" content="#0f172a" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="top-bar">
+      <div class="status" id="status">Standby</div>
+      <button class="icon-button" id="settingsBtn" aria-label="settings">⚙︎</button>
+    </header>
+
+    <main class="content">
+      <div class="live-text">
+        <div class="subtitle" id="subtitleOriginal">・・・</div>
+        <div class="subtitle translation" id="subtitleTranslation">・・・</div>
+      </div>
+    </main>
+
+    <footer class="controls">
+      <button id="startBtn" class="cta">Start</button>
+      <button id="stopBtn" class="cta secondary" disabled>Stop</button>
+      <div class="error" id="error"></div>
+      <div class="downloads" id="downloads"></div>
+      <div class="a2hs" id="a2hs">ホーム画面に追加してオフラインでも使えます</div>
+    </footer>
+  </div>
+
+  <dialog id="settingsModal">
+    <form method="dialog" class="modal">
+      <header>
+        <h2>設定</h2>
+      </header>
+      <label>maxChars
+        <input id="maxChars" type="number" min="200" max="20000" step="50" value="300" />
+      </label>
+      <label>gapMs (無音区切り)
+        <input id="gapMs" type="number" min="300" max="5000" step="100" value="1000" />
+      </label>
+      <label>vadSilence (ms)
+        <input id="vadSilence" type="number" min="200" max="2000" step="50" value="400" />
+      </label>
+      <div class="modal-actions">
+        <button value="cancel" class="secondary">閉じる</button>
+        <button value="default" id="saveSettings">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/static/app.js" type="module"></script>
+</body>
+</html>
