@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.env
+.env.*
+*.log
+downloads/*
+!downloads/.gitkeep
+static/icon-192.png
+static/icon-512.png
+.Python
+.pytest_cache/
