@@ -120,13 +120,21 @@ async def index() -> HTMLResponse:
     return HTMLResponse(index_file.read_text(encoding="utf-8"))
 
 
+@app.get("/sw.js", include_in_schema=False)
+async def service_worker() -> FileResponse:
+    return FileResponse(STATIC_DIR / "sw.js", media_type="application/javascript")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon() -> FileResponse:
+    return FileResponse(STATIC_DIR / "icon-192.png", media_type="image/png")
+
+
 @app.post("/token")
-async def create_token(
-    vad_silence: int | None = Form(None),
-    max_duration_ms: int | None = Form(None),
-) -> JSONResponse:
+async def create_token(vad_silence: int | None = Form(None)) -> JSONResponse:
     silence_ms = vad_silence if vad_silence is not None else 400
     payload = {
+        "model": audio_model_default,
         "session": {
             "type": "transcription",
             "audio": {
@@ -138,16 +146,28 @@ async def create_token(
                     },
                 }
             },
-        }
+        },
     }
-    if max_duration_ms:
-        payload["session"]["max_response_output_tokens"] = max_duration_ms
 
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
     data = await post_openai(
         "https://api.openai.com/v1/realtime/client_secrets", payload, headers
     )
-    return JSONResponse(data)
+
+    raw_secret = data.get("client_secret") or data.get("data", {}).get("client_secret")
+    if isinstance(raw_secret, dict):
+        raw_secret = raw_secret.get("value") or raw_secret.get("client_secret")
+    if not isinstance(raw_secret, str) or not raw_secret.strip():
+        alt = data.get("data", {}).get("client_secret")
+        if isinstance(alt, dict):
+            alt = alt.get("value") or alt.get("client_secret")
+        if isinstance(alt, str) and alt.strip():
+            raw_secret = alt
+
+    if not isinstance(raw_secret, str) or not raw_secret.strip():
+        raise HTTPException(status_code=502, detail="client_secret missing in OpenAI response")
+
+    return JSONResponse({"client_secret": raw_secret})
 
 
 @app.post("/translate")
@@ -241,7 +261,16 @@ async def httpx_request_error(_: Request, exc: httpx.RequestError) -> JSONRespon
 
 @app.get("/downloads/{filename}")
 async def download_file(filename: str) -> FileResponse:
-    path = DOWNLOAD_DIR / filename
-    if not path.exists():
+    try:
+        path = (DOWNLOAD_DIR / filename).resolve()
+    except OSError:
+        raise HTTPException(status_code=400, detail="invalid filename")
+
+    download_root = DOWNLOAD_DIR.resolve()
+    if download_root not in path.parents and path != download_root:
+        raise HTTPException(status_code=400, detail="invalid filename")
+
+    if not path.exists() or not path.is_file():
         raise HTTPException(status_code=404, detail="file not found")
-    return FileResponse(path, filename=filename)
+
+    return FileResponse(path, filename=path.name)

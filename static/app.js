@@ -26,7 +26,10 @@ const state = {
   liveTranslation: '',
   logs: [],
   translations: [],
-  maxChars: Number(localStorage.getItem('maxChars')) || 12000,
+  partialByItem: new Map(),
+  committedItems: new Set(),
+  activeItemId: null,
+  maxChars: Number(localStorage.getItem('maxChars')) || 300,
   gapMs: Number(localStorage.getItem('gapMs')) || 1000,
   vadSilence: Number(localStorage.getItem('vadSilence')) || 400,
   token: null,
@@ -63,8 +66,9 @@ const resetDownloads = () => {
 };
 
 const updateLiveText = () => {
+  const translationLimit = Math.max(80, state.maxChars);
   els.subtitleOriginal.textContent = trimTail(state.liveOriginal || '・・・', state.maxChars);
-  els.subtitleTranslation.textContent = trimTail(state.liveTranslation || '・・・', Math.floor(state.maxChars / 2));
+  els.subtitleTranslation.textContent = trimTail(state.liveTranslation || '・・・', translationLimit);
 };
 
 const stopMedia = () => {
@@ -154,43 +158,15 @@ const translateCompleted = async (text) => {
   }
 };
 
-const commitLog = (text) => {
-  if (!text.trim()) return;
+const commitLog = (text, itemId = null) => {
+  if (!text || !text.trim()) return;
   state.logs.push(text);
   translateCompleted(text);
   state.liveOriginal = '';
-  setError('');
-};
-
-const handleDataMessage = (event) => {
-  try {
-    const payload = JSON.parse(event.data);
-    const type = payload.type || payload.event || '';
-    if (type.includes('transcription.delta')) {
-      state.liveOriginal = payload.delta || payload.text || payload.transcript || '';
-      updateLiveText();
-      resetGapTimer();
-    } else if (type.includes('transcription.completed')) {
-      const text = payload.text || payload.transcript || payload.content?.[0]?.transcript || '';
-      commitLog(text);
-      updateLiveText();
-      clearGapTimer();
-    } else if (type === 'error') {
-      setError(payload.message || 'Realtime error');
-    }
-  } catch (err) {
-    console.error('message parse', err);
+  if (itemId) {
+    state.committedItems.add(itemId);
   }
-};
-
-const resetGapTimer = () => {
-  clearGapTimer();
-  state.gapTimer = setTimeout(() => {
-    if (state.liveOriginal) {
-      commitLog(state.liveOriginal);
-      updateLiveText();
-    }
-  }, state.gapMs);
+  setError('');
 };
 
 const clearGapTimer = () => {
@@ -200,7 +176,87 @@ const clearGapTimer = () => {
   }
 };
 
-const negotiate = async (clientSecret) => {
+const commitActiveOnGap = () => {
+  const itemId = state.activeItemId;
+  const buffered = itemId ? state.partialByItem.get(itemId) : '';
+  const text = buffered || state.liveOriginal;
+  if (!text) return;
+  commitLog(text, itemId || undefined);
+  if (itemId) {
+    state.partialByItem.delete(itemId);
+  }
+  state.activeItemId = null;
+  state.liveOriginal = '';
+  updateLiveText();
+};
+
+const resetGapTimer = () => {
+  clearGapTimer();
+  state.gapTimer = setTimeout(() => {
+    commitActiveOnGap();
+  }, state.gapMs);
+};
+
+const handleDelta = (payload) => {
+  const itemId = payload.item_id || state.activeItemId || 'default';
+  const delta = payload.delta ?? payload.text ?? payload.transcript ?? '';
+  const existing = state.partialByItem.get(itemId) || '';
+  const updated = existing + delta;
+  state.partialByItem.set(itemId, updated);
+  state.activeItemId = itemId;
+  state.liveOriginal = updated;
+  updateLiveText();
+  resetGapTimer();
+};
+
+const handleCompleted = (payload) => {
+  const itemId = payload.item_id || state.activeItemId || 'default';
+  const buffered = state.partialByItem.get(itemId) || '';
+  const text =
+    payload.transcript || payload.text || payload.content?.[0]?.transcript || buffered;
+
+  if (!text) {
+    state.partialByItem.delete(itemId);
+    return;
+  }
+
+  if (state.committedItems.has(itemId)) {
+    state.partialByItem.delete(itemId);
+    if (state.activeItemId === itemId) {
+      state.liveOriginal = '';
+      state.activeItemId = null;
+      updateLiveText();
+    }
+    return;
+  }
+
+  commitLog(text, itemId);
+  state.partialByItem.delete(itemId);
+  if (state.activeItemId === itemId) {
+    state.activeItemId = null;
+    state.liveOriginal = '';
+  }
+  updateLiveText();
+  clearGapTimer();
+};
+
+const handleDataMessage = (event) => {
+  try {
+    const payload = JSON.parse(event.data);
+    const type = payload.type || payload.event || '';
+    if (type === 'conversation.item.input_audio_transcription.delta') {
+      handleDelta(payload);
+    } else if (type === 'conversation.item.input_audio_transcription.completed') {
+      handleCompleted(payload);
+    } else if (type === 'error' || payload.type === 'error') {
+      setError(payload.error?.message || payload.message || 'Realtime error');
+    }
+  } catch (err) {
+    console.error('message parse', err);
+  }
+};
+
+  const negotiate = async (clientSecret) => {
   const pc = new RTCPeerConnection();
   state.pc = pc;
   state.dataChannel = pc.createDataChannel('oai-events');
@@ -226,7 +282,7 @@ const negotiate = async (clientSecret) => {
     pc.addEventListener('icegatheringstatechange', checkState);
   });
 
-  const res = await fetch('https://api.openai.com/v1/realtime?model=gpt-4o-mini-realtime-preview', {
+  const res = await fetch('https://api.openai.com/v1/realtime/calls', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${clientSecret}`,
@@ -234,6 +290,10 @@ const negotiate = async (clientSecret) => {
     },
     body: pc.localDescription.sdp,
   });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Realtime negotiate failed: ${text || res.statusText}`);
+  }
   const answerSdp = await res.text();
   await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
   setStatus('Connecting');
@@ -242,11 +302,15 @@ const negotiate = async (clientSecret) => {
 const start = async () => {
   els.start.disabled = true;
   els.stop.disabled = false;
+  clearGapTimer();
   resetDownloads();
   state.logs = [];
   state.translations = [];
   state.liveOriginal = '';
   state.liveTranslation = '';
+  state.partialByItem = new Map();
+  state.committedItems = new Set();
+  state.activeItemId = null;
   updateLiveText();
   setError('');
 
@@ -254,9 +318,13 @@ const start = async () => {
     const fd = new FormData();
     fd.append('vad_silence', String(state.vadSilence));
     const res = await fetch('/token', { method: 'POST', body: fd });
-    if (!res.ok) throw new Error('token取得に失敗');
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => ({}));
+      const detail = errJson.detail || errJson.message || 'token取得に失敗';
+      throw new Error(detail);
+    }
     const data = await res.json();
-    const clientSecret = data.client_secret || data?.data?.client_secret;
+    const clientSecret = data.client_secret;
     if (!clientSecret) throw new Error('client secret missing');
     await negotiate(clientSecret);
     setStatus('Listening');
@@ -300,7 +368,7 @@ els.stop.addEventListener('click', stop);
 els.settingsBtn.addEventListener('click', () => els.settingsModal.showModal());
 els.saveSettings.addEventListener('click', (e) => {
   e.preventDefault();
-  state.maxChars = Number(els.maxChars.value) || 12000;
+  state.maxChars = Number(els.maxChars.value) || 300;
   state.gapMs = Number(els.gapMs.value) || 1000;
   state.vadSilence = Number(els.vadSilence.value) || 400;
   localStorage.setItem('maxChars', state.maxChars);
@@ -316,7 +384,7 @@ window.addEventListener('beforeunload', () => {
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
   });
 }
 
