@@ -99,6 +99,7 @@ async def post_openai(url: str, payload: dict, headers: dict | None = None) -> d
 
 
 audio_model_default = "gpt-4o-mini-transcribe"
+realtime_model_default = os.getenv("OPENAI_REALTIME_MODEL", "gpt-4o-realtime-preview-2024-12-17")
 translate_model_default = "gpt-4o-mini"
 summarize_model_default = "gpt-4o-mini"
 
