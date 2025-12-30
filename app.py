@@ -99,6 +99,7 @@ async def post_openai(url: str, payload: dict, headers: dict | None = None) -> d
 
 
 audio_model_default = "gpt-4o-mini-transcribe"
+realtime_model_default = os.getenv("OPENAI_REALTIME_MODEL", "gpt-4o-realtime-preview-2024-12-17")
 translate_model_default = "gpt-4o-mini"
 summarize_model_default = "gpt-4o-mini"
 
@@ -134,22 +135,15 @@ async def favicon() -> FileResponse:
 async def create_token(vad_silence: int | None = Form(None)) -> JSONResponse:
     silence_ms = vad_silence if vad_silence is not None else 400
     payload = {
-        "model": audio_model_default,
-        "session": {
-            "type": "transcription",
-            "audio": {
-                "input": {
-                    "transcription": {"model": audio_model_default},
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "silence_duration_ms": silence_ms,
-                    },
-                }
-            },
-        },
+        "model": realtime_model_default,
+        "voice": "alloy",
+        "input_audio_format": "pcm16",
+        "output_audio_format": "pcm16",
+        "tools": [],
     }
 
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    api_key = get_openai_api_key()
+    headers = {"Authorization": f"Bearer {api_key}"}
     data = await post_openai(
         "https://api.openai.com/v1/realtime/client_secrets", payload, headers
     )
@@ -179,7 +173,8 @@ async def translate_text(text: str = Form(...)) -> JSONResponse:
         "input": text,
         "system": "Translate the input into Japanese. Return only the translated text.",
     }
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    api_key = get_openai_api_key()
+    headers = {"Authorization": f"Bearer {api_key}"}
     result = await post_openai("https://api.openai.com/v1/responses", payload, headers)
     translated = extract_output_text(result)
     return JSONResponse({"translation": translated})
@@ -194,7 +189,8 @@ async def summarize(text: str = Form(...)) -> JSONResponse:
         "1) 要約 2) 重要ポイント (bullets) 3) 次のアクション (bullets)."
     )
     payload = {"model": summarize_model_default, "input": text, "system": prompt}
-    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
+    api_key = get_openai_api_key()
+    headers = {"Authorization": f"Bearer {api_key}"}
     result = await post_openai("https://api.openai.com/v1/responses", payload, headers)
     summary = extract_output_text(result)
     return JSONResponse({"summary": summary})
