@@ -1,22 +1,183 @@
-const els = {
-  status: document.getElementById('status'),
-  subtitleOriginal: document.getElementById('subtitleOriginal'),
-  subtitleTranslation: document.getElementById('subtitleTranslation'),
-  historyOriginal: document.getElementById('historyOriginal'),
-  historyTranslation: document.getElementById('historyTranslation'),
-  start: document.getElementById('startBtn'),
-  stop: document.getElementById('stopBtn'),
-  error: document.getElementById('error'),
-  downloads: document.getElementById('downloads'),
-  a2hs: document.getElementById('a2hs'),
-  settingsBtn: document.getElementById('settingsBtn'),
-  settingsModal: document.getElementById('settingsModal'),
-  maxChars: document.getElementById('maxChars'),
-  gapMs: document.getElementById('gapMs'),
-  vadSilence: document.getElementById('vadSilence'),
-  saveSettings: document.getElementById('saveSettings'),
-  upgrade: document.getElementById('upgrade'),
-  upgradeLink: document.getElementById('upgradeLink'),
+// Firebase configuration is loaded from firebase-config.js (window.FIREBASE_CONFIG)
+const runtimeFirebaseConfig = window.FIREBASE_CONFIG || {};
+const requiredConfigKeys = [
+  'apiKey',
+  'authDomain',
+  'projectId',
+  'storageBucket',
+  'messagingSenderId',
+  'appId',
+];
+const firebaseState = { initialized: false, error: null };
+let auth = null;
+let currentUser = null;
+let els = {};
+
+const createDefaultQuotaState = () => ({
+  plan: null,
+  baseRemainingThisMonth: null,
+  totalAvailableThisMonth: null,
+  baseDailyQuotaSeconds: null,
+  dailyRemainingSeconds: null,
+  ticketSecondsBalance: null,
+  maxSessionSeconds: null,
+  nextResetAt: null,
+  blockedReason: null,
+  loaded: false,
+});
+
+const API_BASE_URL = window.location.origin;
+const LANGUAGE_SETTINGS = {
+  input: 'Auto (mic)',
+  output: 'Japanese',
+};
+
+// Debug mode: ?debug=1 in URL
+const isDebugMode = () => new URLSearchParams(window.location.search).get('debug') === '1';
+
+const isMissingConfigValue = (value) => !value || String(value).startsWith('PASTE_');
+
+// Diagnostic log buffer (no secrets)
+const diagLogs = [];
+const MAX_DIAG_LOGS = 200;
+const SECRET_PATTERNS = [
+  /apiKey[^\s]*/gi,
+  /AIza[0-9a-zA-Z_\-]{10,}/g,
+  /Bearer\s+[0-9a-zA-Z._\-]+/gi,
+  /idToken\s*[:=]\s*[0-9a-zA-Z._\-]+/gi,
+];
+const DEBUG_TEXT_BLOCKLIST = ['kaki']; // Remove legacy debug placeholders
+const DEBUG_PREFIX_BLOCKLIST = ['Firebase initialized', 'Firebase initialised'];
+
+const sanitizeDiagMessage = (msg = '') => {
+  let text = typeof msg === 'string' ? msg : JSON.stringify(msg);
+  SECRET_PATTERNS.forEach((pattern) => {
+    text = text.replace(pattern, '[REDACTED]');
+  });
+  return text;
+};
+
+const refreshDevLogs = () => {
+  if (!isDebugMode() || !els.devLogArea) return;
+  const preview = diagLogs.slice(0, 50).join('\n');
+  els.devLogArea.textContent = preview || 'ログはまだありません。';
+};
+
+const addDiagLog = (msg) => {
+  const safeMsg = sanitizeDiagMessage(msg);
+  const entry = `[${new Date().toISOString()}] ${safeMsg}`;
+  diagLogs.unshift(entry);
+  if (diagLogs.length > MAX_DIAG_LOGS) diagLogs.pop();
+  refreshDevLogs();
+};
+
+const getDiagLogDump = () => diagLogs.slice().reverse().join('\n');
+
+addDiagLog('App bootstrap start');
+
+const updateFirebaseStatus = () => {
+  // Only log to console, never show apiKey on screen
+  const projectId = runtimeFirebaseConfig.projectId || 'missing';
+  const statusLabel = firebaseState.initialized ? 'initialized' : 'not initialized';
+  addDiagLog(`Firebase ${statusLabel} | projectId: ${projectId}`);
+  updateDevStatusSummary();
+};
+
+const initFirebase = () => {
+  try {
+    if (!window.firebase || !window.firebase.initializeApp) {
+      throw new Error('Firebase SDK not loaded');
+    }
+    const missingKeys = requiredConfigKeys.filter((key) =>
+      isMissingConfigValue(runtimeFirebaseConfig[key])
+    );
+    if (missingKeys.length) {
+      throw new Error(`Firebase config missing: ${missingKeys.join(', ')}`);
+    }
+    if (firebase.apps?.length) {
+      firebase.app();
+    } else {
+      firebase.initializeApp(runtimeFirebaseConfig);
+    }
+    auth = firebase.auth();
+    firebaseState.initialized = true;
+    firebaseState.error = null;
+  } catch (err) {
+    firebaseState.initialized = false;
+    firebaseState.error = err;
+  }
+  updateFirebaseStatus();
+  if (firebaseState.error) {
+    console.error('Firebase init failed', firebaseState.error);
+    setError('Firebase初期化に失敗しました。設定を確認してください。');
+    addDiagLog(`Firebase init error: ${firebaseState.error.message}`);
+  }
+};
+
+// Get Firebase ID token for API calls
+const getAuthToken = async () => {
+  if (!firebaseState.initialized) {
+    throw firebaseState.error || new Error('Firebase未初期化');
+  }
+  if (!currentUser) return null;
+  try {
+    return await currentUser.getIdToken();
+  } catch (err) {
+    console.error('Failed to get ID token:', err);
+    return null;
+  }
+};
+
+// Authenticated fetch wrapper
+const authFetch = async (url, options = {}) => {
+  const token = await getAuthToken();
+  if (!token) {
+    throw new Error('ログインが必要です');
+  }
+  const headers = options.headers instanceof Headers
+    ? options.headers
+    : new Headers(options.headers || {});
+  headers.set('Authorization', `Bearer ${token}`);
+  return fetch(url, { ...options, headers });
+};
+
+const cacheElements = () => {
+  els = {
+    status: document.getElementById('status'),
+    quotaInfo: document.getElementById('quotaInfo'),
+    quotaBreakdown: document.getElementById('quotaBreakdown'),
+    liveTranscript: document.getElementById('liveTranscript'),
+    transcriptLog: document.getElementById('transcriptLog'),
+    translationLog: document.getElementById('translationLog'),
+    start: document.getElementById('startBtn'),
+    stop: document.getElementById('stopBtn'),
+    error: document.getElementById('error'),
+    downloads: document.getElementById('downloads'),
+    a2hs: document.getElementById('a2hs'),
+    settingsBtn: document.getElementById('settingsBtn'),
+    settingsModal: document.getElementById('settingsModal'),
+    maxChars: document.getElementById('maxChars'),
+    gapMs: document.getElementById('gapMs'),
+    vadSilence: document.getElementById('vadSilence'),
+    saveSettings: document.getElementById('saveSettings'),
+    presetFast: document.getElementById('presetFast'),
+    presetBalanced: document.getElementById('presetBalanced'),
+    presetStable: document.getElementById('presetStable'),
+    loginBtn: document.getElementById('loginBtn'),
+    logoutBtn: document.getElementById('logoutBtn'),
+    userEmail: document.getElementById('userEmail'),
+    // Dev Panel elements
+    devPanelBtn: document.getElementById('devPanelBtn'),
+    devPanelModal: document.getElementById('devPanelModal'),
+    devStatus: document.getElementById('devStatus'),
+    devLogArea: document.getElementById('devLogArea'),
+    devCopyLogs: document.getElementById('devCopyLogs'),
+    devTestEvent: document.getElementById('devTestEvent'),
+    devClearCache: document.getElementById('devClearCache'),
+    devCloseBtn: document.getElementById('devCloseBtn'),
+    devCacheHelp: document.getElementById('devCacheHelp'),
+    devNotice: document.getElementById('devNotice'),
+  };
 };
 
 const state = {
@@ -38,43 +199,403 @@ const state = {
   vadSilence: Number(localStorage.getItem('vadSilence')) || 400,
   token: null,
   hasShownA2HS: localStorage.getItem('a2hsShown') === '1',
-  segments: [],
-  jobId: null,
-  jobYyyymm: null,
-  remainingSeconds: null,
-  recordingStartedAt: null,
+  quota: createDefaultQuotaState(),
+  currentJob: null,
+  jobStartedAt: null,
 };
 
-els.maxChars.value = state.maxChars;
-els.gapMs.value = state.gapMs;
-els.vadSilence.value = state.vadSilence;
+const showDevNotice = (text = '') => {
+  if (!isDebugMode() || !els.devNotice) return;
+  els.devNotice.textContent = text;
+};
+
+const updateDevStatusSummary = () => {
+  if (!isDebugMode() || !els.devStatus) return;
+  const firebaseLabel = firebaseState.initialized
+    ? '初期化済み'
+    : firebaseState.error
+      ? `エラー: ${firebaseState.error.message}`
+      : '未初期化';
+  const authLabel = currentUser ? 'ログイン済み' : '未ログイン';
+  const lines = [
+    `Firebase: ${firebaseLabel}`,
+    `Auth: ${authLabel}`,
+    `API: ${API_BASE_URL}`,
+    `Project: ${runtimeFirebaseConfig.projectId || 'missing'}`,
+    `Languages: ${LANGUAGE_SETTINGS.input} → ${LANGUAGE_SETTINGS.output}`,
+    `Settings: maxChars=${state.maxChars}, gapMs=${state.gapMs}, vadSilence=${state.vadSilence}`,
+  ];
+  if (state.quota.loaded) {
+    const totalMinutes = formatMinutes(state.quota.totalAvailableThisMonth);
+    const dailyInfo =
+      state.quota.plan === 'free' && typeof state.quota.dailyRemainingSeconds === 'number'
+        ? ` / daily ${formatMinutes(state.quota.dailyRemainingSeconds)}m`
+        : '';
+    lines.push(`Quota: ${totalMinutes}m${dailyInfo}`);
+  }
+  els.devStatus.textContent = lines.join('\n');
+};
+
+const scrubDebugArtifacts = () => {
+  const legacyStatus = document.getElementById('firebaseStatus');
+  if (legacyStatus) {
+    legacyStatus.remove();
+  }
+  if (!document.body || !window.NodeFilter) return;
+  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  const toClear = [];
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    const trimmed = node.textContent.trim();
+    if (!trimmed) continue;
+    if (
+      DEBUG_TEXT_BLOCKLIST.includes(trimmed) ||
+      DEBUG_PREFIX_BLOCKLIST.some((prefix) => trimmed.startsWith(prefix))
+    ) {
+      toClear.push(node);
+    }
+  }
+  toClear.forEach((node) => {
+    node.textContent = '';
+  });
+};
+
+const toggleCacheHelp = () => {
+  if (!isDebugMode() || !els.devCacheHelp) return;
+  const isHidden = els.devCacheHelp.hasAttribute('hidden');
+  if (isHidden) {
+    els.devCacheHelp.removeAttribute('hidden');
+    showDevNotice('キャッシュクリア手順を表示しました');
+  } else {
+    els.devCacheHelp.setAttribute('hidden', '');
+    showDevNotice('キャッシュクリア手順を隠しました');
+  }
+};
+
+const copyDiagnosticsToClipboard = async () => {
+  if (!isDebugMode()) return;
+  const text = getDiagLogDump() || '診断ログはまだありません。';
+  try {
+    await navigator.clipboard.writeText(text);
+    showDevNotice('診断ログをコピーしました');
+  } catch (err) {
+    try {
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      document.execCommand('copy');
+      textarea.remove();
+      showDevNotice('診断ログをコピーしました（フォールバック）');
+    } catch (fallbackErr) {
+      console.error('Copy failed', fallbackErr);
+      showDevNotice('コピーに失敗しました');
+    }
+  }
+};
+
+const runUiTestLines = () => {
+  if (!isDebugMode()) return;
+  const timestamp = new Date().toLocaleTimeString();
+  const liveText = `[UI TEST ${timestamp}] layout check`;
+  state.liveOriginal = liveText;
+  updateLiveText();
+  addTranscriptLog(`[UI TEST ${timestamp}] 原文サンプル`);
+  addTranslationLog(`[UI TEST ${timestamp}] 翻訳サンプル`);
+  addDiagLog('UIテスト行を追加しました');
+  showDevNotice('UIテスト用の行を追加しました');
+};
+
+const setupDevPanel = () => {
+  if (!els.devPanelBtn) return;
+  if (!isDebugMode()) {
+    els.devPanelBtn.remove();
+    return;
+  }
+  els.devPanelBtn.style.display = '';
+  els.devPanelBtn.addEventListener('click', () => {
+    if (!els.devPanelModal) return;
+    if (!els.devPanelModal.open) {
+      els.devPanelModal.showModal();
+    }
+    refreshDevLogs();
+    updateDevStatusSummary();
+  });
+  els.devCloseBtn?.addEventListener('click', () => {
+    els.devPanelModal?.close();
+    showDevNotice('');
+  });
+  els.devCopyLogs?.addEventListener('click', (e) => {
+    e.preventDefault();
+    copyDiagnosticsToClipboard();
+  });
+  els.devTestEvent?.addEventListener('click', (e) => {
+    e.preventDefault();
+    runUiTestLines();
+  });
+  els.devClearCache?.addEventListener('click', (e) => {
+    e.preventDefault();
+    toggleCacheHelp();
+  });
+  if (els.devPanelModal) {
+    els.devPanelModal.addEventListener('close', () => showDevNotice(''));
+  }
+  addDiagLog('Developer panelが有効になりました');
+  updateDevStatusSummary();
+};
 
 const setStatus = (text) => {
-  els.status.textContent = text;
+  if (els.status) {
+    els.status.textContent = text;
+  }
+};
+
+const PRESETS = {
+  fast: { maxChars: 240, gapMs: 700, vadSilence: 300 },
+  balanced: { maxChars: 300, gapMs: 1000, vadSilence: 400 },
+  stable: { maxChars: 360, gapMs: 1500, vadSilence: 550 },
+};
+
+const applyPreset = (name) => {
+  const preset = PRESETS[name];
+  if (!preset) return;
+  if (els.maxChars) els.maxChars.value = preset.maxChars;
+  if (els.gapMs) els.gapMs.value = preset.gapMs;
+  if (els.vadSilence) els.vadSilence.value = preset.vadSilence;
+  state.maxChars = preset.maxChars;
+  state.gapMs = preset.gapMs;
+  state.vadSilence = preset.vadSilence;
+  localStorage.setItem('maxChars', state.maxChars);
+  localStorage.setItem('gapMs', state.gapMs);
+  localStorage.setItem('vadSilence', state.vadSilence);
+  if (typeof setStatus === 'function') {
+    setStatus(`preset: ${name}`);
+  }
+  addDiagLog(`Preset applied: ${name} | maxChars=${preset.maxChars} gapMs=${preset.gapMs} vadSilence=${preset.vadSilence}`);
+  updateDevStatusSummary();
 };
 
 const setError = (text) => {
-  els.error.textContent = text || '';
-};
-
-const setUpgradeVisible = (visible) => {
-  if (!els.upgrade) return;
-  els.upgrade.hidden = !visible;
-};
-
-const getAuthToken = async () => {
-  if (window.firebaseAuth?.currentUser) {
-    return window.firebaseAuth.currentUser.getIdToken();
+  if (els.error) {
+    els.error.textContent = text || '';
   }
-  return localStorage.getItem('firebaseIdToken') || '';
 };
 
-const buildAuthHeaders = async () => {
-  const token = await getAuthToken();
-  if (!token) {
-    throw new Error('ログインが必要です');
+const numberOrNull = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
+
+const formatMinutes = (seconds) => {
+  if (typeof seconds !== 'number' || Number.isNaN(seconds)) return '–';
+  return Math.max(0, Math.floor(seconds / 60));
+};
+
+const updateQuotaInfo = () => {
+  if (!els.quotaInfo) return;
+  if (!state.quota.loaded) {
+    els.quotaInfo.textContent = '';
+    return;
   }
-  return { Authorization: `Bearer ${token}` };
+  const totalText =
+    typeof state.quota.totalAvailableThisMonth === 'number'
+      ? `${formatMinutes(state.quota.totalAvailableThisMonth)}分`
+      : '–分';
+  if (state.quota.plan === 'free' && typeof state.quota.dailyRemainingSeconds === 'number') {
+    const dailyText = `${formatMinutes(state.quota.dailyRemainingSeconds)}分`;
+    els.quotaInfo.textContent = `本日: ${dailyText} / 今月: ${totalText}`;
+  } else {
+    els.quotaInfo.textContent = `残り: ${totalText}`;
+  }
+};
+
+const formatNextReset = (isoString) => {
+  if (!isoString) return '–';
+  try {
+    const d = new Date(isoString);
+    return `${d.getMonth() + 1}/${d.getDate()} ${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+  } catch {
+    return '–';
+  }
+};
+
+const updateQuotaBreakdown = () => {
+  if (!els.quotaBreakdown) return;
+  const q = state.quota;
+  if (!q.loaded) {
+    els.quotaBreakdown.textContent = '';
+    return;
+  }
+  const planLabel = q.plan === 'pro' ? 'Pro' : 'Free';
+  const monthlyMin = formatMinutes(q.baseRemainingThisMonth);
+  const ticketMin = formatMinutes(q.ticketSecondsBalance);
+  const totalMin = formatMinutes(q.totalAvailableThisMonth);
+  const nextReset = formatNextReset(q.nextResetAt);
+  els.quotaBreakdown.innerHTML = `
+    <div class="breakdown-row"><span>プラン:</span><span>${planLabel}</span></div>
+    <div class="breakdown-row"><span>月間残り:</span><span>${monthlyMin}分</span></div>
+    <div class="breakdown-row"><span>チケット残高:</span><span>${ticketMin}分</span></div>
+    <div class="breakdown-row total"><span>合計:</span><span>${totalMin}分</span></div>
+    <div class="breakdown-row reset"><span>次回リセット:</span><span>${nextReset}</span></div>
+  `;
+};
+
+const applyQuotaFromPayload = (payload = {}) => {
+  const next = {
+    plan: payload.plan || state.quota.plan || 'free',
+    baseRemainingThisMonth: numberOrNull(payload.baseRemainingThisMonth),
+    totalAvailableThisMonth: numberOrNull(payload.totalAvailableThisMonth),
+    baseDailyQuotaSeconds: numberOrNull(payload.baseDailyQuotaSeconds),
+    dailyRemainingSeconds: numberOrNull(payload.dailyRemainingSeconds),
+    ticketSecondsBalance: numberOrNull(payload.ticketSecondsBalance),
+    maxSessionSeconds: numberOrNull(
+      payload.maxSessionSeconds != null ? payload.maxSessionSeconds : state.quota.maxSessionSeconds,
+    ),
+    nextResetAt: payload.nextResetAt || null,
+    blockedReason: payload.blockedReason || null,
+    loaded: true,
+  };
+  state.quota = next;
+  updateQuotaInfo();
+  updateQuotaBreakdown();
+  updateDevStatusSummary();
+};
+
+const resetQuotaState = () => {
+  state.quota = createDefaultQuotaState();
+  state.currentJob = null;
+  state.jobStartedAt = null;
+  updateQuotaInfo();
+  updateQuotaBreakdown();
+  updateDevStatusSummary();
+};
+
+const extractErrorMessage = (payload, fallback = 'エラーが発生しました。') => {
+  if (!payload) return fallback;
+  if (typeof payload === 'string') return payload;
+  if (typeof payload.detail === 'string') return payload.detail;
+  if (payload.detail && typeof payload.detail === 'object') {
+    if (typeof payload.detail.message === 'string') return payload.detail.message;
+    if (typeof payload.detail.error === 'string') return payload.detail.error;
+  }
+  if (typeof payload.message === 'string') return payload.message;
+  if (typeof payload.error === 'string') return payload.error;
+  return fallback;
+};
+
+const refreshQuotaStatus = async () => {
+  if (!currentUser) {
+    resetQuotaState();
+    return null;
+  }
+  try {
+    const res = await authFetch('/api/v1/me');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = extractErrorMessage(data, '利用残量の取得に失敗しました。');
+      throw new Error(message || 'quota fetch failed');
+    }
+    applyQuotaFromPayload(data);
+    const totalMinutes = formatMinutes(state.quota.totalAvailableThisMonth);
+    const dailyMinutes =
+      state.quota.plan === 'free' && typeof state.quota.dailyRemainingSeconds === 'number'
+        ? formatMinutes(state.quota.dailyRemainingSeconds)
+        : null;
+    addDiagLog(
+      `Quota refreshed | total=${totalMinutes}m` + (dailyMinutes !== null ? ` daily=${dailyMinutes}m` : ''),
+    );
+    return data;
+  } catch (err) {
+    addDiagLog(`Quota fetch failed: ${err.message || err}`);
+    return null;
+  }
+};
+
+const blockedReasonMessages = {
+  monthly_quota_exhausted: '今月の利用可能時間が残っていません。',
+  daily_limit_reached: 'Freeプランの本日の利用上限(10分)に達しました。',
+};
+
+const hasQuotaForStart = () => {
+  const quota = state.quota;
+  if (!quota.loaded) {
+    setError('利用可能時間の確認に失敗しました。しばらくしてから再試行してください。');
+    addDiagLog('Start blocked: quota not loaded');
+    return false;
+  }
+  // Use blockedReason from API if available
+  if (quota.blockedReason) {
+    const msg = blockedReasonMessages[quota.blockedReason] || '利用がブロックされています。';
+    setError(msg);
+    addDiagLog(`Start blocked: ${quota.blockedReason}`);
+    return false;
+  }
+  // Fallback checks (in case API doesn't return blockedReason)
+  if (typeof quota.totalAvailableThisMonth === 'number' && quota.totalAvailableThisMonth <= 0) {
+    setError('今月の利用可能時間が残っていません。');
+    addDiagLog('Start blocked: monthly quota exhausted');
+    return false;
+  }
+  if (quota.plan === 'free' && typeof quota.dailyRemainingSeconds === 'number' && quota.dailyRemainingSeconds <= 0) {
+    setError('Freeプランの本日の利用上限(10分)に達しました。');
+    addDiagLog('Start blocked: daily limit reached');
+    return false;
+  }
+  return true;
+};
+
+const reserveJobSlot = async () => {
+  addDiagLog('Requesting job reservation');
+  const res = await authFetch('/api/v1/jobs/create', { method: 'POST' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const message = extractErrorMessage(data, 'ジョブの予約に失敗しました。');
+    throw new Error(message);
+  }
+  state.currentJob = {
+    jobId: data.jobId,
+    reservedSeconds: data.reservedSeconds,
+    reservedBaseSeconds: data.reservedBaseSeconds,
+    reservedTicketSeconds: data.reservedTicketSeconds,
+  };
+  state.jobStartedAt = Date.now();
+  applyQuotaFromPayload(data);
+  addDiagLog(`Job reserved | jobId=${data.jobId}`);
+  return data;
+};
+
+const getJobElapsedSeconds = () => {
+  if (!state.jobStartedAt) return null;
+  return Math.max(0, Math.round((Date.now() - state.jobStartedAt) / 1000));
+};
+
+const completeCurrentJob = async (audioSeconds) => {
+  if (!state.currentJob) return null;
+  const payload = { jobId: state.currentJob.jobId };
+  if (typeof audioSeconds === 'number' && Number.isFinite(audioSeconds)) {
+    payload.audioSeconds = Math.max(0, Math.round(audioSeconds));
+  }
+  try {
+    const res = await authFetch('/api/v1/jobs/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      const message = extractErrorMessage(data, 'ジョブの完了に失敗しました。');
+      throw new Error(message);
+    }
+    applyQuotaFromPayload(data);
+    addDiagLog(`Job completed | billed=${data.billedSeconds ?? 'n/a'}s`);
+    return data;
+  } catch (err) {
+    addDiagLog(`Job completion failed: ${err.message || err}`);
+    return null;
+  } finally {
+    state.currentJob = null;
+    state.jobStartedAt = null;
+  }
 };
 
 const trimTail = (text, limit) => {
@@ -83,6 +604,7 @@ const trimTail = (text, limit) => {
 };
 
 const appendDownload = (label, url) => {
+  if (!els.downloads) return;
   const link = document.createElement('a');
   link.href = url;
   link.textContent = label;
@@ -91,26 +613,40 @@ const appendDownload = (label, url) => {
 };
 
 const resetDownloads = () => {
+  if (!els.downloads) return;
   els.downloads.innerHTML = '';
 };
 
 const updateLiveText = () => {
-  const translationLimit = Math.max(80, state.maxChars);
+  if (!els.liveTranscript) return;
+  els.liveTranscript.textContent = state.liveOriginal || '・・・';
+};
 
-  // ① ライブ表示（既存と同じ）
-  els.subtitleOriginal.textContent =
-    trimTail(state.liveOriginal || '・・・', state.maxChars);
-  els.subtitleTranslation.textContent =
-    trimTail(state.liveTranslation || '・・・', translationLimit);
+const LOG_MAX_ENTRIES = 500;
 
-  // ② 履歴表示（追加）
-  const segments = state.segments || [];
-  const orig = segments.map(s => s.source).join('\n\n');
-  const jp   = segments.map(s => s.translation).join('\n\n');
+const addLogEntry = (container, text, className = '') => {
+  if (!container || !text) return;
+  const entry = document.createElement('div');
+  entry.className = 'log-entry' + (className ? ' ' + className : '');
+  entry.textContent = text;
+  container.prepend(entry);
+  // 上限を超えたら古いエントリを削除
+  while (container.children.length > LOG_MAX_ENTRIES) {
+    container.lastChild.remove();
+  }
+};
 
-  // 履歴は長くなるので、必要なら末尾だけ見せる（ここでは大きめ）
-  els.historyOriginal.textContent = trimTail(orig, state.maxChars * 20);
-  els.historyTranslation.textContent = trimTail(jp, state.maxChars * 20);
+const addTranscriptLog = (text) => {
+  addLogEntry(els.transcriptLog, text);
+};
+
+const addTranslationLog = (text) => {
+  addLogEntry(els.translationLog, text, 'translation');
+};
+
+const clearLogs = () => {
+  if (els.transcriptLog) els.transcriptLog.innerHTML = '';
+  if (els.translationLog) els.translationLog.innerHTML = '';
 };
 
 const stopMedia = () => {
@@ -138,7 +674,6 @@ const closeRtc = () => {
 
 const startRecorder = (stream) => {
   state.recordingChunks = [];
-  state.recordingStartedAt = Date.now();
   const recorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
   recorder.ondataavailable = (e) => {
     if (e.data.size > 0) state.recordingChunks.push(e.data);
@@ -150,7 +685,7 @@ const startRecorder = (stream) => {
 const uploadForM4A = async (blob) => {
   const fd = new FormData();
   fd.append('file', blob, 'audio.webm');
-  const res = await fetch('/audio_m4a', { method: 'POST', body: fd });
+  const res = await authFetch('/audio_m4a', { method: 'POST', body: fd });
   if (!res.ok) throw new Error('m4a変換失敗');
   const data = await res.json();
   appendDownload('m4a', data.url);
@@ -166,7 +701,7 @@ const saveTextDownloads = async () => {
   if (originals.trim()) {
     const fd = new FormData();
     fd.append('text', originals);
-    const summaryRes = await fetch('/summarize', {
+    const summaryRes = await authFetch('/summarize', {
       method: 'POST',
       body: fd,
     });
@@ -186,75 +721,16 @@ const saveTextDownloads = async () => {
   if (summaryMd) makeBlobLink('要約.md', summaryMd, 'text/markdown');
 };
 
-const createJob = async () => {
-  const headers = await buildAuthHeaders();
-  const res = await fetch('/api/v1/jobs/create', { method: 'POST', headers });
-  if (res.status === 402) {
-    setUpgradeVisible(true);
-    throw new Error('無料枠を使い切りました。アップグレードしてください。');
-  }
-  if (!res.ok) {
-    const errJson = await res.json().catch(() => ({}));
-    throw new Error(errJson.detail || 'ジョブ作成に失敗しました');
-  }
-  const data = await res.json();
-  state.jobId = data.jobId || null;
-  state.jobYyyymm = data.yyyymm || null;
-  state.remainingSeconds = data.remainingSeconds ?? null;
-  setUpgradeVisible(false);
-  return data;
-};
-
-const completeJob = async (audioSeconds) => {
-  if (!state.jobId) return;
-  let headers;
-  try {
-    headers = await buildAuthHeaders();
-  } catch (err) {
-    setError(err.message);
-    return;
-  }
-  const res = await fetch('/api/v1/jobs/complete', {
-    method: 'POST',
-    headers: { ...headers, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ jobId: state.jobId, audioSeconds }),
-  });
-  if (!res.ok) {
-    const errJson = await res.json().catch(() => ({}));
-    setError(errJson.detail || 'ジョブ完了の登録に失敗しました');
-  }
-  state.jobId = null;
-  state.jobYyyymm = null;
-  state.remainingSeconds = null;
-};
-
 const translateCompleted = async (text) => {
   try {
-    // ① まず原文を履歴に積む（訳は仮）
-    const seg = {
-      id: crypto.randomUUID?.() ?? String(Date.now()),
-      source: text,
-      translation: '（翻訳中…）',
-    };
-    state.segments.push(seg);
-
-    // live表示（任意：最新行の表示に使うなら）
-    state.liveTranslation = seg.translation;
-
-    updateLiveText(); // ← ここは「segmentsを描画」するように後述どおり変更
-
-    // ② 翻訳APIを呼ぶ
     const fd = new FormData();
     fd.append('text', text);
-    const res = await fetch('/translate', { method: 'POST', body: fd });
+    const res = await authFetch('/translate', { method: 'POST', body: fd });
     if (!res.ok) throw new Error('翻訳に失敗しました');
     const data = await res.json();
-
-    // ③ さっき追加した履歴の translation を更新
-    seg.translation = data.translation || '';
-    state.liveTranslation = seg.translation; // 最新表示したい場合
-
-    updateLiveText();
+    const translation = data.translation || '';
+    state.translations.push(translation);
+    addTranslationLog(translation);
   } catch (err) {
     setError(err.message);
   }
@@ -263,6 +739,7 @@ const translateCompleted = async (text) => {
 const commitLog = (text, itemId = null) => {
   if (!text || !text.trim()) return;
   state.logs.push(text);
+  addTranscriptLog(text);
   translateCompleted(text);
   state.liveOriginal = '';
   if (itemId) {
@@ -402,31 +879,46 @@ const handleDataMessage = (event) => {
 };
 
 const start = async () => {
+  addDiagLog('Start requested');
+  if (!firebaseState.initialized) {
+    setError('Firebase初期化に失敗しました。設定を確認してください。');
+    addDiagLog('Start blocked: Firebase not ready');
+    return;
+  }
+  if (!currentUser) {
+    setError('ログインが必要です');
+    addDiagLog('Start blocked: user not authenticated');
+    return;
+  }
+  if (!state.quota.loaded) {
+    await refreshQuotaStatus();
+  }
+  if (!hasQuotaForStart()) {
+    els.start.disabled = false;
+    els.stop.disabled = true;
+    return;
+  }
   els.start.disabled = true;
   els.stop.disabled = false;
   clearGapTimer();
   resetDownloads();
+  clearLogs();
   state.logs = [];
-  state.segments = [];
   state.translations = [];
   state.liveOriginal = '';
-  state.liveTranslation = '';
   state.partialByItem = new Map();
   state.committedItems = new Set();
   state.activeItemId = null;
-  state.jobId = null;
-  state.jobYyyymm = null;
-  state.remainingSeconds = null;
-  state.recordingStartedAt = null;
   updateLiveText();
   setError('');
-  setUpgradeVisible(false);
 
   try {
-    await createJob();
+    await reserveJobSlot();
+    setStatus('Preparing');
     const fd = new FormData();
     fd.append('vad_silence', String(state.vadSilence));
-    const res = await fetch('/token', { method: 'POST', body: fd });
+    addDiagLog('Requesting realtime token');
+    const res = await authFetch('/token', { method: 'POST', body: fd });
     if (!res.ok) {
       const errJson = await res.json().catch(() => ({}));
       const detail = errJson.detail || errJson.message || 'token取得に失敗';
@@ -435,18 +927,23 @@ const start = async () => {
     const data = await res.json();
     const clientSecret = data.value;
     if (!clientSecret) throw new Error('client secret missing');
+    addDiagLog('Realtime token received');
     await negotiate(clientSecret);
     setStatus('Listening');
+    addDiagLog('Realtime negotiation completed');
   } catch (err) {
     setError(err.message || 'start error');
     els.start.disabled = false;
     els.stop.disabled = true;
     stopMedia();
     closeRtc();
+    await completeCurrentJob(0);
+    addDiagLog(`Start failed: ${err.message || err}`);
   }
 };
 
 const stop = async () => {
+  addDiagLog('Stop requested');
   els.start.disabled = false;
   els.stop.disabled = true;
   clearGapTimer();
@@ -468,55 +965,154 @@ const stop = async () => {
     }
   }
 
-  const audioSeconds = state.recordingStartedAt
-    ? Math.max(0, Math.ceil((Date.now() - state.recordingStartedAt) / 1000))
-    : 0;
-  state.recordingStartedAt = null;
-  await completeJob(audioSeconds);
-
+  const elapsedSeconds = getJobElapsedSeconds();
+  await completeCurrentJob(elapsedSeconds);
   await saveTextDownloads();
+  addDiagLog('Stop completed');
 };
 
-els.start.addEventListener('click', start);
-els.stop.addEventListener('click', stop);
+const applyAuthUiState = (user) => {
+  if (!els.loginBtn || !els.logoutBtn || !els.start || !els.userEmail) return;
+  if (user) {
+    els.userEmail.textContent = user.email || '';
+    els.loginBtn.style.display = 'none';
+    els.logoutBtn.style.display = '';
+    els.start.disabled = false;
+  } else {
+    els.userEmail.textContent = '';
+    els.loginBtn.style.display = '';
+    els.logoutBtn.style.display = 'none';
+    els.start.disabled = firebaseState.initialized;
+    resetQuotaState();
+  }
+  updateDevStatusSummary();
+};
 
-els.settingsBtn.addEventListener('click', () => els.settingsModal.showModal());
-els.saveSettings.addEventListener('click', (e) => {
-  e.preventDefault();
-  state.maxChars = Number(els.maxChars.value) || 300;
-  state.gapMs = Number(els.gapMs.value) || 1000;
-  state.vadSilence = Number(els.vadSilence.value) || 400;
-  localStorage.setItem('maxChars', state.maxChars);
-  localStorage.setItem('gapMs', state.gapMs);
-  localStorage.setItem('vadSilence', state.vadSilence);
-  els.settingsModal.close();
-});
+document.addEventListener('DOMContentLoaded', () => {
+  addDiagLog('DOM ready');
+  cacheElements();
+  scrubDebugArtifacts();
+  setupDevPanel();
+  updateDevStatusSummary();
+  updateQuotaInfo();
 
-window.addEventListener('beforeunload', () => {
-  stopMedia();
-  closeRtc();
-});
+  if (els.maxChars) els.maxChars.value = state.maxChars;
+  if (els.gapMs) els.gapMs.value = state.gapMs;
+  if (els.vadSilence) els.vadSilence.value = state.vadSilence;
 
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+  if (els.start) els.start.addEventListener('click', start);
+  if (els.stop) els.stop.addEventListener('click', stop);
+
+  if (els.settingsBtn && els.settingsModal) {
+    els.settingsBtn.addEventListener('click', () => els.settingsModal.showModal());
+  }
+  if (els.saveSettings) {
+    els.saveSettings.addEventListener('click', (e) => {
+      e.preventDefault();
+      state.maxChars = Number(els.maxChars?.value) || 300;
+      state.gapMs = Number(els.gapMs?.value) || 1000;
+      state.vadSilence = Number(els.vadSilence?.value) || 400;
+      localStorage.setItem('maxChars', state.maxChars);
+      localStorage.setItem('gapMs', state.gapMs);
+      localStorage.setItem('vadSilence', state.vadSilence);
+      els.settingsModal?.close();
+      addDiagLog(
+        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence}`
+      );
+      updateDevStatusSummary();
+    });
+  }
+
+  // Preset buttons
+  if (els.presetFast) {
+    els.presetFast.addEventListener('click', () => applyPreset('fast'));
+  }
+  if (els.presetBalanced) {
+    els.presetBalanced.addEventListener('click', () => applyPreset('balanced'));
+  }
+  if (els.presetStable) {
+    els.presetStable.addEventListener('click', () => applyPreset('stable'));
+  }
+
+  window.addEventListener('beforeunload', () => {
+    stopMedia();
+    closeRtc();
   });
-}
 
-let deferredPrompt = null;
-window.addEventListener('beforeinstallprompt', (e) => {
-  if (state.hasShownA2HS) return;
-  e.preventDefault();
-  deferredPrompt = e;
-  state.hasShownA2HS = true;
-  localStorage.setItem('a2hsShown', '1');
-  els.a2hs.classList.add('show');
-  setTimeout(async () => {
-    if (deferredPrompt) {
-      deferredPrompt.prompt();
-      deferredPrompt = null;
-    }
-  }, 1500);
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+    });
+  }
+
+  let deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    if (state.hasShownA2HS) return;
+    if (!els.a2hs) return;
+    e.preventDefault();
+    deferredPrompt = e;
+    state.hasShownA2HS = true;
+    localStorage.setItem('a2hsShown', '1');
+    els.a2hs.classList.add('show');
+    setTimeout(async () => {
+      if (deferredPrompt) {
+        deferredPrompt.prompt();
+        deferredPrompt = null;
+      }
+    }, 1500);
+  });
+
+  initFirebase();
+  applyAuthUiState(null);
+
+  if (els.loginBtn) {
+    els.loginBtn.addEventListener('click', async () => {
+      addDiagLog('Login requested');
+      if (!auth) {
+        setError('Firebase初期化に失敗しました。設定を確認してください。');
+        return;
+      }
+      try {
+        const provider = new firebase.auth.GoogleAuthProvider();
+        await auth.signInWithPopup(provider);
+        addDiagLog('Login popup completed');
+      } catch (err) {
+        setError('ログインに失敗しました: ' + err.message);
+        addDiagLog(`Login failed: ${err.message}`);
+      }
+    });
+  }
+
+  if (els.logoutBtn) {
+    els.logoutBtn.addEventListener('click', async () => {
+      addDiagLog('Logout requested');
+      if (!auth) {
+        setError('Firebase初期化に失敗しました。設定を確認してください。');
+        return;
+      }
+      try {
+        await auth.signOut();
+        setStatus('Standby');
+        addDiagLog('Logout completed');
+      } catch (err) {
+        setError('ログアウトに失敗しました: ' + err.message);
+        addDiagLog(`Logout failed: ${err.message}`);
+      }
+    });
+  }
+
+  if (auth) {
+    auth.onAuthStateChanged((user) => {
+      currentUser = user;
+      applyAuthUiState(user);
+      addDiagLog(user ? 'Auth state: logged in' : 'Auth state: signed out');
+      if (user) {
+        refreshQuotaStatus();
+      } else {
+        resetQuotaState();
+      }
+    });
+  }
+
+  updateLiveText();
 });
-
-updateLiveText();
