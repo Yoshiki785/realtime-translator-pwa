@@ -34,6 +34,8 @@ load_dotenv()
 # 環境判定（本番ではセキュリティガード有効）
 ENV = os.getenv("ENV", "development")
 IS_PRODUCTION = ENV == "production"
+SERVICE_NAME = os.getenv("SERVICE_NAME", "realtime-translator-api")
+APP_VERSION = os.getenv("APP_VERSION") or os.getenv("COMMIT_SHA") or "local"
 
 def get_openai_api_key() -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -49,11 +51,27 @@ DOWNLOAD_DIR.mkdir(exist_ok=True)
 JST = ZoneInfo("Asia/Tokyo")
 
 PLANS = {
-    "free": {"quotaSeconds": 1800, "retentionDays": 7},
-    "pro": {"quotaSeconds": 7200, "retentionDays": 30},
+    "free": {
+        "quotaSeconds": 1800,
+        "retentionDays": 7,
+        "baseMonthlyQuotaSeconds": 1800,
+        "baseDailyQuotaSeconds": 600,
+        "maxSessionSeconds": 600,
+        "maxConcurrentJobs": 1,
+        "createRateLimitPerMin": 6,
+    },
+    "pro": {
+        "quotaSeconds": 7200,
+        "retentionDays": 30,
+        "baseMonthlyQuotaSeconds": 7200,
+        "baseDailyQuotaSeconds": None,
+        "maxSessionSeconds": 7200,
+        "maxConcurrentJobs": 1,
+        "createRateLimitPerMin": 12,
+    },
 }
 
-FINAL_JOB_STATUSES = {"succeeded", "failed", "stopped_quota"}
+FINAL_JOB_STATUSES = {"succeeded", "completed", "failed", "stopped_quota", "expired"}
 
 _firestore_client = None
 _storage_client = None
@@ -157,6 +175,7 @@ class MockDocument:
     def __init__(self, data, doc_id):
         self.data = data
         self.doc_id = doc_id
+        self.id = doc_id
         self.reference = self
 
     def get(self, transaction=None):
@@ -287,7 +306,7 @@ def get_firestore_client():
 
     if use_mock:
         if _firestore_client is None:
-            logger.warning("Using MockFirestoreClient - development only!", extra="{}")
+            logger.warning("Using MockFirestoreClient - development only!")
             _firestore_client = MockFirestoreClient()
         return _firestore_client
 
@@ -325,14 +344,42 @@ def month_key(dt: datetime) -> str:
     return dt.strftime("%Y-%m")
 
 
+def day_key(dt: datetime) -> str:
+    return dt.strftime("%Y-%m-%d")
+
+
+def next_month_start_utc(dt: datetime) -> datetime:
+    """Calculate the first moment of next month in JST, return as UTC datetime."""
+    # Ensure we're working in JST
+    dt_jst = dt.astimezone(JST) if dt.tzinfo else dt.replace(tzinfo=JST)
+    # First day of next month at 00:00:00 JST
+    if dt_jst.month == 12:
+        next_month = dt_jst.replace(year=dt_jst.year + 1, month=1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    else:
+        next_month = dt_jst.replace(month=dt_jst.month + 1, day=1, hour=0, minute=0, second=0, microsecond=0)
+    # Convert to UTC
+    return next_month.astimezone(timezone.utc)
+
+
+def safe_int(value, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def usage_doc_id(uid: str, yyyymm: str) -> str:
     return f"{uid}_{yyyymm}"
 
 
-def resolve_plan_config(plan: str) -> dict:
-    if plan not in PLANS:
-        plan = "free"
-    return PLANS[plan]
+def normalize_plan(plan: str | None) -> str:
+    if plan in PLANS:
+        return plan
+    return "free"
+
+
+def resolve_plan_config(plan: str | None) -> dict:
+    return PLANS[normalize_plan(plan)]
 
 
 def ensure_user_profile(uid: str) -> dict:
@@ -340,11 +387,9 @@ def ensure_user_profile(uid: str) -> dict:
     user_ref = db.collection("users").document(uid)
     snap = user_ref.get()
     data = snap.to_dict() if snap.exists else {}
-    plan = data.get("plan", "free")
-    if plan not in PLANS:
-        plan = "free"
-    plan_config = PLANS[plan]
-    quota_seconds = int(data.get("quotaSeconds", plan_config["quotaSeconds"]))
+    plan = normalize_plan(data.get("plan"))
+    plan_config = resolve_plan_config(plan)
+    quota_seconds = int(data.get("quotaSeconds", plan_config["baseMonthlyQuotaSeconds"]))
     retention_days = int(data.get("retentionDays", plan_config["retentionDays"]))
     subscription_status = data.get("subscriptionStatus", "free")
 
@@ -382,6 +427,442 @@ def get_used_seconds(db: firebase_firestore.Client, uid: str, yyyymm: str) -> in
         return 0
 
 
+def normalize_user_usage_data(
+    raw_data: dict | None,
+    current_jst: datetime,
+    is_new: bool,
+) -> tuple[dict, dict, str, dict]:
+    state = dict(raw_data or {})
+    updates: dict[str, object] = {}
+    plan = normalize_plan(state.get("plan"))
+    if state.get("plan") != plan:
+        updates["plan"] = plan
+    state["plan"] = plan
+    plan_config = resolve_plan_config(plan)
+
+    today = day_key(current_jst)
+    if state.get("dayKey") != today:
+        updates["dayKey"] = today
+        updates["usedSecondsToday"] = 0
+        state["dayKey"] = today
+        state["usedSecondsToday"] = 0
+    else:
+        used_today = max(0, safe_int(state.get("usedSecondsToday"), 0))
+        if state.get("usedSecondsToday") != used_today:
+            updates["usedSecondsToday"] = used_today
+        state["usedSecondsToday"] = used_today
+
+    month = month_key(current_jst)
+    if state.get("monthKey") != month:
+        updates["monthKey"] = month
+        updates["usedBaseSecondsThisMonth"] = 0
+        state["monthKey"] = month
+        state["usedBaseSecondsThisMonth"] = 0
+    else:
+        used_base = max(0, safe_int(state.get("usedBaseSecondsThisMonth"), 0))
+        if state.get("usedBaseSecondsThisMonth") != used_base:
+            updates["usedBaseSecondsThisMonth"] = used_base
+        state["usedBaseSecondsThisMonth"] = used_base
+
+    ticket_balance = max(0, safe_int(state.get("ticketSecondsBalance"), 0))
+    if state.get("ticketSecondsBalance") != ticket_balance:
+        updates["ticketSecondsBalance"] = ticket_balance
+    state["ticketSecondsBalance"] = ticket_balance
+
+    if "activeJobId" not in state:
+        state["activeJobId"] = None
+        updates["activeJobId"] = None
+    if "activeJobStartedAt" not in state:
+        state["activeJobStartedAt"] = None
+        updates["activeJobStartedAt"] = None
+
+    job_create_count = max(0, safe_int(state.get("jobCreateCount"), 0))
+    if state.get("jobCreateCount") != job_create_count:
+        updates["jobCreateCount"] = job_create_count
+    state["jobCreateCount"] = job_create_count
+    if "jobCreateMinuteKey" not in state:
+        state["jobCreateMinuteKey"] = None
+        updates["jobCreateMinuteKey"] = None
+
+    if is_new:
+        updates["createdAt"] = firebase_firestore.SERVER_TIMESTAMP
+
+    return state, updates, plan, plan_config
+
+
+def apply_user_updates(
+    user_ref: firebase_firestore.DocumentReference,
+    updates: dict,
+    transaction: firebase_firestore.Transaction | MockTransaction | None = None,
+) -> None:
+    if not updates:
+        return
+    payload = dict(updates)
+    payload["updatedAt"] = firebase_firestore.SERVER_TIMESTAMP
+    if transaction:
+        transaction.set(user_ref, payload, merge=True)
+    else:
+        user_ref.set(payload, merge=True)
+
+
+def read_user_state(
+    db: firebase_firestore.Client,
+    uid: str,
+    current_jst: datetime,
+    transaction: firebase_firestore.Transaction | MockTransaction | None = None,
+) -> tuple[firebase_firestore.DocumentReference, dict, str, dict]:
+    user_ref = db.collection("users").document(uid)
+    if transaction:
+        snap = user_ref.get(transaction=transaction)
+    else:
+        snap = user_ref.get()
+    state, updates, plan, plan_config = normalize_user_usage_data(
+        snap.to_dict() if snap.exists else {},
+        current_jst,
+        not snap.exists,
+    )
+    if updates:
+        apply_user_updates(user_ref, updates, transaction)
+    return user_ref, state, plan, plan_config
+
+
+def to_utc_datetime(value) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=timezone.utc)
+        return value.astimezone(timezone.utc)
+    return None
+
+
+def build_quota_snapshot(user_state: dict, plan_config: dict) -> dict:
+    base_monthly = plan_config.get("baseMonthlyQuotaSeconds", 0)
+    base_used = safe_int(user_state.get("usedBaseSecondsThisMonth"), 0)
+    base_remaining = max(0, base_monthly - base_used)
+    ticket_balance = max(0, safe_int(user_state.get("ticketSecondsBalance"), 0))
+    total_available = base_remaining + ticket_balance
+    daily_cap = plan_config.get("baseDailyQuotaSeconds")
+    used_today = safe_int(user_state.get("usedSecondsToday"), 0)
+    if daily_cap is None:
+        daily_remaining = None
+    else:
+        daily_remaining = max(0, daily_cap - used_today)
+
+    return {
+        "baseMonthlyQuotaSeconds": base_monthly,
+        "usedBaseSecondsThisMonth": base_used,
+        "baseRemainingThisMonth": base_remaining,
+        "ticketSecondsBalance": ticket_balance,
+        "totalAvailableThisMonth": total_available,
+        "baseDailyQuotaSeconds": daily_cap,
+        "usedSecondsToday": used_today,
+        "dailyRemainingSeconds": daily_remaining,
+    }
+
+
+def get_document_id(doc_ref) -> str | None:
+    doc_id = getattr(doc_ref, "id", None)
+    if doc_id:
+        return doc_id
+    return getattr(doc_ref, "doc_id", None)
+
+
+def _create_job_core(
+    db: firebase_firestore.Client,
+    uid: str,
+    job_id: str,
+    current_jst: datetime,
+    now_utc: datetime,
+    transaction: firebase_firestore.Transaction | MockTransaction | None = None,
+) -> dict:
+    user_ref, user_state, plan, plan_config = read_user_state(db, uid, current_jst, transaction)
+    snapshot = build_quota_snapshot(user_state, plan_config)
+    base_remaining = snapshot["baseRemainingThisMonth"]
+    ticket_balance = snapshot["ticketSecondsBalance"]
+    total_available = snapshot["totalAvailableThisMonth"]
+
+    if total_available <= 0:
+        raise HTTPException(
+            status_code=402,
+            detail={
+                "error": "no_remaining_minutes",
+                "message": "No remaining minutes (monthly base + tickets exhausted)",
+            },
+        )
+
+    daily_cap = plan_config.get("baseDailyQuotaSeconds")
+    daily_remaining = snapshot["dailyRemainingSeconds"] if daily_cap is not None else None
+    if daily_cap is not None and (daily_remaining is None or daily_remaining <= 0):
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "daily_limit_reached",
+                "message": "Daily limit reached (10 min/day)",
+            },
+        )
+
+    minute_key = current_jst.strftime("%Y-%m-%dT%H:%M")
+    create_limit = safe_int(plan_config.get("createRateLimitPerMin"), 0)
+    stored_minute = user_state.get("jobCreateMinuteKey")
+    create_count = safe_int(user_state.get("jobCreateCount"), 0)
+    if stored_minute != minute_key:
+        stored_minute = minute_key
+        create_count = 0
+    if create_limit and create_count >= create_limit:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "rate_limited",
+                "message": "Too many job requests this minute",
+            },
+        )
+
+    max_session = plan_config.get("maxSessionSeconds", 600)
+    reserved_seconds = min(total_available, max_session)
+    if daily_remaining is not None:
+        reserved_seconds = min(reserved_seconds, daily_remaining)
+    reserved_seconds = max(0, int(reserved_seconds))
+    if reserved_seconds <= 0:
+        raise HTTPException(
+            status_code=402,
+            detail={"error": "no_reservable_minutes", "message": "No minutes available for reservation"},
+        )
+
+    active_job_id = user_state.get("activeJobId")
+    active_job_started_at = to_utc_datetime(user_state.get("activeJobStartedAt"))
+    if active_job_id:
+        grace_window = max_session + 120
+        should_block = True
+        if active_job_started_at is None:
+            should_block = False
+        else:
+            elapsed = (now_utc - active_job_started_at).total_seconds()
+            should_block = elapsed <= grace_window
+        if should_block:
+            raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
+
+    retention_days = plan_config.get("retentionDays", 7)
+    delete_at = (current_jst + timedelta(days=retention_days)).astimezone(timezone.utc)
+
+    reserved_base = min(base_remaining, reserved_seconds)
+    reserved_ticket = max(0, reserved_seconds - reserved_base)
+
+    create_count += 1
+    user_state["jobCreateMinuteKey"] = stored_minute
+    user_state["jobCreateCount"] = create_count
+
+    user_updates = {
+        "activeJobId": job_id,
+        "activeJobStartedAt": firebase_firestore.SERVER_TIMESTAMP,
+        "jobCreateMinuteKey": stored_minute,
+        "jobCreateCount": create_count,
+    }
+    apply_user_updates(user_ref, user_updates, transaction)
+
+    job_ref = db.collection("jobs").document(job_id)
+    job_data = {
+        "uid": uid,
+        "status": "running",
+        "plan": plan,
+        "planAtStart": plan,
+        "reservedSeconds": reserved_seconds,
+        "reservedBaseSeconds": reserved_base,
+        "reservedTicketSeconds": reserved_ticket,
+        "reservedDailyLimitSeconds": daily_cap,
+        "totalAvailableSecondsAtStart": total_available,
+        "baseRemainingSecondsAtStart": base_remaining,
+        "ticketSecondsBalanceAtStart": ticket_balance,
+        "dailyRemainingSecondsAtStart": daily_remaining,
+        "monthKey": user_state.get("monthKey"),
+        "dayKey": user_state.get("dayKey"),
+        "maxSessionSeconds": max_session,
+        "retentionDays": retention_days,
+        "deleteAt": delete_at,
+        "startedAt": firebase_firestore.SERVER_TIMESTAMP,
+        "createdAt": firebase_firestore.SERVER_TIMESTAMP,
+        "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+    }
+
+    if transaction:
+        transaction.set(job_ref, job_data)
+    else:
+        job_ref.set(job_data)
+
+    response = {
+        "jobId": job_id,
+        "status": "running",
+        "plan": plan,
+        "reservedSeconds": reserved_seconds,
+        "reservedBaseSeconds": reserved_base,
+        "reservedTicketSeconds": reserved_ticket,
+        "baseRemainingThisMonth": base_remaining,
+        "ticketSecondsBalance": ticket_balance,
+        "totalAvailableThisMonth": total_available,
+        "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
+        "baseDailyQuotaSeconds": daily_cap,
+        "dailyRemainingSeconds": daily_remaining,
+        "maxSessionSeconds": max_session,
+        "retentionDays": retention_days,
+        "monthKey": user_state.get("monthKey"),
+    }
+    return response
+
+
+def create_job_transaction_simple(
+    db: firebase_firestore.Client,
+    uid: str,
+    job_id: str,
+    current_jst: datetime,
+    now_utc: datetime,
+) -> dict:
+    return _create_job_core(db, uid, job_id, current_jst, now_utc, transaction=None)
+
+
+@firebase_firestore.transactional
+def create_job_transaction(
+    transaction: firebase_firestore.Transaction,
+    db: firebase_firestore.Client,
+    uid: str,
+    job_id: str,
+    current_jst: datetime,
+    now_utc: datetime,
+) -> dict:
+    return _create_job_core(db, uid, job_id, current_jst, now_utc, transaction=transaction)
+
+
+def _complete_job_core(
+    db: firebase_firestore.Client,
+    job_ref,
+    uid: str,
+    reported_seconds: int | None,
+    current_jst: datetime,
+    now_utc: datetime,
+    transaction: firebase_firestore.Transaction | MockTransaction | None = None,
+) -> dict:
+    job_id_value = get_document_id(job_ref) or "unknown"
+    job_snap = job_ref.get(transaction=transaction)
+    if not job_snap.exists:
+        raise HTTPException(status_code=404, detail="job_not_found")
+    job_data = job_snap.to_dict() or {}
+    if job_data.get("uid") != uid:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    status = job_data.get("status", "running")
+    if status in FINAL_JOB_STATUSES:
+        return {"status": status, "jobId": job_id_value, "skipped": True}
+
+    plan_at_start = normalize_plan(job_data.get("planAtStart") or job_data.get("plan"))
+    plan_config_start = resolve_plan_config(plan_at_start)
+    reserved_seconds = max(
+        0,
+        safe_int(job_data.get("reservedSeconds"), plan_config_start.get("maxSessionSeconds", 600)),
+    )
+    reserved_base = max(0, safe_int(job_data.get("reservedBaseSeconds"), reserved_seconds))
+    reserved_ticket = max(
+        0,
+        safe_int(job_data.get("reservedTicketSeconds"), reserved_seconds - reserved_base),
+    )
+    if reserved_base + reserved_ticket < reserved_seconds:
+        reserved_ticket = max(0, reserved_seconds - reserved_base)
+
+    started_at = to_utc_datetime(job_data.get("startedAt"))
+    actual_seconds = None
+    if started_at:
+        actual_seconds = max(0, int((now_utc - started_at).total_seconds()))
+    if reported_seconds is not None:
+        reported_seconds = max(0, int(reported_seconds))
+    if actual_seconds is None:
+        actual_seconds = reported_seconds if reported_seconds is not None else reserved_seconds
+    billed_seconds = min(actual_seconds, reserved_seconds)
+    billed_base = min(billed_seconds, reserved_base)
+    billed_ticket = max(0, billed_seconds - billed_base)
+
+    user_ref, user_state, plan_current, plan_config_current = read_user_state(
+        db, uid, current_jst, transaction
+    )
+
+    ticket_balance_before = safe_int(user_state.get("ticketSecondsBalance"), 0)
+    new_ticket_balance = ticket_balance_before - billed_ticket
+    anomaly = False
+    if new_ticket_balance < 0:
+        anomaly = True
+        new_ticket_balance = 0
+
+    new_base_used = safe_int(user_state.get("usedBaseSecondsThisMonth"), 0) + billed_base
+    new_used_today = safe_int(user_state.get("usedSecondsToday"), 0) + billed_seconds
+
+    user_updates = {
+        "usedBaseSecondsThisMonth": new_base_used,
+        "usedSecondsToday": new_used_today,
+        "ticketSecondsBalance": new_ticket_balance,
+    }
+    user_state["usedBaseSecondsThisMonth"] = new_base_used
+    user_state["usedSecondsToday"] = new_used_today
+    user_state["ticketSecondsBalance"] = new_ticket_balance
+
+    if user_state.get("activeJobId") == job_id_value:
+        user_updates["activeJobId"] = None
+        user_updates["activeJobStartedAt"] = None
+        user_state["activeJobId"] = None
+        user_state["activeJobStartedAt"] = None
+
+    apply_user_updates(user_ref, user_updates, transaction)
+
+    job_updates = {
+        "status": "completed",
+        "completedAt": firebase_firestore.SERVER_TIMESTAMP,
+        "endedAt": firebase_firestore.SERVER_TIMESTAMP,
+        "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+        "actualSeconds": actual_seconds,
+        "billedSeconds": billed_seconds,
+        "billedBaseSeconds": billed_base,
+        "billedTicketSeconds": billed_ticket,
+        "planAtCompletion": plan_current,
+    }
+    if reported_seconds is not None:
+        job_updates["reportedSeconds"] = reported_seconds
+
+    if transaction:
+        transaction.update(job_ref, job_updates)
+    else:
+        job_ref.update(job_updates)
+
+    snapshot = build_quota_snapshot(user_state, plan_config_current)
+    response = {
+        "status": "completed",
+        "plan": plan_current,
+        "jobId": job_id_value,
+        "planAtStart": plan_at_start,
+        "planAtCompletion": plan_current,
+        "billedSeconds": billed_seconds,
+        "billedBaseSeconds": billed_base,
+        "billedTicketSeconds": billed_ticket,
+        "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
+        "ticketSecondsBalance": snapshot["ticketSecondsBalance"],
+        "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
+        "baseDailyQuotaSeconds": snapshot["baseDailyQuotaSeconds"],
+        "dailyRemainingSeconds": snapshot["dailyRemainingSeconds"],
+        "actualSeconds": actual_seconds,
+        "reservedSeconds": reserved_seconds,
+    }
+
+    if anomaly:
+        logger.warning(
+            "Ticket balance anomaly detected | %s",
+            json.dumps(
+                {
+                    "uid": uid,
+                    "jobId": job_id_value,
+                    "ticketBalanceBefore": ticket_balance_before,
+                    "billedTicketSeconds": billed_ticket,
+                }
+            ),
+        )
+
+    return response
+
+
 def get_uid_from_request(request: Request) -> str:
     # 【セキュリティガード】本番環境ではDEBUG_AUTH_BYPASSを強制無効化
     if IS_PRODUCTION:
@@ -390,7 +871,7 @@ def get_uid_from_request(request: Request) -> str:
         debug_bypass = os.getenv("DEBUG_AUTH_BYPASS") == "1"
 
     if debug_bypass:
-        logger.warning("DEBUG_AUTH_BYPASS is enabled - development only!", extra="{}")
+        logger.warning("DEBUG_AUTH_BYPASS is enabled - development only!")
         return "debug-user"
 
     auth_header = request.headers.get("authorization", "")
@@ -403,7 +884,7 @@ def get_uid_from_request(request: Request) -> str:
     try:
         decoded = firebase_auth.verify_id_token(token)
     except Exception as exc:  # noqa: BLE001
-        logger.error(f"Firebase token verification failed: {exc}", extra="{}")
+        logger.error(f"Firebase token verification failed: {exc}")
         raise HTTPException(status_code=401, detail="invalid_auth") from exc
     uid = decoded.get("uid")
     if not uid:
@@ -423,14 +904,14 @@ def verify_admin_access(request: Request) -> None:
         # allow-unauthenticated だが、IAMで制限する
         auth_header = request.headers.get("authorization", "")
         if not auth_header.startswith("Bearer "):
-            logger.error("Admin endpoint accessed without Bearer token in production", extra="{}")
+            logger.error("Admin endpoint accessed without Bearer token in production")
             raise HTTPException(status_code=401, detail="unauthorized")
 
         # 簡易的なトークン検証（本格的にはFirebase Admin SDKやGoogle Auth Libraryを使用）
         # ここでは、Cloud Runのmetadataサービスを使った検証は省略し、
         # IAM設定で invoker ロールを制限することを前提とする
         # 必要に応じてトークン検証を追加
-        logger.info("Admin access via OIDC/IAM", extra="{}")
+        logger.info("Admin access via OIDC/IAM")
     else:
         # 開発環境：x-admin-token による簡易認証
         expected = os.getenv("ADMIN_CLEANUP_TOKEN")
@@ -438,7 +919,7 @@ def verify_admin_access(request: Request) -> None:
             raise HTTPException(status_code=500, detail="admin_cleanup_not_configured")
         token = request.headers.get("x-admin-token", "")
         if token != expected:
-            logger.warning("Invalid admin token attempt", extra="{}")
+            logger.warning("Invalid admin token attempt")
             raise HTTPException(status_code=403, detail="forbidden")
 
 
@@ -459,47 +940,12 @@ def complete_job_transaction_simple(
     db,
     job_ref,
     uid: str,
-    audio_seconds: int,
+    reported_seconds: int | None,
+    current_jst: datetime,
+    now_utc: datetime,
 ) -> dict:
     """Simplified transaction for DEBUG_AUTH_BYPASS mode"""
-    job_snap = job_ref.get()
-    if not job_snap.exists:
-        raise HTTPException(status_code=404, detail="job_not_found")
-    job_data = job_snap.to_dict() or {}
-    if job_data.get("uid") != uid:
-        raise HTTPException(status_code=403, detail="forbidden")
-    status = job_data.get("status", "created")
-    if status in FINAL_JOB_STATUSES:
-        return {"status": status, "skipped": True}
-
-    yyyymm = job_data.get("yyyymm") or month_key(now_jst())
-    usage_ref = db.collection("usage_monthly").document(usage_doc_id(uid, yyyymm))
-    usage_snap = usage_ref.get()
-    usage_data = usage_snap.to_dict() if usage_snap.exists else {}
-    used = usage_data.get("usedSeconds", 0)
-    try:
-        used_seconds = int(used)
-    except (TypeError, ValueError):
-        used_seconds = 0
-    new_used = used_seconds + audio_seconds
-
-    usage_ref.set(
-        {
-            "uid": uid,
-            "yyyymm": yyyymm,
-            "usedSeconds": new_used,
-            "updatedAt": datetime.now(timezone.utc),
-        },
-        merge=True,
-    )
-    job_ref.update(
-        {
-            "status": "succeeded",
-            "audioSeconds": audio_seconds,
-            "completedAt": datetime.now(timezone.utc),
-        },
-    )
-    return {"status": "succeeded", "usedSeconds": new_used}
+    return _complete_job_core(db, job_ref, uid, reported_seconds, current_jst, now_utc, transaction=None)
 
 
 @firebase_firestore.transactional
@@ -508,48 +954,11 @@ def complete_job_transaction(
     db: firebase_firestore.Client,
     job_ref: firebase_firestore.DocumentReference,
     uid: str,
-    audio_seconds: int,
+    reported_seconds: int | None,
+    current_jst: datetime,
+    now_utc: datetime,
 ) -> dict:
-    job_snap = job_ref.get(transaction=transaction)
-    if not job_snap.exists:
-        raise HTTPException(status_code=404, detail="job_not_found")
-    job_data = job_snap.to_dict() or {}
-    if job_data.get("uid") != uid:
-        raise HTTPException(status_code=403, detail="forbidden")
-    status = job_data.get("status", "created")
-    if status in FINAL_JOB_STATUSES:
-        return {"status": status, "skipped": True}
-
-    yyyymm = job_data.get("yyyymm") or month_key(now_jst())
-    usage_ref = db.collection("usage_monthly").document(usage_doc_id(uid, yyyymm))
-    usage_snap = usage_ref.get(transaction=transaction)
-    usage_data = usage_snap.to_dict() if usage_snap.exists else {}
-    used = usage_data.get("usedSeconds", 0)
-    try:
-        used_seconds = int(used)
-    except (TypeError, ValueError):
-        used_seconds = 0
-    new_used = used_seconds + audio_seconds
-
-    transaction.set(
-        usage_ref,
-        {
-            "uid": uid,
-            "yyyymm": yyyymm,
-            "usedSeconds": new_used,
-            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
-        },
-        merge=True,
-    )
-    transaction.update(
-        job_ref,
-        {
-            "status": "succeeded",
-            "audioSeconds": audio_seconds,
-            "completedAt": firebase_firestore.SERVER_TIMESTAMP,
-        },
-    )
-    return {"status": "succeeded", "usedSeconds": new_used}
+    return _complete_job_core(db, job_ref, uid, reported_seconds, current_jst, now_utc, transaction=transaction)
 
 
 app = FastAPI(title="Realtime Translator PWA")
@@ -613,7 +1022,11 @@ async def favicon() -> FileResponse:
 
 
 @app.post("/token")
-async def create_token(vad_silence: int | None = Form(None)) -> JSONResponse:
+async def create_token(request: Request, vad_silence: int | None = Form(None)) -> JSONResponse:
+    # 認証必須: Firebase ID トークンを検証
+    uid = get_uid_from_request(request)
+    logger.info(f"Token requested by uid: {uid}")
+
     silence_ms = vad_silence if vad_silence is not None else 400
 
     payload = {
@@ -674,52 +1087,31 @@ async def create_job(request: Request) -> JSONResponse:
     uid = get_uid_from_request(request)
     db = get_firestore_client()
     current_jst = now_jst()
-    yyyymm = month_key(current_jst)
-
-    user_profile = ensure_user_profile(uid)
-    plan = user_profile["plan"]
-    quota_seconds = user_profile["quotaSeconds"]
-    retention_days = user_profile["retentionDays"]
-
-    used_seconds = get_used_seconds(db, uid, yyyymm)
-    remaining_seconds = max(0, quota_seconds - used_seconds)
-    if remaining_seconds <= 0:
-        logger.warning(f"Quota exceeded for uid: {uid}", extra=json.dumps({"uid": uid, "plan": plan, "usedSeconds": used_seconds, "quotaSeconds": quota_seconds}))
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "quota_exceeded",
-                "plan": plan,
-                "usedSeconds": used_seconds,
-                "quotaSeconds": quota_seconds,
-            },
-        )
-
+    now_utc = datetime.now(timezone.utc)
     job_id = uuid.uuid4().hex
-    delete_at = (current_jst + timedelta(days=retention_days)).astimezone(timezone.utc)
-    job_data = {
+
+    use_simple = False
+    if not IS_PRODUCTION:
+        use_simple = os.getenv("DEBUG_AUTH_BYPASS") == "1"
+
+    if use_simple:
+        result = create_job_transaction_simple(db, uid, job_id, current_jst, now_utc)
+    else:
+        transaction = db.transaction()
+        result = create_job_transaction(transaction, db, uid, job_id, current_jst, now_utc)
+
+    log_payload = {
         "uid": uid,
-        "status": "created",
-        "plan": plan,
-        "quotaSeconds": quota_seconds,
-        "retentionDays": retention_days,
-        "yyyymm": yyyymm,
-        "createdAt": firebase_firestore.SERVER_TIMESTAMP,
-        "deleteAt": delete_at,
+        "jobId": job_id,
+        "endpoint": "jobs.create",
+        "plan": result.get("plan"),
+        "reservedSeconds": result.get("reservedSeconds"),
+        "reservedBaseSeconds": result.get("reservedBaseSeconds"),
+        "reservedTicketSeconds": result.get("reservedTicketSeconds"),
+        "totalAvailableThisMonth": result.get("totalAvailableThisMonth"),
     }
-    db.collection("jobs").document(job_id).set(job_data)
-
-    logger.info(f"Job created", extra=json.dumps({"uid": uid, "jobId": job_id, "plan": plan, "remainingSeconds": remaining_seconds}))
-
-    return JSONResponse(
-        {
-            "jobId": job_id,
-            "yyyymm": yyyymm,
-            "remainingSeconds": remaining_seconds,
-            "plan": plan,
-            "retentionDays": retention_days,
-        }
-    )
+    logger.info(f"Job reservation | {json.dumps(log_payload)}")
+    return JSONResponse(result)
 
 
 @app.post("/api/v1/jobs/complete")
@@ -727,18 +1119,21 @@ async def complete_job(request: Request) -> JSONResponse:
     uid = get_uid_from_request(request)
     body = await request.json()
     job_id = body.get("jobId")
-    audio_seconds_raw = body.get("audioSeconds")
     if not job_id:
         raise HTTPException(status_code=400, detail="jobId is required")
-    try:
-        audio_seconds = int(audio_seconds_raw)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="audioSeconds must be an integer")
-    if audio_seconds < 0:
-        raise HTTPException(status_code=400, detail="audioSeconds must be >= 0")
+    audio_seconds = None
+    if "audioSeconds" in body:
+        try:
+            audio_seconds = int(body.get("audioSeconds"))
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="audioSeconds must be an integer")
+        if audio_seconds < 0:
+            raise HTTPException(status_code=400, detail="audioSeconds must be >= 0")
 
     db = get_firestore_client()
     job_ref = db.collection("jobs").document(job_id)
+    current_jst = now_jst()
+    now_utc = datetime.now(timezone.utc)
 
     # 【セキュリティガード】本番環境では simplified transaction を使わない
     use_simple = False
@@ -746,12 +1141,23 @@ async def complete_job(request: Request) -> JSONResponse:
         use_simple = os.getenv("DEBUG_AUTH_BYPASS") == "1"
 
     if use_simple:
-        result = complete_job_transaction_simple(db, job_ref, uid, audio_seconds)
+        result = complete_job_transaction_simple(db, job_ref, uid, audio_seconds, current_jst, now_utc)
     else:
         transaction = db.transaction()
-        result = complete_job_transaction(transaction, db, job_ref, uid, audio_seconds)
+        result = complete_job_transaction(
+            transaction, db, job_ref, uid, audio_seconds, current_jst, now_utc
+        )
 
-    logger.info(f"Job completed", extra=json.dumps({"uid": uid, "jobId": job_id, "audioSeconds": audio_seconds, "usedSeconds": result.get("usedSeconds")}))
+    log_payload = {
+        "uid": uid,
+        "jobId": job_id,
+        "endpoint": "jobs.complete",
+        "status": result.get("status"),
+        "billedSeconds": result.get("billedSeconds"),
+        "billedBaseSeconds": result.get("billedBaseSeconds"),
+        "billedTicketSeconds": result.get("billedTicketSeconds"),
+    }
+    logger.info(f"Job completed | {json.dumps(log_payload)}")
     return JSONResponse(result)
 
 
@@ -760,22 +1166,81 @@ async def get_remaining_usage(request: Request) -> JSONResponse:
     uid = get_uid_from_request(request)
     db = get_firestore_client()
     current_jst = now_jst()
-    yyyymm = month_key(current_jst)
+    _, user_state, plan, plan_config = read_user_state(db, uid, current_jst)
+    snapshot = build_quota_snapshot(user_state, plan_config)
+    response = {
+        "plan": plan,
+        "quotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
+        "usedSeconds": snapshot["usedBaseSecondsThisMonth"],
+        "remainingSeconds": snapshot["baseRemainingThisMonth"],
+        "yyyymm": user_state.get("monthKey"),
+        "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
+        "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
+        "ticketSecondsBalance": snapshot["ticketSecondsBalance"],
+        "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
+        "baseDailyQuotaSeconds": snapshot["baseDailyQuotaSeconds"],
+        "usedSecondsToday": snapshot["usedSecondsToday"],
+        "dailyRemainingSeconds": snapshot["dailyRemainingSeconds"],
+    }
 
-    user_profile = ensure_user_profile(uid)
-    quota_seconds = user_profile["quotaSeconds"]
-    used_seconds = get_used_seconds(db, uid, yyyymm)
-    remaining_seconds = max(0, quota_seconds - used_seconds)
+    logger.info(
+        f"Usage snapshot | {json.dumps({'uid': uid, 'plan': plan, 'baseRemaining': response['baseRemainingThisMonth'], 'tickets': response['ticketSecondsBalance']})}"
+    )
 
-    logger.info(f"Usage remaining retrieved", extra=json.dumps({"uid": uid, "plan": user_profile["plan"], "usedSeconds": used_seconds, "remainingSeconds": remaining_seconds}))
+    return JSONResponse(response)
 
-    return JSONResponse({
-        "plan": user_profile["plan"],
-        "quotaSeconds": quota_seconds,
-        "usedSeconds": used_seconds,
-        "remainingSeconds": remaining_seconds,
-        "yyyymm": yyyymm,
-    })
+
+@app.get("/api/v1/me")
+async def get_me(request: Request) -> JSONResponse:
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+    current_jst = now_jst()
+    _, user_state, plan, plan_config = read_user_state(db, uid, current_jst)
+    snapshot = build_quota_snapshot(user_state, plan_config)
+
+    # Calculate nextResetAt (first day of next month in JST, as UTC ISO8601)
+    next_reset = next_month_start_utc(current_jst)
+
+    # Determine blockedReason if user cannot start
+    blocked_reason = None
+    total_available = snapshot["totalAvailableThisMonth"]
+    daily_remaining = snapshot["dailyRemainingSeconds"]
+    if total_available <= 0:
+        blocked_reason = "monthly_quota_exhausted"
+    elif plan == "free" and daily_remaining is not None and daily_remaining <= 0:
+        blocked_reason = "daily_limit_reached"
+
+    response = {
+        "plan": plan,
+        "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
+        "usedBaseSecondsThisMonth": snapshot["usedBaseSecondsThisMonth"],
+        "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
+        "ticketSecondsBalance": snapshot["ticketSecondsBalance"],
+        "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
+        "maxSessionSeconds": plan_config.get("maxSessionSeconds"),
+        "activeJob": bool(user_state.get("activeJobId")),
+        "monthKey": user_state.get("monthKey"),
+        "dayKey": user_state.get("dayKey"),
+        "nextResetAt": next_reset.isoformat(),
+    }
+
+    if blocked_reason:
+        response["blockedReason"] = blocked_reason
+
+    if snapshot["baseDailyQuotaSeconds"] is not None:
+        response.update(
+            {
+                "baseDailyQuotaSeconds": snapshot["baseDailyQuotaSeconds"],
+                "usedSecondsToday": snapshot["usedSecondsToday"],
+                "dailyRemainingSeconds": snapshot["dailyRemainingSeconds"],
+            }
+        )
+
+    logger.info(
+        f"Account snapshot | {json.dumps({'uid': uid, 'plan': plan, 'totalAvailable': response['totalAvailableThisMonth'], 'ticketSecondsBalance': response['ticketSecondsBalance']})}"
+    )
+
+    return JSONResponse(response)
 
 
 @app.post("/api/v1/test/create-expired-job")
@@ -794,21 +1259,34 @@ async def create_expired_job(request: Request) -> JSONResponse:
     yyyymm = month_key(current_jst)
 
     job_id = uuid.uuid4().hex
-    # Set deleteAt to 1 day ago
     delete_at = (current_jst - timedelta(days=1)).astimezone(timezone.utc)
+    plan = "free"
+    plan_config = resolve_plan_config(plan)
+    now_utc = datetime.now(timezone.utc)
     job_data = {
         "uid": uid,
-        "status": "succeeded",
-        "plan": "free",
-        "quotaSeconds": 1800,
-        "retentionDays": 7,
-        "yyyymm": yyyymm,
-        "createdAt": datetime.now(timezone.utc),
+        "status": "completed",
+        "plan": plan,
+        "planAtStart": plan,
+        "reservedSeconds": 0,
+        "reservedBaseSeconds": 0,
+        "reservedTicketSeconds": 0,
+        "billedSeconds": 0,
+        "billedBaseSeconds": 0,
+        "billedTicketSeconds": 0,
+        "maxSessionSeconds": plan_config["maxSessionSeconds"],
+        "retentionDays": plan_config["retentionDays"],
+        "monthKey": yyyymm,
+        "dayKey": day_key(current_jst),
+        "createdAt": now_utc,
+        "startedAt": now_utc - timedelta(minutes=5),
+        "completedAt": now_utc - timedelta(minutes=1),
+        "endedAt": now_utc - timedelta(minutes=1),
         "deleteAt": delete_at,
     }
     db.collection("jobs").document(job_id).set(job_data)
 
-    logger.info(f"Test expired job created: {job_id}", extra=json.dumps({"jobId": job_id}))
+    logger.info(f"Test expired job created: {job_id} | {json.dumps({'jobId': job_id})}")
     return JSONResponse({"jobId": job_id, "deleteAt": delete_at.isoformat()})
 
 
@@ -836,13 +1314,13 @@ async def cleanup_jobs(request: Request, limit: int = 200) -> JSONResponse:
             maybe_delete_job_assets(job_data)
             doc.reference.delete()
             deleted += 1
-            logger.info(f"Deleted expired job: {job_id}", extra=json.dumps({"jobId": job_id, "deleteAt": str(job_data.get("deleteAt"))}))
+            logger.info(f"Deleted expired job: {job_id} | {json.dumps({'jobId': job_id, 'deleteAt': str(job_data.get('deleteAt'))})}")
         except Exception as e:
             errors += 1
-            logger.error(f"Failed to delete job: {e}", extra=json.dumps({"error": str(e)}))
+            logger.error(f"Failed to delete job: {e} | {json.dumps({'error': str(e)})}")
 
     result = {"deleted": deleted, "scanned": scanned, "errors": errors}
-    logger.info(f"Cleanup completed", extra=json.dumps(result))
+    logger.info(f"Cleanup completed | {json.dumps(result)}")
     return JSONResponse(result)
 
 
@@ -877,10 +1355,10 @@ async def create_checkout_session(request: Request) -> JSONResponse:
             cancel_url=cancel_url,
             customer_email=body.get("email"),
         )
-        logger.info(f"Checkout session created for uid: {uid}", extra=json.dumps({"uid": uid, "sessionId": session.id}))
+        logger.info(f"Checkout session created for uid: {uid} | {json.dumps({'uid': uid, 'sessionId': session.id})}")
         return JSONResponse({"sessionId": session.id, "url": session.url})
     except Exception as e:
-        logger.error(f"Stripe checkout session creation failed: {e}", extra=json.dumps({"uid": uid, "error": str(e)}))
+        logger.error(f"Stripe checkout session creation failed: {e} | {json.dumps({'uid': uid, 'error': str(e)})}")
         raise HTTPException(status_code=500, detail=f"checkout_failed: {str(e)}")
 
 
@@ -905,7 +1383,7 @@ async def create_portal_session(request: Request) -> JSONResponse:
     customer_id = user_data.get("stripeCustomerId")
 
     if not customer_id:
-        logger.error(f"No Stripe customer ID for uid: {uid}", extra=json.dumps({"uid": uid}))
+        logger.error(f"No Stripe customer ID for uid: {uid} | {json.dumps({'uid': uid})}")
         raise HTTPException(status_code=400, detail="no_customer_id")
 
     try:
@@ -913,10 +1391,10 @@ async def create_portal_session(request: Request) -> JSONResponse:
             customer=customer_id,
             return_url=return_url,
         )
-        logger.info(f"Portal session created for uid: {uid}", extra=json.dumps({"uid": uid, "customerId": customer_id}))
+        logger.info(f"Portal session created for uid: {uid} | {json.dumps({'uid': uid, 'customerId': customer_id})}")
         return JSONResponse({"url": session.url})
     except Exception as e:
-        logger.error(f"Stripe portal session creation failed: {e}", extra=json.dumps({"uid": uid, "error": str(e)}))
+        logger.error(f"Stripe portal session creation failed: {e} | {json.dumps({'uid': uid, 'error': str(e)})}")
         raise HTTPException(status_code=500, detail=f"portal_failed: {str(e)}")
 
 
@@ -941,14 +1419,14 @@ async def stripe_webhook(request: Request) -> JSONResponse:
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
     except stripe.error.SignatureVerificationError as exc:
-        logger.error(f"Stripe webhook signature verification failed", extra="{}")
+        logger.error(f"Stripe webhook signature verification failed")
         raise HTTPException(status_code=400, detail="invalid_signature") from exc
     except ValueError as exc:
-        logger.error(f"Stripe webhook invalid payload", extra="{}")
+        logger.error(f"Stripe webhook invalid payload")
         raise HTTPException(status_code=400, detail="invalid_payload") from exc
 
     event_type = event.get("type", "")
-    logger.info(f"Stripe webhook received: {event_type}", extra=json.dumps({"eventType": event_type, "eventId": event.get("id")}))
+    logger.info(f"Stripe webhook received: {event_type} | {json.dumps({'eventType': event_type, 'eventId': event.get('id')})}")
 
     db = get_firestore_client()
 
@@ -960,7 +1438,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
         customer_id = subscription.get("customer")
 
         if not uid:
-            logger.warning(f"Subscription event without uid metadata", extra=json.dumps({"eventType": event_type, "subscriptionId": subscription.get("id")}))
+            logger.warning(f"Subscription event without uid metadata | {json.dumps({'eventType': event_type, 'subscriptionId': subscription.get('id')})}")
             # customer_idからuidを逆引きする試み
             if customer_id:
                 users_query = db.collection("users").where("stripeCustomerId", "==", customer_id).limit(1)
@@ -969,7 +1447,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                     break
 
         if not uid:
-            logger.error(f"Cannot determine uid from subscription event", extra=json.dumps({"eventType": event_type}))
+            logger.error(f"Cannot determine uid from subscription event | {json.dumps({'eventType': event_type})}")
             return JSONResponse({"received": True, "warning": "uid_not_found"})
 
         status = subscription.get("status", "")
@@ -997,7 +1475,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
             user_updates["currentPeriodEnd"] = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
 
         db.collection("users").document(uid).set(user_updates, merge=True)
-        logger.info(f"User plan updated from subscription event", extra=json.dumps({"uid": uid, "plan": plan, "status": status}))
+        logger.info(f"User plan updated from subscription event | {json.dumps({'uid': uid, 'plan': plan, 'status': status})}")
 
     # 支払い成功
     elif event_type == "invoice.paid":
@@ -1010,7 +1488,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
             users_query = db.collection("users").where("stripeCustomerId", "==", customer_id).limit(1)
             for user_doc in users_query.stream():
                 uid = user_doc.id
-                logger.info(f"Invoice paid for uid: {uid}", extra=json.dumps({"uid": uid, "invoiceId": invoice.get("id")}))
+                logger.info(f"Invoice paid for uid: {uid} | {json.dumps({'uid': uid, 'invoiceId': invoice.get('id')})}")
                 # 必要に応じて追加処理（通知等）
                 break
 
@@ -1023,7 +1501,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
             users_query = db.collection("users").where("stripeCustomerId", "==", customer_id).limit(1)
             for user_doc in users_query.stream():
                 uid = user_doc.id
-                logger.warning(f"Invoice payment failed for uid: {uid}", extra=json.dumps({"uid": uid, "invoiceId": invoice.get("id")}))
+                logger.warning(f"Invoice payment failed for uid: {uid} | {json.dumps({'uid': uid, 'invoiceId': invoice.get('id')})}")
                 # 必要に応じて通知やフラグ設定
                 break
 
@@ -1032,16 +1510,54 @@ async def stripe_webhook(request: Request) -> JSONResponse:
 
 
 
+# Language code to display name mapping for translation prompts
+LANG_NAMES = {
+    "ja": "Japanese",
+    "en": "English",
+    "zh": "Simplified Chinese",
+}
+
+VALID_INPUT_LANGS = {"auto", "ja", "en", "zh"}
+VALID_OUTPUT_LANGS = {"ja", "en", "zh"}
+
+
+def normalize_input_lang(lang: str | None) -> str:
+    if lang and lang in VALID_INPUT_LANGS:
+        return lang
+    return "auto"
+
+
+def normalize_output_lang(lang: str | None) -> str:
+    if lang and lang in VALID_OUTPUT_LANGS:
+        return lang
+    return "ja"
+
+
 @app.post("/translate")
-async def translate_text(text: str = Form(...)) -> JSONResponse:
+async def translate_text(
+    request: Request,
+    text: str = Form(...),
+    input_lang: str = Form("auto"),
+    output_lang: str = Form("ja"),
+) -> JSONResponse:
+    # 認証必須: Firebase ID トークンを検証
+    get_uid_from_request(request)
+
     if not text.strip():
         raise HTTPException(status_code=400, detail="text is required")
 
-    # ★翻訳指示を system で明示（これが無いと翻訳されない/原文が返ることがある）
+    # Normalize and validate language codes
+    input_lang = normalize_input_lang(input_lang)
+    output_lang = normalize_output_lang(output_lang)
+    target_lang_name = LANG_NAMES.get(output_lang, "Japanese")
+
+    # Build translation system prompt
+    system_prompt = f"Translate the user's text into natural {target_lang_name}. Output the translation only, nothing else."
+
     payload = {
         "model": translate_model_default,
         "input": [
-            {"role": "system", "content": "Translate the user's text into natural Japanese. Output Japanese only."},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": text},
         ],
     }
@@ -1055,13 +1571,34 @@ async def translate_text(text: str = Form(...)) -> JSONResponse:
 
 
 
+# Summarize section headers by language
+SUMMARIZE_HEADERS = {
+    "ja": {"summary": "要約", "key_points": "重要ポイント", "actions": "次のアクション"},
+    "en": {"summary": "Summary", "key_points": "Key Points", "actions": "Next Actions"},
+    "zh": {"summary": "摘要", "key_points": "要点", "actions": "下一步行动"},
+}
+
+
 @app.post("/summarize")
-async def summarize(text: str = Form(...)) -> JSONResponse:
+async def summarize(
+    request: Request,
+    text: str = Form(...),
+    output_lang: str = Form("ja"),
+) -> JSONResponse:
+    # 認証必須: Firebase ID トークンを検証
+    get_uid_from_request(request)
+
     if not text.strip():
         raise HTTPException(status_code=400, detail="text is required")
+
+    # Normalize output language
+    output_lang = normalize_output_lang(output_lang)
+    headers_i18n = SUMMARIZE_HEADERS.get(output_lang, SUMMARIZE_HEADERS["ja"])
+    target_lang_name = LANG_NAMES.get(output_lang, "Japanese")
+
     prompt = (
-        "You are a meeting summarizer. Produce concise Markdown with three sections: "
-        "1) 要約 2) 重要ポイント (bullets) 3) 次のアクション (bullets)."
+        f"You are a meeting summarizer. Produce concise Markdown in {target_lang_name} with three sections: "
+        f"1) {headers_i18n['summary']} 2) {headers_i18n['key_points']} (bullets) 3) {headers_i18n['actions']} (bullets)."
     )
     payload = {"model": summarize_model_default, "input": text, "system": prompt}
     api_key = get_openai_api_key()
@@ -1091,7 +1628,10 @@ async def run_ffmpeg(input_path: Path, output_path: Path) -> None:
 
 
 @app.post("/audio_m4a")
-async def convert_audio(file: UploadFile = File(...)) -> JSONResponse:
+async def convert_audio(request: Request, file: UploadFile = File(...)) -> JSONResponse:
+    # 認証必須: Firebase ID トークンを検証
+    get_uid_from_request(request)
+
     suffix = Path(file.filename).suffix or ".webm"
     token = uuid.uuid4().hex
     input_path = DOWNLOAD_DIR / f"upload-{token}{suffix}"
@@ -1112,9 +1652,18 @@ async def convert_audio(file: UploadFile = File(...)) -> JSONResponse:
     return JSONResponse({"url": download_url})
 
 
-@app.get("/healthz")
+# NOTE: Cloud Run reserves paths ending with 'z' (e.g., /healthz).
+# Using /health instead to avoid 404 from Cloud Run infrastructure.
+@app.get("/health")
 async def healthcheck() -> JSONResponse:
-    return JSONResponse({"status": "ok"})
+    return JSONResponse(
+        {
+            "ok": True,
+            "service": SERVICE_NAME,
+            "version": APP_VERSION,
+            "time": datetime.now(timezone.utc).isoformat(),
+        }
+    )
 
 
 @app.exception_handler(httpx.HTTPStatusError)
