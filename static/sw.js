@@ -1,4 +1,4 @@
-const CACHE = 'rt-translator-v4';
+const CACHE = 'rt-translator-v5';
 const ASSETS = [
   '/',
   '/index.html',

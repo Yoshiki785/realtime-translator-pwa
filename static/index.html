@@ -21,8 +21,8 @@
       </div>
       <div class="auth-area">
         <span id="userEmail" class="user-email"></span>
-        <button id="loginBtn" class="icon-button" aria-label="login">ログイン</button>
-        <button id="logoutBtn" class="icon-button" aria-label="logout" style="display:none;">ログアウト</button>
+        <button id="loginBtn" class="icon-button" aria-label="login" data-i18n="login">ログイン</button>
+        <button id="logoutBtn" class="icon-button" aria-label="logout" style="display:none;" data-i18n="logout">ログアウト</button>
         <button class="icon-button" id="settingsBtn" aria-label="settings">⚙︎</button>
         <button class="icon-button dev-only" id="devPanelBtn" aria-label="developer" style="display:none;">Dev</button>
       </div>
@@ -37,11 +37,11 @@
       <!-- 下段：2カラムログ -->
       <div class="log-container">
         <div class="log-panel">
-          <div class="log-label">原文ログ</div>
+          <div class="log-label" data-i18n="transcriptLog">原文ログ</div>
           <div class="log-scroll" id="transcriptLog"></div>
         </div>
         <div class="log-panel">
-          <div class="log-label">翻訳ログ</div>
+          <div class="log-label" data-i18n="translationLog">翻訳ログ</div>
           <div class="log-scroll" id="translationLog"></div>
         </div>
       </div>
@@ -59,10 +59,10 @@
   <dialog id="settingsModal">
     <form method="dialog" class="modal">
       <header>
-        <h2>設定</h2>
+        <h2 data-i18n="settings">設定</h2>
       </header>
       <section class="quota-breakdown-section">
-        <h3>利用状況</h3>
+        <h3 data-i18n="usageStatus">利用状況</h3>
         <div id="quotaBreakdown" class="quota-breakdown"></div>
       </section>
       <hr class="settings-divider" />
@@ -76,14 +76,37 @@
         <input id="vadSilence" type="number" min="200" max="2000" step="50" value="400" />
       </label>
       <div class="preset-row">
-        <small class="preset-label">プリセット:</small>
-        <button type="button" id="presetFast" class="secondary small">速い</button>
-        <button type="button" id="presetBalanced" class="secondary small">バランス</button>
-        <button type="button" id="presetStable" class="secondary small">安定</button>
+        <small class="preset-label" data-i18n="preset">プリセット:</small>
+        <button type="button" id="presetFast" class="secondary small" data-i18n="presetFast">速い</button>
+        <button type="button" id="presetBalanced" class="secondary small" data-i18n="presetBalanced">バランス</button>
+        <button type="button" id="presetStable" class="secondary small" data-i18n="presetStable">安定</button>
       </div>
+      <hr class="settings-divider" />
+      <label data-i18n="uiLangLabel">表示言語
+        <select id="uiLang" class="settings-select">
+          <option value="ja">日本語</option>
+          <option value="en">English</option>
+          <option value="zh-Hans">简体中文</option>
+        </select>
+      </label>
+      <label data-i18n="inputLangLabel">入力言語
+        <select id="inputLang" class="settings-select">
+          <option value="auto" data-i18n="langAuto">自動検出</option>
+          <option value="ja">日本語</option>
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+        </select>
+      </label>
+      <label data-i18n="outputLangLabel">出力言語
+        <select id="outputLang" class="settings-select">
+          <option value="ja">日本語</option>
+          <option value="en">English</option>
+          <option value="zh">中文</option>
+        </select>
+      </label>
       <div class="modal-actions">
-        <button value="cancel" class="secondary">閉じる</button>
-        <button value="default" id="saveSettings">保存</button>
+        <button value="cancel" class="secondary" data-i18n="close">閉じる</button>
+        <button value="default" id="saveSettings" data-i18n="save">保存</button>
       </div>
     </form>
   </dialog>

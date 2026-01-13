@@ -1,5 +1,134 @@
 // Firebase configuration is loaded from firebase-config.js (window.FIREBASE_CONFIG)
 const runtimeFirebaseConfig = window.FIREBASE_CONFIG || {};
+
+// ========== i18n: Multi-language strings ==========
+const STRINGS = {
+  ja: {
+    login: 'ログイン',
+    logout: 'ログアウト',
+    settings: '設定',
+    usageStatus: '利用状況',
+    save: '保存',
+    close: '閉じる',
+    transcriptLog: '原文ログ',
+    translationLog: '翻訳ログ',
+    preset: 'プリセット:',
+    presetFast: '速い',
+    presetBalanced: 'バランス',
+    presetStable: '安定',
+    uiLangLabel: '表示言語',
+    inputLangLabel: '入力言語',
+    outputLangLabel: '出力言語',
+    langAuto: '自動検出',
+    errorFirebaseInit: 'Firebase初期化に失敗しました。設定を確認してください。',
+    errorLoginRequired: 'ログインが必要です',
+    errorLoginFailed: 'ログインに失敗しました: ',
+    errorLogoutFailed: 'ログアウトに失敗しました: ',
+    errorTranslation: '翻訳に失敗しました',
+    errorQuotaCheck: '利用可能時間の確認に失敗しました。しばらくしてから再試行してください。',
+    errorMonthlyExhausted: '今月の利用可能時間が残っていません。',
+    errorDailyLimit: 'Freeプランの本日の利用上限(10分)に達しました。',
+    planLabel: 'プラン:',
+    monthlyRemaining: '月間残り:',
+    ticketBalance: 'チケット残高:',
+    total: '合計:',
+    nextReset: '次回リセット:',
+    today: '本日:',
+    thisMonth: '今月:',
+    remaining: '残り:',
+    minutes: '分',
+  },
+  en: {
+    login: 'Login',
+    logout: 'Logout',
+    settings: 'Settings',
+    usageStatus: 'Usage',
+    save: 'Save',
+    close: 'Close',
+    transcriptLog: 'Transcript',
+    translationLog: 'Translation',
+    preset: 'Preset:',
+    presetFast: 'Fast',
+    presetBalanced: 'Balanced',
+    presetStable: 'Stable',
+    uiLangLabel: 'Display Language',
+    inputLangLabel: 'Input Language',
+    outputLangLabel: 'Output Language',
+    langAuto: 'Auto-detect',
+    errorFirebaseInit: 'Firebase initialization failed. Please check configuration.',
+    errorLoginRequired: 'Login required',
+    errorLoginFailed: 'Login failed: ',
+    errorLogoutFailed: 'Logout failed: ',
+    errorTranslation: 'Translation failed',
+    errorQuotaCheck: 'Failed to check available time. Please try again later.',
+    errorMonthlyExhausted: 'No remaining time this month.',
+    errorDailyLimit: 'Daily limit (10 min) reached for Free plan.',
+    planLabel: 'Plan:',
+    monthlyRemaining: 'Monthly:',
+    ticketBalance: 'Tickets:',
+    total: 'Total:',
+    nextReset: 'Next Reset:',
+    today: 'Today:',
+    thisMonth: 'Month:',
+    remaining: 'Remaining:',
+    minutes: 'min',
+  },
+  'zh-Hans': {
+    login: '登录',
+    logout: '登出',
+    settings: '设置',
+    usageStatus: '使用情况',
+    save: '保存',
+    close: '关闭',
+    transcriptLog: '原文日志',
+    translationLog: '翻译日志',
+    preset: '预设:',
+    presetFast: '快速',
+    presetBalanced: '平衡',
+    presetStable: '稳定',
+    uiLangLabel: '显示语言',
+    inputLangLabel: '输入语言',
+    outputLangLabel: '输出语言',
+    langAuto: '自动检测',
+    errorFirebaseInit: 'Firebase初始化失败，请检查配置。',
+    errorLoginRequired: '需要登录',
+    errorLoginFailed: '登录失败: ',
+    errorLogoutFailed: '登出失败: ',
+    errorTranslation: '翻译失败',
+    errorQuotaCheck: '无法确认可用时间，请稍后重试。',
+    errorMonthlyExhausted: '本月可用时间已用完。',
+    errorDailyLimit: '免费版今日使用上限(10分钟)已达到。',
+    planLabel: '计划:',
+    monthlyRemaining: '月剩余:',
+    ticketBalance: '票券余额:',
+    total: '合计:',
+    nextReset: '下次重置:',
+    today: '今日:',
+    thisMonth: '本月:',
+    remaining: '剩余:',
+    minutes: '分钟',
+  },
+};
+
+// Get current UI language
+const getUiLang = () => localStorage.getItem('uiLang') || 'ja';
+
+// Translation function
+const t = (key) => {
+  const lang = getUiLang();
+  return STRINGS[lang]?.[key] || STRINGS['ja'][key] || key;
+};
+
+// Apply i18n to all elements with data-i18n attribute
+const applyI18n = () => {
+  document.querySelectorAll('[data-i18n]').forEach((el) => {
+    const key = el.getAttribute('data-i18n');
+    if (key && STRINGS[getUiLang()]?.[key]) {
+      el.textContent = t(key);
+    }
+  });
+};
+
 const requiredConfigKeys = [
   'apiKey',
   'authDomain',
@@ -163,6 +292,9 @@ const cacheElements = () => {
     presetFast: document.getElementById('presetFast'),
     presetBalanced: document.getElementById('presetBalanced'),
     presetStable: document.getElementById('presetStable'),
+    uiLang: document.getElementById('uiLang'),
+    inputLang: document.getElementById('inputLang'),
+    outputLang: document.getElementById('outputLang'),
     loginBtn: document.getElementById('loginBtn'),
     logoutBtn: document.getElementById('logoutBtn'),
     userEmail: document.getElementById('userEmail'),
@@ -197,6 +329,9 @@ const state = {
   maxChars: Number(localStorage.getItem('maxChars')) || 300,
   gapMs: Number(localStorage.getItem('gapMs')) || 1000,
   vadSilence: Number(localStorage.getItem('vadSilence')) || 400,
+  uiLang: localStorage.getItem('uiLang') || 'ja',
+  inputLang: localStorage.getItem('inputLang') || 'auto',
+  outputLang: localStorage.getItem('outputLang') || 'ja',
   token: null,
   hasShownA2HS: localStorage.getItem('a2hsShown') === '1',
   quota: createDefaultQuotaState(),
@@ -222,7 +357,7 @@ const updateDevStatusSummary = () => {
     `Auth: ${authLabel}`,
     `API: ${API_BASE_URL}`,
     `Project: ${runtimeFirebaseConfig.projectId || 'missing'}`,
-    `Languages: ${LANGUAGE_SETTINGS.input} → ${LANGUAGE_SETTINGS.output}`,
+    `Languages: input=${state.inputLang} → output=${state.outputLang} (UI: ${state.uiLang})`,
     `Settings: maxChars=${state.maxChars}, gapMs=${state.gapMs}, vadSilence=${state.vadSilence}`,
   ];
   if (state.quota.loaded) {
@@ -701,6 +836,7 @@ const saveTextDownloads = async () => {
   if (originals.trim()) {
     const fd = new FormData();
     fd.append('text', originals);
+    fd.append('output_lang', state.outputLang);
     const summaryRes = await authFetch('/summarize', {
       method: 'POST',
       body: fd,
@@ -725,8 +861,10 @@ const translateCompleted = async (text) => {
   try {
     const fd = new FormData();
     fd.append('text', text);
+    fd.append('input_lang', state.inputLang);
+    fd.append('output_lang', state.outputLang);
     const res = await authFetch('/translate', { method: 'POST', body: fd });
-    if (!res.ok) throw new Error('翻訳に失敗しました');
+    if (!res.ok) throw new Error(t('errorTranslation'));
     const data = await res.json();
     const translation = data.translation || '';
     state.translations.push(translation);
@@ -999,6 +1137,12 @@ document.addEventListener('DOMContentLoaded', () => {
   if (els.maxChars) els.maxChars.value = state.maxChars;
   if (els.gapMs) els.gapMs.value = state.gapMs;
   if (els.vadSilence) els.vadSilence.value = state.vadSilence;
+  if (els.uiLang) els.uiLang.value = state.uiLang;
+  if (els.inputLang) els.inputLang.value = state.inputLang;
+  if (els.outputLang) els.outputLang.value = state.outputLang;
+
+  // Apply i18n on load
+  applyI18n();
 
   if (els.start) els.start.addEventListener('click', start);
   if (els.stop) els.stop.addEventListener('click', stop);
@@ -1012,12 +1156,19 @@ document.addEventListener('DOMContentLoaded', () => {
       state.maxChars = Number(els.maxChars?.value) || 300;
       state.gapMs = Number(els.gapMs?.value) || 1000;
       state.vadSilence = Number(els.vadSilence?.value) || 400;
+      state.uiLang = els.uiLang?.value || 'ja';
+      state.inputLang = els.inputLang?.value || 'auto';
+      state.outputLang = els.outputLang?.value || 'ja';
       localStorage.setItem('maxChars', state.maxChars);
       localStorage.setItem('gapMs', state.gapMs);
       localStorage.setItem('vadSilence', state.vadSilence);
+      localStorage.setItem('uiLang', state.uiLang);
+      localStorage.setItem('inputLang', state.inputLang);
+      localStorage.setItem('outputLang', state.outputLang);
+      applyI18n();
       els.settingsModal?.close();
       addDiagLog(
-        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence}`
+        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang}`
       );
       updateDevStatusSummary();
     });
