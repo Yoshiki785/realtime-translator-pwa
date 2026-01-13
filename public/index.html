@@ -4,44 +4,53 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Realtime Translator</title>
-  <link rel="manifest" href="/static/manifest.json" />
-  <link rel="icon" href="/static/icon-192.png" />
-  <link rel="stylesheet" href="/static/styles.css" />
+  <link rel="manifest" href="/manifest.json" />
+  <link rel="icon" href="/icon-192.png" />
+  <link rel="stylesheet" href="/styles.css" />
   <meta name="theme-color" content="#0f172a" />
+  <!-- Firebase SDK -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 </head>
 <body>
   <div class="app-shell">
     <header class="top-bar">
-      <div class="status" id="status">Standby</div>
-      <button class="icon-button" id="settingsBtn" aria-label="settings">⚙︎</button>
+      <div class="status-stack">
+        <div class="status" id="status">Standby</div>
+        <div class="quota-info" id="quotaInfo"></div>
+      </div>
+      <div class="auth-area">
+        <span id="userEmail" class="user-email"></span>
+        <button id="loginBtn" class="icon-button" aria-label="login">ログイン</button>
+        <button id="logoutBtn" class="icon-button" aria-label="logout" style="display:none;">ログアウト</button>
+        <button class="icon-button" id="settingsBtn" aria-label="settings">⚙︎</button>
+        <button class="icon-button dev-only" id="devPanelBtn" aria-label="developer" style="display:none;">Dev</button>
+      </div>
     </header>
 
     <main class="content">
-      <div class="live-text">
-        <div class="subtitle" id="subtitleOriginal">・・・</div>
-        <div class="subtitle translation" id="subtitleTranslation">・・・</div>
+      <!-- 上段：原文ライブ表示 -->
+      <div class="live-area">
+        <div class="live-label">Live</div>
+        <div class="live-text" id="liveTranscript">・・・</div>
       </div>
-      <div class="history">
-       <div class="history-col">
-        <div class="history-title">原文（履歴）</div>
-        <pre class="history-body" id="historyOriginal"></pre>
+      <!-- 下段：2カラムログ -->
+      <div class="log-container">
+        <div class="log-panel">
+          <div class="log-label">原文ログ</div>
+          <div class="log-scroll" id="transcriptLog"></div>
+        </div>
+        <div class="log-panel">
+          <div class="log-label">翻訳ログ</div>
+          <div class="log-scroll" id="translationLog"></div>
+        </div>
       </div>
-      <div class="history-col">
-        <div class="history-title">日本語（履歴）</div>
-        <pre class="history-body" id="historyTranslation"></pre>
-      </div>
-     </div>
     </main>
 
     <footer class="controls">
       <button id="startBtn" class="cta">Start</button>
       <button id="stopBtn" class="cta secondary" disabled>Stop</button>
       <div class="error" id="error"></div>
-      <div class="upgrade" id="upgrade" hidden>
-        <div class="upgrade-title">無料枠を使い切りました</div>
-        <div class="upgrade-body">Pro にアップグレードすると月7200秒まで使えます。</div>
-        <a class="upgrade-link" id="upgradeLink" href="/upgrade" target="_blank" rel="noopener">アップグレード</a>
-      </div>
       <div class="downloads" id="downloads"></div>
       <div class="a2hs" id="a2hs">ホーム画面に追加してオフラインでも使えます</div>
     </footer>
@@ -52,6 +61,11 @@
       <header>
         <h2>設定</h2>
       </header>
+      <section class="quota-breakdown-section">
+        <h3>利用状況</h3>
+        <div id="quotaBreakdown" class="quota-breakdown"></div>
+      </section>
+      <hr class="settings-divider" />
       <label>maxChars
         <input id="maxChars" type="number" min="200" max="20000" step="50" value="300" />
       </label>
@@ -61,6 +75,12 @@
       <label>vadSilence (ms)
         <input id="vadSilence" type="number" min="200" max="2000" step="50" value="400" />
       </label>
+      <div class="preset-row">
+        <small class="preset-label">プリセット:</small>
+        <button type="button" id="presetFast" class="secondary small">速い</button>
+        <button type="button" id="presetBalanced" class="secondary small">バランス</button>
+        <button type="button" id="presetStable" class="secondary small">安定</button>
+      </div>
       <div class="modal-actions">
         <button value="cancel" class="secondary">閉じる</button>
         <button value="default" id="saveSettings">保存</button>
@@ -68,6 +88,44 @@
     </form>
   </dialog>
 
-  <script src="/static/app.js" type="module"></script>
+  <dialog id="devPanelModal">
+    <div class="modal dev-modal">
+      <header>
+        <h2>Developer Panel</h2>
+      </header>
+      <div class="dev-section">
+        <h3>接続状態</h3>
+        <div id="devStatus" class="dev-status"></div>
+      </div>
+      <div class="dev-section">
+        <h3>診断</h3>
+        <div class="dev-actions">
+          <button id="devCopyLogs" class="secondary">ログをコピー</button>
+          <button id="devTestEvent" class="secondary">UIテスト行追加</button>
+          <button id="devClearCache" class="secondary">キャッシュクリア案内</button>
+        </div>
+        <div id="devCacheHelp" class="dev-cache-help" hidden>
+          <strong>キャッシュクリア手順</strong>
+          <ol>
+            <li>Chrome DevTools → Application → Service Workers → Unregister</li>
+            <li>Application → Storage → Clear site data</li>
+            <li>Cmd+Shift+R でハードリロード</li>
+            <li>必要に応じてシークレットウィンドウで再確認</li>
+          </ol>
+        </div>
+        <div id="devNotice" class="dev-notice" aria-live="polite"></div>
+      </div>
+      <div class="dev-section">
+        <h3>直近ログ</h3>
+        <div id="devLogArea" class="dev-log-area"></div>
+      </div>
+      <div class="modal-actions">
+        <button id="devCloseBtn" class="secondary">閉じる</button>
+      </div>
+    </div>
+  </dialog>
+
+  <script src="/firebase-config.js"></script>
+  <script src="/app.js" type="module"></script>
 </body>
 </html>

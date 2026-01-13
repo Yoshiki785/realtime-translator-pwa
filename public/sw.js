@@ -1,12 +1,13 @@
-const CACHE = 'rt-translator-v1';
+const CACHE = 'rt-translator-v4';
 const ASSETS = [
   '/',
-  '/static/index.html',
-  '/static/app.js',
-  '/static/styles.css',
-  '/static/manifest.json',
-  '/static/icon-192.png',
-  '/static/icon-512.png',
+  '/index.html',
+  '/app.js',
+  '/firebase-config.js',
+  '/styles.css',
+  '/manifest.json',
+  '/icon-192.png',
+  '/icon-512.png',
 ];
 
 self.addEventListener('install', (event) => {
