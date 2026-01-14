@@ -1029,25 +1029,17 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
 
     silence_ms = vad_silence if vad_silence is not None else 400
 
+    # New /v1/realtime/sessions API format (no "session" wrapper)
     payload = {
-        "session": {
-            "type": "realtime",
-            "model": realtime_model_default,
-            "audio": {
-                "input": {
-                    "format": {"type": "audio/pcm", "rate": 24000},
-                    "transcription": {"model": audio_model_default},
-                    "turn_detection": {
-                        "type": "server_vad",
-                        "silence_duration_ms": silence_ms,
-                    },
-                },
-                "output": {
-                    "format": {"type": "audio/pcm", "rate": 24000},
-                    "voice": "alloy",
-                },
-            },
-        }
+        "model": realtime_model_default,
+        "voice": "alloy",
+        "turn_detection": {
+            "type": "server_vad",
+            "silence_duration_ms": silence_ms,
+        },
+        "input_audio_transcription": {
+            "model": audio_model_default,
+        },
     }
 
     api_key = get_openai_api_key()
@@ -1055,7 +1047,7 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
 
     try:
         data = await post_openai(
-            "https://api.openai.com/v1/realtime/client_secrets",
+            "https://api.openai.com/v1/realtime/sessions",
             payload,
             headers,
         )
@@ -1063,18 +1055,24 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
         resp = exc.response
         status_code = resp.status_code if resp is not None else 502
         reason = resp.reason_phrase if resp is not None else "Error"
+        # Log error safely (no API key exposure)
+        logger.error(f"OpenAI Realtime API error: {status_code} {reason}")
         raise HTTPException(
             status_code=status_code,
             detail=f"OpenAI API error ({status_code} {reason})",
         ) from exc
-    except httpx.RequestError:
+    except httpx.RequestError as exc:
+        logger.error(f"OpenAI request error: {type(exc).__name__}")
         raise HTTPException(
             status_code=502,
             detail="OpenAI request error",
         )
 
-    raw_secret = data.get("value")
+    # New API returns: { "client_secret": { "value": "ek_...", "expires_at": ... } }
+    client_secret = data.get("client_secret", {})
+    raw_secret = client_secret.get("value") if isinstance(client_secret, dict) else None
     if not isinstance(raw_secret, str) or not raw_secret.strip():
+        logger.error("client_secret.value missing in OpenAI response")
         raise HTTPException(status_code=502, detail="client_secret missing in OpenAI response")
 
 # ★フロントが data.value を読む前提に合わせる
