@@ -499,7 +499,7 @@ def apply_user_updates(
         return
     payload = dict(updates)
     payload["updatedAt"] = firebase_firestore.SERVER_TIMESTAMP
-    if transaction:
+    if transaction is not None:
         transaction.set(user_ref, payload, merge=True)
     else:
         user_ref.set(payload, merge=True)
@@ -512,7 +512,7 @@ def read_user_state(
     transaction: firebase_firestore.Transaction | MockTransaction | None = None,
 ) -> tuple[firebase_firestore.DocumentReference, dict, str, dict]:
     user_ref = db.collection("users").document(uid)
-    if transaction:
+    if transaction is not None:
         snap = user_ref.get(transaction=transaction)
     else:
         snap = user_ref.get()
@@ -684,7 +684,7 @@ def _create_job_core(
         "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
     }
 
-    if transaction:
+    if transaction is not None:
         transaction.set(job_ref, job_data)
     else:
         job_ref.set(job_data)
@@ -823,7 +823,7 @@ def _complete_job_core(
     if reported_seconds is not None:
         job_updates["reportedSeconds"] = reported_seconds
 
-    if transaction:
+    if transaction is not None:
         transaction.update(job_ref, job_updates)
     else:
         job_ref.update(job_updates)
@@ -1095,7 +1095,7 @@ async def create_job(request: Request) -> JSONResponse:
     if use_simple:
         result = create_job_transaction_simple(db, uid, job_id, current_jst, now_utc)
     else:
-        transaction = db.transaction()
+        transaction = db.transaction(max_attempts=10)
         result = create_job_transaction(transaction, db, uid, job_id, current_jst, now_utc)
 
     log_payload = {
@@ -1141,7 +1141,7 @@ async def complete_job(request: Request) -> JSONResponse:
     if use_simple:
         result = complete_job_transaction_simple(db, job_ref, uid, audio_seconds, current_jst, now_utc)
     else:
-        transaction = db.transaction()
+        transaction = db.transaction(max_attempts=10)
         result = complete_job_transaction(
             transaction, db, job_ref, uid, audio_seconds, current_jst, now_utc
         )
