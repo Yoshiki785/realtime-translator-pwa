@@ -24,9 +24,22 @@ from google.cloud import storage as gcs_storage
 # ログ設定（構造化ログ）
 logging.basicConfig(
     level=logging.INFO,
-    format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "message": "%(message)s", "extra": %(extra)s}'
+    format='{"timestamp": "%(asctime)s", "level": "%(levelname)s", "name": "%(name)s", "message": "%(message)s"}'
 )
 logger = logging.getLogger(__name__)
+
+
+import re
+
+def mask_secrets(text: str) -> str:
+    """ek_, sk-, OPENAI_API_KEY などの秘匿情報をマスクする"""
+    # ek_... (ephemeral key)
+    text = re.sub(r'\bek_[A-Za-z0-9_-]{6,}', lambda m: m.group(0)[:6] + '***', text)
+    # sk-... (OpenAI API key)
+    text = re.sub(r'\bsk-[A-Za-z0-9_-]{6,}', lambda m: m.group(0)[:6] + '***', text)
+    # Bearer tokens
+    text = re.sub(r'Bearer\s+[A-Za-z0-9_.-]{10,}', 'Bearer ***', text)
+    return text
 
 # Load environment variables from .env file
 load_dotenv()
@@ -984,6 +997,9 @@ async def generate_static_assets() -> None:
 async def post_openai(url: str, payload: dict, headers: dict | None = None) -> dict:
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(url, json=payload, headers=headers or {})
+        if not response.is_success:
+            # デバッグ用: エラー時のステータスとレスポンスボディをログ出力（秘匿情報マスク）
+            logger.error(f"OpenAI API error: status={response.status_code}, body={mask_secrets(response.text)}")
         response.raise_for_status()
         return response.json()
 
@@ -1029,25 +1045,35 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
 
     silence_ms = vad_silence if vad_silence is not None else 400
 
-    # New /v1/realtime/sessions API format (no "session" wrapper)
+    # /v1/realtime/client_secrets API format (session wrapper方式)
     payload = {
-        "model": realtime_model_default,
-        "voice": "alloy",
-        "turn_detection": {
-            "type": "server_vad",
-            "silence_duration_ms": silence_ms,
-        },
-        "input_audio_transcription": {
-            "model": audio_model_default,
-        },
+        "session": {
+            "type": "realtime",
+            "model": "gpt-4o-realtime-preview",
+            "voice": "alloy",
+            "turn_detection": {
+                "type": "server_vad",
+                "silence_duration_ms": silence_ms,
+            },
+            "input_audio_transcription": {
+                "model": audio_model_default,
+            },
+        }
     }
 
     api_key = get_openai_api_key()
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
+    # payload の session.type と session.model をログ出力
+    session_info = payload.get("session", {})
+    logger.info(
+        f"Requesting ephemeral key | session.type={session_info.get('type')}, "
+        f"session.model={session_info.get('model')}, vad_silence_ms={silence_ms}"
+    )
+
     try:
         data = await post_openai(
-            "https://api.openai.com/v1/realtime/sessions",
+            "https://api.openai.com/v1/realtime/client_secrets",
             payload,
             headers,
         )
@@ -1055,27 +1081,32 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
         resp = exc.response
         status_code = resp.status_code if resp is not None else 502
         reason = resp.reason_phrase if resp is not None else "Error"
-        # Log error safely (no API key exposure)
-        logger.error(f"OpenAI Realtime API error: {status_code} {reason}")
+        body_text = resp.text if resp is not None else ""
+        logger.error(f"OpenAI client_secrets error: status={status_code}, reason={reason}, body={mask_secrets(body_text)}")
         raise HTTPException(
             status_code=status_code,
             detail=f"OpenAI API error ({status_code} {reason})",
         ) from exc
     except httpx.RequestError as exc:
-        logger.error(f"OpenAI request error: {type(exc).__name__}")
+        logger.error(f"OpenAI request error: {type(exc).__name__}: {exc}")
         raise HTTPException(
             status_code=502,
             detail="OpenAI request error",
         )
 
-    # New API returns: { "client_secret": { "value": "ek_...", "expires_at": ... } }
-    client_secret = data.get("client_secret", {})
-    raw_secret = client_secret.get("value") if isinstance(client_secret, dict) else None
+    # client_secrets API returns: { "value": "ek_...", "expires_at": ... } directly
+    # or { "client_secret": { "value": "ek_...", ... } } depending on version
+    raw_secret = data.get("value")
+    if not raw_secret:
+        client_secret = data.get("client_secret", {})
+        raw_secret = client_secret.get("value") if isinstance(client_secret, dict) else None
+
     if not isinstance(raw_secret, str) or not raw_secret.strip():
-        logger.error("client_secret.value missing in OpenAI response")
+        logger.error(f"client_secret missing in OpenAI response: {mask_secrets(str(data))}")
         raise HTTPException(status_code=502, detail="client_secret missing in OpenAI response")
 
-# ★フロントが data.value を読む前提に合わせる
+    logger.info(f"Ephemeral key obtained successfully (prefix: {raw_secret[:10]}...)")
+    # フロントが data.value を読む前提に合わせる
     return JSONResponse({"value": raw_secret})
 
 
