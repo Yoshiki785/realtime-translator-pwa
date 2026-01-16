@@ -1045,35 +1045,31 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
 
     silence_ms = vad_silence if vad_silence is not None else 400
 
-    # /v1/realtime/client_secrets API format (session wrapper方式)
+    # /v1/realtime/sessions API format (no session wrapper)
     payload = {
-        "session": {
-            "type": "realtime",
-            "model": "gpt-4o-realtime-preview",
-            "voice": "alloy",
-            "turn_detection": {
-                "type": "server_vad",
-                "silence_duration_ms": silence_ms,
-            },
-            "input_audio_transcription": {
-                "model": audio_model_default,
-            },
-        }
+        "model": realtime_model_default,
+        "voice": "alloy",
+        "turn_detection": {
+            "type": "server_vad",
+            "silence_duration_ms": silence_ms,
+        },
+        "input_audio_transcription": {
+            "model": audio_model_default,
+        },
     }
 
     api_key = get_openai_api_key()
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    # payload の session.type と session.model をログ出力
-    session_info = payload.get("session", {})
+    # payload の model をログ出力
     logger.info(
-        f"Requesting ephemeral key | session.type={session_info.get('type')}, "
-        f"session.model={session_info.get('model')}, vad_silence_ms={silence_ms}"
+        f"Requesting ephemeral key | model={payload.get('model')}, "
+        f"voice={payload.get('voice')}, vad_silence_ms={silence_ms}"
     )
 
     try:
         data = await post_openai(
-            "https://api.openai.com/v1/realtime/client_secrets",
+            "https://api.openai.com/v1/realtime/sessions",
             payload,
             headers,
         )
@@ -1082,7 +1078,7 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
         status_code = resp.status_code if resp is not None else 502
         reason = resp.reason_phrase if resp is not None else "Error"
         body_text = resp.text if resp is not None else ""
-        logger.error(f"OpenAI client_secrets error: status={status_code}, reason={reason}, body={mask_secrets(body_text)}")
+        logger.error(f"OpenAI sessions error: status={status_code}, reason={reason}, body={mask_secrets(body_text)}")
         raise HTTPException(
             status_code=status_code,
             detail=f"OpenAI API error ({status_code} {reason})",
@@ -1094,15 +1090,12 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
             detail="OpenAI request error",
         )
 
-    # client_secrets API returns: { "value": "ek_...", "expires_at": ... } directly
-    # or { "client_secret": { "value": "ek_...", ... } } depending on version
-    raw_secret = data.get("value")
-    if not raw_secret:
-        client_secret = data.get("client_secret", {})
-        raw_secret = client_secret.get("value") if isinstance(client_secret, dict) else None
+    # /v1/realtime/sessions returns: { "client_secret": { "value": "ek_...", ... }, ... }
+    client_secret = data.get("client_secret", {})
+    raw_secret = client_secret.get("value") if isinstance(client_secret, dict) else None
 
     if not isinstance(raw_secret, str) or not raw_secret.strip():
-        logger.error(f"client_secret missing in OpenAI response: {mask_secrets(str(data))}")
+        logger.error(f"client_secret.value missing in OpenAI response: {mask_secrets(str(data))}")
         raise HTTPException(status_code=502, detail="client_secret missing in OpenAI response")
 
     logger.info(f"Ephemeral key obtained successfully (prefix: {raw_secret[:10]}...)")
