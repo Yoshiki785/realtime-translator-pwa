@@ -1102,12 +1102,11 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
             detail="OpenAI request error",
         )
 
-    # /v1/realtime/client_secrets returns: { "client_secret": { "value": "ek_...", ... }, ... }
-    client_secret = data.get("client_secret", {})
-    raw_secret = client_secret.get("value") if isinstance(client_secret, dict) else None
+    # /v1/realtime/client_secrets returns: { "value": "ek_...", "expires_at": ..., "session": {...} }
+    raw_secret = data.get("value")
 
     if not isinstance(raw_secret, str) or not raw_secret.strip():
-        logger.error(f"client_secret.value missing in OpenAI response: {mask_secrets(str(data))}")
+        logger.error(f"value missing in OpenAI response: {mask_secrets(str(data))}")
         raise HTTPException(status_code=502, detail="client_secret missing in OpenAI response")
 
     logger.info(f"Ephemeral key obtained successfully (prefix: {raw_secret[:10]}...)")
