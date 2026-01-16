@@ -1,9 +1,15 @@
 # Realtime Translator PWA (Vanilla + FastAPI)
 
-## 最短起動手順
+## デプロイ・運用ガイド
+
+**Staging / Production デプロイ手順**: [DEPLOY.md](./DEPLOY.md) を参照してください。
+
+---
+
+## 最短起動手順（ローカル開発）
 1. 依存インストール: `pip install -r requirements.txt`
-2. 環境変数をセット: `export OPENAI_API_KEY=sk-...`
-   - これは**ターミナルで実行するコマンド**です（bash/zsh）。PowerShell は `setx OPENAI_API_KEY "sk-..."`、cmd.exe は `set OPENAI_API_KEY=sk-...` を使用してください。
+2. 環境変数をセット: `export OPENAI_API_KEY=YOUR_OPENAI_API_KEY`
+   - これは**ターミナルで実行するコマンド**です（bash/zsh）。PowerShell は `setx OPENAI_API_KEY "YOUR_OPENAI_API_KEY"`、cmd.exe は `set OPENAI_API_KEY=YOUR_OPENAI_API_KEY` を使用してください。
 3. サーバ起動: `uvicorn app:app --host 0.0.0.0 --port 8000`
 4. ブラウザで `http://localhost:8000` を開く（`/static` 配下は自動提供、service worker は `/sw.js` で登録）。
 
@@ -30,13 +36,36 @@
 - **PWA**: 初回アクセスで service worker が登録され、ホーム追加ガイドが一度だけ表示されます。
 
 ## バックエンド API
-- **POST /token**: OpenAI Realtime の client secret を代理発行。`vad_silence` を turn_detection.silence_duration_ms に反映。レスポンス形式は `{ "client_secret": "..." }`（フラットな文字列のみ返却）。
+- **POST /token**: OpenAI Realtime の client secret を代理発行。`vad_silence` を turn_detection.silence_duration_ms に反映。レスポンス形式は `{ "value": "..." }`（フラットな文字列のみ返却）。
 - **POST /translate**: Responses API で日本語訳のみ返却。
 - **POST /summarize**: Responses API で Markdown 要約を返却。
 - **POST /audio_m4a**: webm を受け取り ffmpeg で m4a へ変換し、`/downloads/...` の URL を返却。
+- **POST /api/v1/jobs/create**: 認証済みユーザーの残量判定を行い、ジョブを作成。
+- **POST /api/v1/jobs/complete**: 確定秒数を月次集計し、ジョブを succeeded に更新。
+- **POST /api/v1/admin/cleanup**: deleteAt を過ぎたジョブを削除（`x-admin-token` で保護）。
+- **POST /api/v1/billing/stripe/webhook**: Stripe webhook を受け取りプラン同期。
+
+## 認証・クォータ MVP（curl 例）
+```
+curl -s -X POST http://localhost:8000/api/v1/jobs/create \
+  -H "Authorization: Bearer YOUR_FIREBASE_ID_TOKEN"
+
+curl -s -X POST http://localhost:8000/api/v1/jobs/complete \
+  -H "Authorization: Bearer YOUR_FIREBASE_ID_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"jobId":"JOB_ID","audioSeconds":20}'
+
+curl -s -X POST http://localhost:8000/api/v1/admin/cleanup \
+  -H "x-admin-token: YOUR_ADMIN_CLEANUP_TOKEN"
+```
+
+Stripe webhook は `Stripe-Signature` を伴うため、Stripe CLI からの送信を推奨します。
 
 ## 環境メモ
-- 必須 env: `OPENAI_API_KEY`（bash/zsh は `export OPENAI_API_KEY=sk-...`、PowerShell は `setx OPENAI_API_KEY "sk-..."`、cmd.exe は `set OPENAI_API_KEY=sk-...`）。
+- 必須 env: `OPENAI_API_KEY`（bash/zsh は `export OPENAI_API_KEY=YOUR_OPENAI_API_KEY`、PowerShell は `setx OPENAI_API_KEY "YOUR_OPENAI_API_KEY"`、cmd.exe は `set OPENAI_API_KEY=YOUR_OPENAI_API_KEY`）。
+- Firebase Admin は `GOOGLE_APPLICATION_CREDENTIALS` でサービスアカウント JSON を指定してください。
+- Stripe webhook 用に `STRIPE_SECRET_KEY` と `STRIPE_WEBHOOK_SECRET` を設定してください。
+- cleanup 用に `ADMIN_CLEANUP_TOKEN` を設定してください。
 - ffmpeg が PATH にある必要があります（`ffmpeg -version` で確認）。
 - デフォルト設定: maxChars=300, gapMs=1000, vadSilence=400（UIで上書き保存され、localStorage に保持）。
 - 長いログはフロント側で maxChars で末尾優先トリムします（表示用）。翻訳は原文確定後に個別に取得します。
@@ -52,7 +81,7 @@
 ```python
 !pip install ngrok
 import os, subprocess, textwrap, json, requests
-os.environ['OPENAI_API_KEY'] = 'sk-...'
+os.environ['OPENAI_API_KEY'] = 'YOUR_OPENAI_API_KEY'
 server = subprocess.Popen(['uvicorn', 'app:app', '--host', '0.0.0.0', '--port', '8000'])
 !ngrok http 8000 --log=stdout &
 ```

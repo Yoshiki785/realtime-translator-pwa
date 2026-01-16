@@ -1,0 +1,51 @@
+{
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/audio_m4a",
+        "run": {
+          "serviceId": "realtime-translator-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/summarize",
+        "run": {
+          "serviceId": "realtime-translator-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/translate",
+        "run": {
+          "serviceId": "realtime-translator-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/token",
+        "run": {
+          "serviceId": "realtime-translator-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/api/**",
+        "run": {
+          "serviceId": "realtime-translator-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}
