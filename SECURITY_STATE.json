@@ -1,0 +1,20 @@
+{
+  "objective": "Firebase Auth IDトークン検証を必須化し、APIを保護する",
+  "repo_path": "/Users/nakamurayoshiki/Documents/Vibe Coding/realtime-translator-pwa-main",
+  "project_id": "realtime-translator-pwa-483710",
+  "region": "asia-northeast1",
+  "service_id": "realtime-translator-api",
+  "steps": {
+    "S0": {"status": "DONE", "note": "Security state and runbook initialized"},
+    "S1": {"status": "DONE", "note": "4 endpoints need auth: /token, /translate, /summarize, /audio_m4a"},
+    "S2": {"status": "DONE", "note": "Firebase Admin SDK already configured with ADC"},
+    "S3": {"status": "DONE", "note": "get_uid_from_request() already implemented"},
+    "S4": {"status": "DONE", "note": "/api/v1/jobs/* already protected"},
+    "S5": {"status": "DONE", "note": "Added auth to /token, /translate, /summarize, /audio_m4a"},
+    "S6": {"status": "DONE", "note": "Test method documented. Will verify after redeploy"},
+    "S7": {"status": "DONE", "note": "Deployed revision 00005-r2k. Auth working: /token and /translate return 401 without token"},
+    "S8": {"status": "DONE", "note": "Verification checklist complete. All protected endpoints return 401 without auth"},
+    "S9": {"status": "DONE", "note": "Added Firebase Auth to frontend: SDK, login/logout UI, authFetch for all API calls"}
+  },
+  "updated_at": "2026-01-10"
+}

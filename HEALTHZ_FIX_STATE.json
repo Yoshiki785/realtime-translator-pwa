@@ -1,0 +1,26 @@
+{
+  "task": "healthz-404-fix",
+  "created_at": "2026-01-11",
+  "updated_at": "2026-01-11",
+  "status": "COMPLETED",
+  "root_cause": "Cloud Run reserves paths ending with 'z' (e.g., /healthz). Using /health instead.",
+  "steps": {
+    "S0_state_files": { "status": "DONE", "note": "作成完了" },
+    "S1_routing_analysis": { "status": "DONE", "note": "原因特定: Cloud Run reserved paths" },
+    "S2_fix": { "status": "DONE", "note": "/healthz → /health に変更" },
+    "S3_healthz_impl": { "status": "DONE", "note": "app.py 1575行、要件満たす" },
+    "S4_local_verify": { "status": "PENDING", "note": "ユーザー実行待ち" },
+    "S5_prod_verify": { "status": "PENDING", "note": "デプロイ後にユーザー実行" },
+    "S6_deploy_cmd": { "status": "DONE", "note": "コマンド提示済み" }
+  },
+  "files_changed": [
+    "app.py",
+    "scripts/smoke_check.sh",
+    "HEALTHZ_RUNBOOK.md",
+    "SMOKE_RUNBOOK.md",
+    "ops/SMOKE_CHECK.md",
+    "HEALTHZ_FIX_RUNBOOK.md",
+    "HEALTHZ_FIX_STATE.json"
+  ],
+  "files_not_changed": ["public/**", "static/**"]
+}

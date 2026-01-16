@@ -1,0 +1,11 @@
+{
+  "created_at": "2026-01-11",
+  "issue": "Configure launchd health-only smoke checks",
+  "steps": {
+    "S0_init": "DONE",
+    "S1_launchd": "DONE",
+    "S2_logs": "DONE",
+    "S3_docs": "DONE",
+    "S4_summary": "DONE"
+  }
+}

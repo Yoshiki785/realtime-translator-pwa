@@ -1,0 +1,16 @@
+{
+  "issue": "Settings/Start buttons unresponsive and Firebase auth api-key-not-valid",
+  "repo_path": "/Users/nakamurayoshiki/Documents/Vibe Coding/realtime-translator-pwa-main",
+  "steps": {
+    "A0": {"status": "DONE", "note": "Created DEBUG_AUTH_STATE.json and DEBUG_AUTH_RUNBOOK.md"},
+    "A1": {"status": "DONE", "note": "Checked .firebaserc/firebase.json; UI should use Hosting URL (web.app) with public/ output"},
+    "A2": {"status": "DONE", "note": "firebaseConfig in static/app.js only; no /__/firebase/init.js or emulator; double init not detected"},
+    "A3": {"status": "DONE", "note": "Moved config to static/firebase-config.js and added Firebase status display/checks"},
+    "A4": {"status": "DONE", "note": "Kept single initializeApp; no /__/firebase/init.js"},
+    "A5": {"status": "DONE", "note": "UI handlers bound on DOMContentLoaded; Firebase init errors handled"},
+    "A6": {"status": "DONE", "note": "Synced static/* to public/* and verified required files"},
+    "A7": {"status": "DONE", "note": "Added verification checklist (Hosting URL + SW cache)"},
+    "A8": {"status": "DONE", "note": "Provided firebase deploy --only hosting command"}
+  },
+  "updated_at": "2026-01-10"
+}

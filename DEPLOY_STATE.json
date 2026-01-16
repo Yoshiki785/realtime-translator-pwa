@@ -1,0 +1,22 @@
+{
+  "repo_path": "/Users/nakamurayoshiki/Documents/Vibe Coding/realtime-translator-pwa-main",
+  "project_id": "realtime-translator-pwa-483710",
+  "region": "asia-northeast1",
+  "service_id": "realtime-translator-api",
+  "cloud_run_url": "https://realtime-translator-api-853238768850.asia-northeast1.run.app/",
+  "hosting_url": "https://realtime-translator-pwa-483710.web.app",
+  "steps": {
+    "S0": {"status":"DONE","note":"State and runbook initialized"},
+    "S1": {"status":"DONE","note":"Repo at correct path, firebase.json exists (SPA only)"},
+    "S2": {"status":"DONE","note":"Synced static to public (9 files: app.js, index.html, styles.css, sw.js, etc)"},
+    "S3": {"status":"DONE","note":"Added Cloud Run rewrites: /audio_m4a, /summarize, /translate, /token, /api/** -> Cloud Run; ** -> /index.html (SPA last)"},
+    "S4": {"status":"DONE","note":"Deployed to realtime-translator-pwa-483710, 7 files uploaded, release complete"},
+    "S5": {"status":"DONE","note":"Captured hosting_url from deploy output: https://realtime-translator-pwa-483710.web.app"},
+    "S6": {"status":"DONE","note":"PASS: / returns 200 HTML (2776b), /translate returns 405 from Cloud Run (not 404, not index.html)"},
+    "S7": {"status":"DONE","note":"Cloud Run direct: 405 POST allowed. Hosting: 405 POST allowed. Match confirmed - rewrites working correctly"},
+    "S8": {"status":"DONE","note":"PASS: All tests passed. Hosting serves SPA, API paths reach Cloud Run. Next: Firebase Auth integration"},
+    "P1-0": {"status":"DONE","note":"Located 'ログインが必要です' in static/app.js:75. getAuthToken/buildAuthHeaders exist but Firebase SDK/init/UI missing"},
+    "P1-1": {"status":"DONE","note":"Added Firebase SDK, login/logout UI, authFetch function. Config placeholder for user to fill."},
+    "P1-2": {"status":"DONE","note":"Synced static to public (7 files). Deploy command ready. User needs to fill firebaseConfig and enable Google Sign-In."}
+  }
+}

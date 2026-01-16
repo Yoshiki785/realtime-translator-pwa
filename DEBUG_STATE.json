@@ -1,0 +1,24 @@
+{
+  "issue": "Startを押してもリアルタイム翻訳が始まらない",
+  "repo_path": "/Users/nakamurayoshiki/Documents/Vibe Coding/realtime-translator-pwa-main",
+  "project_id": "realtime-translator-pwa-483710",
+  "region": "asia-northeast1",
+  "service_id": "realtime-translator-api",
+  "cloud_run_url": "https://realtime-translator-api-853238768850.asia-northeast1.run.app/",
+  "hosting_url": "https://realtime-translator-pwa-483710.web.app",
+  "steps": {
+    "D0": {"status": "DONE", "note": "Debug state and runbook initialized"},
+    "D1": {"status": "DONE", "note": "/token, /translate, /summarize, /audio_m4a are NOT using authFetch. This is likely the issue."},
+    "D2": {"status": "DONE", "note": "Rewrites OK. /token and /translate return 405 from Cloud Run (not HTML)"},
+    "D3": {"status": "DONE", "note": "No fatal errors in logs. GET 405s are normal. No POST requests logged = frontend blocked?"},
+    "D4": {"status": "DONE", "note": "No env vars set! OPENAI_API_KEY missing. User needs to run gcloud run services update command."},
+    "D5": {"status": "DONE", "note": "Added status display, detailed error messages with status codes, console.error logging"},
+    "D6": {"status": "DONE", "note": "All 4 endpoints now use authFetch: /token, /translate, /summarize, /audio_m4a"},
+    "D7": {"status": "DONE", "note": "Synced static to public, deployed 7 files to Firebase Hosting"},
+    "D8": {"status": "DONE", "note": "Root cause: fetch() without auth. Fixed: all endpoints use authFetch(). Next: set OPENAI_API_KEY if not done"},
+    "D9": {"status": "DONE", "note": "Firestore API enabled, DB exists, SA has roles/datastore.user"},
+    "D10": {"status": "DONE", "note": "Fixed logger extra=json.dumps() bug - 18 occurrences fixed in app.py"},
+    "D11": {"status": "DONE", "note": "Cloud Run redeployed - revision realtime-translator-api-00004-6sm serving 100%"}
+  },
+  "updated_at": "2026-01-10"
+}

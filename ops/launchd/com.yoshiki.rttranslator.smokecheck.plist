@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.yoshiki.rttranslator.smokecheck</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>-lc</string>
+    <string>/Users/nakamurayoshiki/src/realtime-translator-pwa-main/scripts/smoke_wrapper.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/nakamurayoshiki/src/realtime-translator-pwa-main</string>
+  <key>StartInterval</key>
+  <integer>600</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/nakamurayoshiki/src/realtime-translator-pwa-main/ops/logs/smokecheck.out</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/nakamurayoshiki/src/realtime-translator-pwa-main/ops/logs/smokecheck.err</string>
+</dict>
+</plist>

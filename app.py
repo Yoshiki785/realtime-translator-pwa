@@ -1043,33 +1043,45 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
     uid = get_uid_from_request(request)
     logger.info(f"Token requested by uid: {uid}")
 
-    silence_ms = vad_silence if vad_silence is not None else 400
+    # TODO: vad_silence, transcription, server_vad を最小疎通後に戻す
+    # silence_ms = vad_silence if vad_silence is not None else 400
 
-    # /v1/realtime/sessions API format (no session wrapper)
+    # OpenAI docs: /v1/realtime/client_secrets with session wrapper
+    # https://platform.openai.com/docs/guides/realtime-webrtc
+    # 最小構成で疎通確認 - 追加オプションは疎通後に有効化
     payload = {
-        "model": realtime_model_default,
-        "voice": "alloy",
-        "turn_detection": {
-            "type": "server_vad",
-            "silence_duration_ms": silence_ms,
-        },
-        "input_audio_transcription": {
-            "model": audio_model_default,
-        },
+        "session": {
+            "type": "realtime",
+            "model": "gpt-4o-realtime-preview",
+            "audio": {
+                "output": {
+                    "voice": "alloy",
+                }
+            },
+            # TODO: 疎通確認後に以下を有効化
+            # "turn_detection": {
+            #     "type": "server_vad",
+            #     "silence_duration_ms": silence_ms,
+            # },
+            # "input_audio_transcription": {
+            #     "model": audio_model_default,
+            # },
+        }
     }
 
     api_key = get_openai_api_key()
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
 
-    # payload の model をログ出力
+    # payload の session 情報をログ出力
+    session_info = payload.get("session", {})
     logger.info(
-        f"Requesting ephemeral key | model={payload.get('model')}, "
-        f"voice={payload.get('voice')}, vad_silence_ms={silence_ms}"
+        f"Requesting ephemeral key | type={session_info.get('type')}, "
+        f"model={session_info.get('model')}, voice={session_info.get('audio', {}).get('output', {}).get('voice')}"
     )
 
     try:
         data = await post_openai(
-            "https://api.openai.com/v1/realtime/sessions",
+            "https://api.openai.com/v1/realtime/client_secrets",
             payload,
             headers,
         )
@@ -1078,7 +1090,7 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
         status_code = resp.status_code if resp is not None else 502
         reason = resp.reason_phrase if resp is not None else "Error"
         body_text = resp.text if resp is not None else ""
-        logger.error(f"OpenAI sessions error: status={status_code}, reason={reason}, body={mask_secrets(body_text)}")
+        logger.error(f"OpenAI client_secrets error: status={status_code}, reason={reason}, body={mask_secrets(body_text)}")
         raise HTTPException(
             status_code=status_code,
             detail=f"OpenAI API error ({status_code} {reason})",
@@ -1090,7 +1102,7 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
             detail="OpenAI request error",
         )
 
-    # /v1/realtime/sessions returns: { "client_secret": { "value": "ek_...", ... }, ... }
+    # /v1/realtime/client_secrets returns: { "client_secret": { "value": "ek_...", ... }, ... }
     client_secret = data.get("client_secret", {})
     raw_secret = client_secret.get("value") if isinstance(client_secret, dict) else None
 

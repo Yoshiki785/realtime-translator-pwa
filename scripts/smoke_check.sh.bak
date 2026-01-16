@@ -1,0 +1,121 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+log() {
+  printf '[%s] %s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" "$*"
+}
+
+fail() {
+  log "FAIL: $*"
+  exit 1
+}
+
+if [[ -z "${API_BASE:-}" ]]; then
+  fail "API_BASE env var is required"
+fi
+
+INFO_HEADER=("Accept: application/json")
+
+require_python() {
+  if command -v python3 >/dev/null 2>&1; then
+    PYTHON_BIN="python3"
+  else
+    fail "python3 is required for JSON parsing"
+  fi
+}
+
+check_health() {
+  require_python
+  curl -fsS -H "${INFO_HEADER[0]}" "$API_BASE/health" | "$PYTHON_BIN" -c 'import sys,json
+try:
+    d=json.load(sys.stdin)
+except json.JSONDecodeError as exc:
+    print(f"invalid json: {exc}")
+    raise SystemExit(1)
+if d.get("ok") is not True:
+    print("ok flag not true")
+    raise SystemExit(1)' || fail "health response missing ok=true"
+}
+
+extract_job_id() {
+  require_python
+  local json="$1"
+  "$PYTHON_BIN" - <<'PY' <<<"$json"
+import json,sys
+data=json.load(sys.stdin)
+job_id = data.get("jobId") or data.get("job_id")
+if not job_id:
+    print("", end="")
+    sys.exit(1)
+print(job_id)
+PY
+}
+
+curl_json() {
+  local method="$1"
+  local url="$2"
+  local body="${3:-}"
+  shift 3 || true
+  local headers=("${INFO_HEADER[@]}")
+  while (($#)); do
+    headers+=("$1")
+    shift
+  done
+  local curl_args=(-sS -w '%{http_code}' -o)
+  local tmp
+  tmp=$(mktemp)
+  curl_args+=("$tmp" -X "$method")
+  for header in "${headers[@]}"; do
+    curl_args+=(-H "$header")
+  done
+  if [[ -n "$body" ]]; then
+    curl_args+=(-H 'Content-Type: application/json' --data "$body")
+  fi
+  curl_args+=("$url")
+  local code
+  if ! code=$(curl "${curl_args[@]}" 2>/dev/null); then
+    rm -f "$tmp"
+    C_URL_BODY=""
+    printf '000'
+    return
+  fi
+  C_URL_BODY=$(cat "$tmp")
+  rm -f "$tmp"
+  printf '%s' "$code"
+}
+
+# Step 1: health check
+# NOTE: Using /health instead of /healthz (Cloud Run reserves paths ending with 'z')
+log "Checking $API_BASE/health"
+check_health
+
+if [[ -n "${TOKEN:-}" ]]; then
+  AUTH_HEADER="Authorization: Bearer $TOKEN"
+  log "Running authenticated checks"
+
+  me_code=$(curl_json GET "$API_BASE/api/v1/me" "" "$AUTH_HEADER")
+  me_body="$C_URL_BODY"
+  if [[ "$me_code" != "200" ]]; then
+    fail "GET /api/v1/me returned $me_code"
+  fi
+
+  create_code=$(curl_json POST "$API_BASE/api/v1/jobs/create" "" "$AUTH_HEADER")
+  create_body="$C_URL_BODY"
+  if [[ "$create_code" != "200" ]]; then
+    fail "First jobs/create returned $create_code"
+  fi
+  job_id=$(extract_job_id "$create_body") || fail "jobs/create response missing jobId"
+
+  create2_code=$(curl_json POST "$API_BASE/api/v1/jobs/create" "" "$AUTH_HEADER")
+  if [[ "$create2_code" != "409" ]]; then
+    fail "Second jobs/create should 409, got $create2_code"
+  fi
+
+  complete_payload=$(printf '{"jobId":"%s","audioSeconds":0}' "$job_id")
+  complete_code=$(curl_json POST "$API_BASE/api/v1/jobs/complete" "$complete_payload" "$AUTH_HEADER")
+  if [[ "$complete_code" != "200" ]]; then
+    fail "jobs/complete returned $complete_code"
+  fi
+fi
+
+log "PASS: smoke check completed"

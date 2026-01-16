@@ -1,0 +1,24 @@
+{
+  "created_at": "2026-01-11",
+  "issue": "文字出力UIを3エリア構成に戻し、ログ表示を仕様通りにする",
+  "steps": {
+    "L0_init": "DONE",
+    "L1_analyze": "DONE",
+    "L2_html_css": "DONE",
+    "L3_log_direction": "DONE",
+    "L4_js_connect": "DONE",
+    "L5_local_test": "DONE",
+    "L6_sync": "DONE",
+    "L7_deploy": "READY"
+  },
+  "target_layout": {
+    "liveTranscript": "上段：原文ライブ（逐次/部分）",
+    "transcriptLog": "下段左：原文確定ログ（新しいほど上）",
+    "translationLog": "下段右：翻訳完了ログ（新しいほど上）"
+  },
+  "fixed_files": [
+    "static/index.html",
+    "static/styles.css",
+    "static/app.js"
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "created_at": "2026-01-11",
+  "issue": "不要表示(kaki, Firebase initialized...)の削除 + Dev Panel追加",
+  "steps": {
+    "P0_init": "DONE",
+    "P1_search": "DONE",
+    "P2_remove_debug": "DONE",
+    "P3_dev_panel": "DONE",
+    "P4_safe_diag": "DONE",
+    "P5_sync": "DONE",
+    "P6_deploy": "DONE"
+  },
+  "root_cause": null,
+  "fixed_files": [
+    "static/index.html",
+    "static/styles.css",
+    "static/app.js",
+    "DEV_PANEL_RUNBOOK.md",
+    "DEV_PANEL_STATE.json"
+  ]
+}
