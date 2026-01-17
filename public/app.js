@@ -156,6 +156,9 @@ const createDefaultQuotaState = () => ({
 });
 
 const API_BASE_URL = window.location.origin;
+const DEFAULT_REALTIME_MODEL = 'gpt-4o-realtime-preview';
+const REALTIME_MODEL = window.OPENAI_REALTIME_MODEL || DEFAULT_REALTIME_MODEL;
+const REALTIME_URL = `https://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`;
 const LANGUAGE_SETTINGS = {
   input: 'Auto (mic)',
   output: 'Japanese',
@@ -1084,18 +1087,17 @@ const handleDataMessage = (event) => {
   const offerSdp = pc.localDescription.sdp;
 
   // デバッグ: SDP offer の検証
+  console.log('[negotiate] Realtime URL:', REALTIME_URL);
+  console.log('[negotiate] clientSecret prefix:', clientSecret ? `${clientSecret.substring(0, 10)}...` : 'missing');
   console.log('[negotiate] Offer SDP length:', offerSdp.length);
   if (!offerSdp.includes('v=0')) console.warn('[negotiate] SDP missing v=0');
   if (!offerSdp.includes('m=audio')) console.warn('[negotiate] SDP missing m=audio');
   if (!offerSdp.includes('a=ice-ufrag')) console.warn('[negotiate] SDP missing a=ice-ufrag');
   if (!offerSdp.includes('a=ice-pwd')) console.warn('[negotiate] SDP missing a=ice-pwd');
 
-  // デバッグ: clientSecret の形式確認（先頭のみ）
-  console.log('[negotiate] clientSecret prefix:', clientSecret?.substring(0, 10) + '...');
-
   // OpenAI Realtime API (ephemeral flow): Content-Type: application/sdp, body: raw SDP
   // model パラメータを URL に追加
-  const res = await fetch('https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
+  const res = await fetch(REALTIME_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${clientSecret}`,
@@ -1108,12 +1110,21 @@ const handleDataMessage = (event) => {
   console.log('[negotiate] Response Location header:', res.headers.get('Location'));
 
   if (!res.ok) {
-    const errorBody = await res.text();
-    console.error('[negotiate] OpenAI realtime/calls FAILED');
-    console.error('[negotiate] Status:', res.status);
+    let errorBody = '';
+    try {
+      errorBody = await res.text();
+    } catch (err) {
+      console.error('[negotiate] Response text read failed:', err);
+    }
+    console.error('[negotiate] OpenAI realtime negotiate FAILED');
+    console.error('[negotiate] Status:', res.status, res.statusText);
     console.error('[negotiate] Response headers:', [...res.headers.entries()]);
-    console.error('[negotiate] Response body:', errorBody);
-    throw new Error(`Realtime negotiate failed (${res.status}): ${errorBody || res.statusText}`);
+    if (errorBody) {
+      console.error('[negotiate] Response body:', errorBody);
+    }
+    throw new Error(
+      `Realtime negotiate failed (${res.status} ${res.statusText}): ${errorBody || 'no body'}`
+    );
   }
 
   const answerSdp = await res.text();
@@ -1298,8 +1309,27 @@ document.addEventListener('DOMContentLoaded', () => {
     closeRtc();
   });
 
+  // Service Worker 登録（debug=1 時は無効化）
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
+    window.addEventListener('load', async () => {
+      if (isDebugMode()) {
+        // debug=1: SW を無効化し、既存の登録を解除
+        console.log('[SW] Debug mode: skipping SW registration');
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.unregister();
+          console.log('[SW] Unregistered:', reg.scope);
+        }
+        // キャッシュもクリア
+        const cacheNames = await caches.keys();
+        for (const name of cacheNames) {
+          await caches.delete(name);
+          console.log('[SW] Cache deleted:', name);
+        }
+        console.log('[SW] Debug mode: SW disabled, caches cleared');
+        return;
+      }
+      // 通常モード: SW を登録
       navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
     });
   }
