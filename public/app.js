@@ -231,6 +231,37 @@ const initFirebase = () => {
     auth = firebase.auth();
     firebaseState.initialized = true;
     firebaseState.error = null;
+
+    // Debug mode: expose auth helpers when ?debug=1
+    if (isDebugMode()) {
+      window.firebaseAuth = auth;
+      window.__getIdToken = async (forceRefresh = true) => {
+        const u = auth.currentUser;
+        if (!u) {
+          console.log('NO_CURRENT_USER');
+          return null;
+        }
+        try {
+          return await u.getIdToken(!!forceRefresh);
+        } catch (e) {
+          console.error('GET_ID_TOKEN_FAILED', e);
+          return null;
+        }
+      };
+      window.__copyIdToken = async (forceRefresh = true) => {
+        const t = await window.__getIdToken(forceRefresh);
+        if (!t) return null;
+        try {
+          await navigator.clipboard.writeText(t);
+          console.log('COPIED_ID_TOKEN_LEN:', t.length);
+        } catch (e) {
+          console.warn('CLIPBOARD_WRITE_FAILED; printing token for manual copy');
+          console.log(t);
+        }
+        return t;
+      };
+      console.log('DEBUG_TOKEN_HELPERS_READY');
+    }
   } catch (err) {
     firebaseState.initialized = false;
     firebaseState.error = err;
@@ -244,30 +275,81 @@ const initFirebase = () => {
 };
 
 // Get Firebase ID token for API calls
-const getAuthToken = async () => {
+const getAuthToken = async (forceRefresh = false) => {
   if (!firebaseState.initialized) {
     throw firebaseState.error || new Error('Firebase未初期化');
   }
   if (!currentUser) return null;
   try {
-    return await currentUser.getIdToken();
+    return await currentUser.getIdToken(forceRefresh);
   } catch (err) {
     console.error('Failed to get ID token:', err);
     return null;
   }
 };
 
-// Authenticated fetch wrapper
-const authFetch = async (url, options = {}) => {
-  const token = await getAuthToken();
+// Check if 401 response indicates token expiration (Firebase or OpenAI)
+const isTokenExpiredError = (body) => {
+  if (!body) return false;
+  // FastAPI detail string: "invalid_auth", "token_expired", "id-token-expired"
+  const detail = typeof body.detail === 'string' ? body.detail : '';
+  if (/invalid_auth|token[_-]?expired|id[_-]?token[_-]?expired/i.test(detail)) {
+    return true;
+  }
+  // body.code or body.error.code patterns
+  const code = body.code || body.error?.code || '';
+  if (/token[_-]?expired|id[_-]?token[_-]?expired|invalid[_-]?auth/i.test(code)) {
+    return true;
+  }
+  // body.message or body.error.message patterns
+  const message = body.message || body.error?.message || '';
+  if (/token.*expired|expired.*token|session.*expired/i.test(message)) {
+    return true;
+  }
+  return false;
+};
+
+// Authenticated fetch wrapper with 401 retry (forceRefresh once)
+const authFetch = async (url, options = {}, _retried = false) => {
+  const token = await getAuthToken(_retried); // forceRefresh on retry
   if (!token) {
-    throw new Error('ログインが必要です');
+    throw new Error(t('errorLoginRequired'));
   }
   const headers = options.headers instanceof Headers
-    ? options.headers
+    ? new Headers(options.headers)
     : new Headers(options.headers || {});
   headers.set('Authorization', `Bearer ${token}`);
-  return fetch(url, { ...options, headers });
+
+  const res = await fetch(url, { ...options, headers });
+
+  // Handle 401: check if token expired and retry once with forceRefresh
+  if (res.status === 401 && !_retried) {
+    let body = null;
+    try {
+      body = await res.clone().json();
+    } catch {
+      // ignore parse error
+    }
+    if (isTokenExpiredError(body)) {
+      addDiagLog(`authFetch 401 detected, retrying with forceRefresh | url=${url}`);
+      return authFetch(url, options, true);
+    }
+  }
+
+  // If still 401 after retry, sign out and show session expired message
+  if (res.status === 401 && _retried) {
+    addDiagLog(`authFetch 401 after retry, signing out | url=${url}`);
+    setError('セッション期限切れ。再ログインしてください。');
+    if (auth) {
+      try {
+        await auth.signOut();
+      } catch {
+        // ignore signOut error
+      }
+    }
+  }
+
+  return res;
 };
 
 const cacheElements = () => {
@@ -999,20 +1081,46 @@ const handleDataMessage = (event) => {
     pc.addEventListener('icegatheringstatechange', checkState);
   });
 
-  const res = await fetch('https://api.openai.com/v1/realtime/calls', {
+  const offerSdp = pc.localDescription.sdp;
+
+  // デバッグ: SDP offer の検証
+  console.log('[negotiate] Offer SDP length:', offerSdp.length);
+  if (!offerSdp.includes('v=0')) console.warn('[negotiate] SDP missing v=0');
+  if (!offerSdp.includes('m=audio')) console.warn('[negotiate] SDP missing m=audio');
+  if (!offerSdp.includes('a=ice-ufrag')) console.warn('[negotiate] SDP missing a=ice-ufrag');
+  if (!offerSdp.includes('a=ice-pwd')) console.warn('[negotiate] SDP missing a=ice-pwd');
+
+  // デバッグ: clientSecret の形式確認（先頭のみ）
+  console.log('[negotiate] clientSecret prefix:', clientSecret?.substring(0, 10) + '...');
+
+  // OpenAI Realtime API (ephemeral flow): Content-Type: application/sdp, body: raw SDP
+  // model パラメータを URL に追加
+  const res = await fetch('https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${clientSecret}`,
       'Content-Type': 'application/sdp',
     },
-    body: pc.localDescription.sdp,
+    body: offerSdp,
   });
+
+  console.log('[negotiate] Response status:', res.status);
+  console.log('[negotiate] Response Location header:', res.headers.get('Location'));
+
   if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`Realtime negotiate failed: ${text || res.statusText}`);
+    const errorBody = await res.text();
+    console.error('[negotiate] OpenAI realtime/calls FAILED');
+    console.error('[negotiate] Status:', res.status);
+    console.error('[negotiate] Response headers:', [...res.headers.entries()]);
+    console.error('[negotiate] Response body:', errorBody);
+    throw new Error(`Realtime negotiate failed (${res.status}): ${errorBody || res.statusText}`);
   }
+
   const answerSdp = await res.text();
+  console.log('[negotiate] Answer SDP length:', answerSdp.length);
+  console.log('[negotiate] Answer SDP starts with v=0:', answerSdp.startsWith('v=0'));
   await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+  console.log('[negotiate] setRemoteDescription completed');
   setStatus('Connecting');
 };
 
