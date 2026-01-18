@@ -39,6 +39,10 @@ const STRINGS = {
     minutes: '分',
     glossaryLabel: '辞書（用語集）',
     glossaryHint: '1行1エントリ：source=target',
+    takeoverTitle: '別端末で使用中です',
+    takeoverMessage: '別端末で翻訳が開始されています。この端末で開始すると他端末のセッションは停止扱いになります。',
+    takeoverStart: 'この端末で開始（他を停止）',
+    takeoverKeep: '別端末の継続を優先',
   },
   en: {
     login: 'Login',
@@ -76,6 +80,10 @@ const STRINGS = {
     minutes: 'min',
     glossaryLabel: 'Glossary',
     glossaryHint: 'One per line: source=target',
+    takeoverTitle: 'Translation is active elsewhere',
+    takeoverMessage: 'Another device is already translating. Starting here will stop the other session.',
+    takeoverStart: 'Start on this device (stop others)',
+    takeoverKeep: 'Keep the other session',
   },
   'zh-Hans': {
     login: '登录',
@@ -113,6 +121,10 @@ const STRINGS = {
     minutes: '分钟',
     glossaryLabel: '词汇表',
     glossaryHint: '每行一条：source=target',
+    takeoverTitle: '其他设备正在使用',
+    takeoverMessage: '另一台设备正在翻译。若在此设备开始，将停止其他会话。',
+    takeoverStart: '在此设备开始（停止其他）',
+    takeoverKeep: '优先保留其他设备',
   },
 };
 
@@ -131,6 +143,73 @@ const applyI18n = () => {
     const key = el.getAttribute('data-i18n');
     if (key && STRINGS[getUiLang()]?.[key]) {
       el.textContent = t(key);
+    }
+  });
+};
+
+const ensureTakeoverDialog = () => {
+  let dialog = document.getElementById('takeoverModal');
+  if (dialog) return dialog;
+
+  dialog = document.createElement('dialog');
+  dialog.id = 'takeoverModal';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'modal';
+
+  const title = document.createElement('h2');
+  title.dataset.takeover = 'title';
+
+  const message = document.createElement('p');
+  message.dataset.takeover = 'message';
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button';
+  confirmBtn.dataset.takeover = 'confirm';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.dataset.takeover = 'cancel';
+
+  actions.append(confirmBtn, cancelBtn);
+  wrapper.append(title, message, actions);
+  dialog.append(wrapper);
+  document.body.appendChild(dialog);
+  return dialog;
+};
+
+const showTakeoverDialog = () => {
+  const dialog = ensureTakeoverDialog();
+  const title = dialog.querySelector('[data-takeover="title"]');
+  const message = dialog.querySelector('[data-takeover="message"]');
+  const confirmBtn = dialog.querySelector('[data-takeover="confirm"]');
+  const cancelBtn = dialog.querySelector('[data-takeover="cancel"]');
+
+  if (title) title.textContent = t('takeoverTitle');
+  if (message) message.textContent = t('takeoverMessage');
+  if (confirmBtn) confirmBtn.textContent = t('takeoverStart');
+  if (cancelBtn) cancelBtn.textContent = t('takeoverKeep');
+
+  return new Promise((resolve) => {
+    const onConfirm = () => {
+      dialog.close();
+      resolve(true);
+    };
+    const onCancel = (event) => {
+      if (event) event.preventDefault();
+      dialog.close();
+      resolve(false);
+    };
+
+    confirmBtn?.addEventListener('click', onConfirm, { once: true });
+    cancelBtn?.addEventListener('click', onCancel, { once: true });
+    dialog.addEventListener('cancel', onCancel, { once: true });
+
+    if (!dialog.open) {
+      dialog.showModal();
     }
   });
 };
@@ -162,6 +241,7 @@ const createDefaultQuotaState = () => ({
 });
 
 const API_BASE_URL = window.location.origin;
+const REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 const LANGUAGE_SETTINGS = {
   input: 'Auto (mic)',
   output: 'Japanese',
@@ -1054,14 +1134,33 @@ const hasQuotaForStart = () => {
   return true;
 };
 
-const reserveJobSlot = async () => {
+const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   addDiagLog('Requesting job reservation');
 
   // 呼び出し時刻を記録（スロットル用）
   state.lastJobCreateAt = Date.now();
 
-  const res = await authFetch('/api/v1/jobs/create', { method: 'POST' });
+  const createUrl = forceTakeover
+    ? '/api/v1/jobs/create?force_takeover=true'
+    : '/api/v1/jobs/create';
+  const res = await authFetch(createUrl, { method: 'POST' });
   const data = await res.json().catch(() => ({}));
+
+  if (res.status === 409 && data?.error === 'active_job_in_progress') {
+    addDiagLog('Job create blocked: active_job_in_progress');
+    if (forceTakeover) {
+      const takeoverErr = new Error('active_job_in_progress');
+      takeoverErr._context = 'job_create';
+      throw takeoverErr;
+    }
+    const shouldTakeover = await showTakeoverDialog();
+    if (!shouldTakeover) {
+      const cancelErr = new Error('takeover_declined');
+      cancelErr._abortStart = true;
+      throw cancelErr;
+    }
+    return reserveJobSlot({ forceTakeover: true });
+  }
 
   // 429 Too Many Requests の処理
   if (res.status === 429) {
@@ -1438,8 +1537,7 @@ const handleDataMessage = (event) => {
   console.log('[negotiate] clientSecret prefix:', clientSecret?.substring(0, 10) + '...');
 
   // OpenAI Realtime API (ephemeral flow): Content-Type: application/sdp, body: raw SDP
-  // model パラメータを URL に追加
-  const res = await fetch('https://api.openai.com/v1/realtime?model=gpt-4o-realtime-preview', {
+  const res = await fetch(REALTIME_CALLS_URL, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${clientSecret}`,
@@ -1536,6 +1634,15 @@ const start = async () => {
       return; // Success - exit the retry loop
 
     } catch (err) {
+      if (err._abortStart) {
+        addDiagLog('Start aborted by user (takeover declined)');
+        stopMedia();
+        closeRtc();
+        setStatus('Standby');
+        els.start.disabled = false;
+        els.stop.disabled = true;
+        return;
+      }
       // 429 Rate Limit エラーの特別処理
       if (err._isRateLimit) {
         addDiagLog(`Start blocked: 429 rate limit | waitMs=${err._waitMs}`);

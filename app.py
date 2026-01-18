@@ -381,6 +381,18 @@ def safe_int(value, default: int = 0) -> int:
         return default
 
 
+def parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
 def usage_doc_id(uid: str, yyyymm: str) -> str:
     return f"{uid}_{yyyymm}"
 
@@ -587,51 +599,75 @@ def _create_job_core(
     job_id: str,
     current_jst: datetime,
     now_utc: datetime,
+    force_takeover: bool = False,
     transaction: firebase_firestore.Transaction | MockTransaction | None = None,
 ) -> dict:
-    user_ref, user_state, plan, plan_config = read_user_state(db, uid, current_jst, transaction)
-    snapshot = build_quota_snapshot(user_state, plan_config)
-    base_remaining = snapshot["baseRemainingThisMonth"]
-    ticket_balance = snapshot["ticketSecondsBalance"]
-    total_available = snapshot["totalAvailableThisMonth"]
+    force_takeover_used = False
+    while True:
+        user_ref, user_state, plan, plan_config = read_user_state(db, uid, current_jst, transaction)
+        snapshot = build_quota_snapshot(user_state, plan_config)
+        base_remaining = snapshot["baseRemainingThisMonth"]
+        ticket_balance = snapshot["ticketSecondsBalance"]
+        total_available = snapshot["totalAvailableThisMonth"]
 
-    if total_available <= 0:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "no_remaining_minutes",
-                "message": "No remaining minutes (monthly base + tickets exhausted)",
-            },
-        )
+        if total_available <= 0:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "no_remaining_minutes",
+                    "message": "No remaining minutes (monthly base + tickets exhausted)",
+                },
+            )
 
-    daily_cap = plan_config.get("baseDailyQuotaSeconds")
-    daily_remaining = snapshot["dailyRemainingSeconds"] if daily_cap is not None else None
-    if daily_cap is not None and (daily_remaining is None or daily_remaining <= 0):
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "error": "daily_limit_reached",
-                "message": "Daily limit reached (10 min/day)",
-            },
-        )
+        daily_cap = plan_config.get("baseDailyQuotaSeconds")
+        daily_remaining = snapshot["dailyRemainingSeconds"] if daily_cap is not None else None
+        if daily_cap is not None and (daily_remaining is None or daily_remaining <= 0):
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "daily_limit_reached",
+                    "message": "Daily limit reached (10 min/day)",
+                },
+            )
 
-    minute_key = current_jst.strftime("%Y-%m-%dT%H:%M")
-    create_limit = safe_int(plan_config.get("createRateLimitPerMin"), 0)
-    stored_minute = user_state.get("jobCreateMinuteKey")
-    create_count = safe_int(user_state.get("jobCreateCount"), 0)
-    if stored_minute != minute_key:
-        stored_minute = minute_key
-        create_count = 0
-    if create_limit and create_count >= create_limit:
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "error": "rate_limited",
-                "message": "Too many job requests this minute",
-            },
-        )
+        minute_key = current_jst.strftime("%Y-%m-%dT%H:%M")
+        create_limit = safe_int(plan_config.get("createRateLimitPerMin"), 0)
+        stored_minute = user_state.get("jobCreateMinuteKey")
+        create_count = safe_int(user_state.get("jobCreateCount"), 0)
+        if stored_minute != minute_key:
+            stored_minute = minute_key
+            create_count = 0
+        if create_limit and create_count >= create_limit:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "rate_limited",
+                    "message": "Too many job requests this minute",
+                },
+            )
 
-    max_session = plan_config.get("maxSessionSeconds", 600)
+        max_session = plan_config.get("maxSessionSeconds", 600)
+        active_job_id = user_state.get("activeJobId")
+        active_job_started_at = to_utc_datetime(user_state.get("activeJobStartedAt"))
+        if active_job_id:
+            grace_window = max_session + 120
+            should_block = True
+            if active_job_started_at is None:
+                should_block = False
+            else:
+                elapsed = (now_utc - active_job_started_at).total_seconds()
+                should_block = elapsed <= grace_window
+            if should_block and force_takeover:
+                if force_takeover_used:
+                    raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
+                job_ref = db.collection("jobs").document(active_job_id)
+                _complete_job_core(db, job_ref, uid, None, current_jst, now_utc, transaction)
+                force_takeover_used = True
+                continue
+            if should_block:
+                raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
+        break
+
     reserved_seconds = min(total_available, max_session)
     if daily_remaining is not None:
         reserved_seconds = min(reserved_seconds, daily_remaining)
@@ -641,19 +677,6 @@ def _create_job_core(
             status_code=402,
             detail={"error": "no_reservable_minutes", "message": "No minutes available for reservation"},
         )
-
-    active_job_id = user_state.get("activeJobId")
-    active_job_started_at = to_utc_datetime(user_state.get("activeJobStartedAt"))
-    if active_job_id:
-        grace_window = max_session + 120
-        should_block = True
-        if active_job_started_at is None:
-            should_block = False
-        else:
-            elapsed = (now_utc - active_job_started_at).total_seconds()
-            should_block = elapsed <= grace_window
-        if should_block:
-            raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
 
     retention_days = plan_config.get("retentionDays", 7)
     delete_at = (current_jst + timedelta(days=retention_days)).astimezone(timezone.utc)
@@ -728,8 +751,11 @@ def create_job_transaction_simple(
     job_id: str,
     current_jst: datetime,
     now_utc: datetime,
+    force_takeover: bool = False,
 ) -> dict:
-    return _create_job_core(db, uid, job_id, current_jst, now_utc, transaction=None)
+    return _create_job_core(
+        db, uid, job_id, current_jst, now_utc, force_takeover=force_takeover, transaction=None
+    )
 
 
 @firebase_firestore.transactional
@@ -740,8 +766,11 @@ def create_job_transaction(
     job_id: str,
     current_jst: datetime,
     now_utc: datetime,
+    force_takeover: bool = False,
 ) -> dict:
-    return _create_job_core(db, uid, job_id, current_jst, now_utc, transaction=transaction)
+    return _create_job_core(
+        db, uid, job_id, current_jst, now_utc, force_takeover=force_takeover, transaction=transaction
+    )
 
 
 def _complete_job_core(
@@ -1123,15 +1152,34 @@ async def create_job(request: Request) -> JSONResponse:
     now_utc = datetime.now(timezone.utc)
     job_id = uuid.uuid4().hex
 
+    force_takeover = False
+    raw_force_takeover = request.query_params.get("force_takeover")
+    if raw_force_takeover is not None:
+        force_takeover = parse_bool(raw_force_takeover)
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if isinstance(body, dict):
+            raw_force_takeover = body.get("force_takeover")
+            if raw_force_takeover is None:
+                raw_force_takeover = body.get("forceTakeover")
+            force_takeover = parse_bool(raw_force_takeover)
+
     use_simple = False
     if not IS_PRODUCTION:
         use_simple = os.getenv("DEBUG_AUTH_BYPASS") == "1"
 
     if use_simple:
-        result = create_job_transaction_simple(db, uid, job_id, current_jst, now_utc)
+        result = create_job_transaction_simple(
+            db, uid, job_id, current_jst, now_utc, force_takeover=force_takeover
+        )
     else:
         transaction = db.transaction(max_attempts=10)
-        result = create_job_transaction(transaction, db, uid, job_id, current_jst, now_utc)
+        result = create_job_transaction(
+            transaction, db, uid, job_id, current_jst, now_utc, force_takeover=force_takeover
+        )
 
     log_payload = {
         "uid": uid,
