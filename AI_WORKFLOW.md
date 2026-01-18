@@ -57,3 +57,27 @@ static→public同期と差分提示まで実施。
 - Capture diffs: `git status -sb`, `git diff --stat`.
 - Provide: up to 2 likely causes, up to 2 next actions.
 - Stop on failure and report clearly.
+
+## Sync Scripts (Automated)
+Scripts to prevent static/public drift:
+
+| Script | Purpose |
+|--------|---------|
+| `./scripts/sync_public.sh` | Copy static/{app.js,index.html} to public/ |
+| `./scripts/check_public_sync.sh` | Verify static/ and public/ are identical |
+
+### Usage
+```bash
+# Manual sync
+./scripts/sync_public.sh
+
+# Check for drift
+./scripts/check_public_sync.sh
+
+# Full deploy (sync + check + deploy)
+npm run deploy:hosting
+```
+
+### Automatic Enforcement
+- `firebase deploy --only hosting` runs both scripts via `predeploy` hook
+- Deploy fails if drift is detected

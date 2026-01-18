@@ -1050,6 +1050,63 @@ def extract_output_text(result: dict) -> str:
     return (result.get("output_text") or result.get("content") or "").strip()
 
 
+BASE_SESSION_INSTRUCTIONS = (
+    "You are a real-time interpreter. "
+    "Output only the translated text. No extra commentary. "
+    "Preserve proper nouns, acronyms, and numbers."
+)
+GLOSSARY_MAX_LINES = 200
+
+
+def parse_glossary_text(text: str | None) -> list[tuple[str, str]]:
+    if not text:
+        return []
+    entries: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        if len(entries) >= GLOSSARY_MAX_LINES:
+            break
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.match(r"^(.+?)\s*(?:=>|=)\s*(.+)$", line)
+        if not match:
+            continue
+        source = match.group(1).strip()
+        target = match.group(2).strip()
+        if source and target:
+            entries.append((source, target))
+    return entries
+
+
+def build_session_instructions(glossary_entries: list[tuple[str, str]], output_lang: str | None) -> str:
+    instructions = BASE_SESSION_INSTRUCTIONS
+    if output_lang and output_lang != "auto":
+        lang_names = {"ja": "Japanese", "en": "English", "zh": "Chinese"}
+        lang_name = lang_names.get(output_lang, output_lang)
+        instructions += f" Translate into {lang_name}."
+    if glossary_entries:
+        instructions += "\n\nGlossary (must-follow):"
+        for source, target in glossary_entries:
+            instructions += f"\n- {source} => {target}"
+        instructions += "\n\nGlossary rules:"
+        instructions += "\n- If a glossary entry matches, you MUST use the specified target term."
+        instructions += "\n- Avoid partial-match mistakes; prefer whole-word matches when reasonable."
+        instructions += "\n- Do not invent glossary entries."
+    return instructions
+
+
+def sanitize_session_for_log(session: dict) -> dict:
+    if not isinstance(session, dict):
+        return {}
+    sanitized: dict = {}
+    for key, value in session.items():
+        if key == "instructions" and isinstance(value, str):
+            sanitized[key] = f"<len={len(value)}>"
+        else:
+            sanitized[key] = value
+    return sanitized
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     index_file = STATIC_DIR / "index.html"
@@ -1067,7 +1124,12 @@ async def favicon() -> FileResponse:
 
 
 @app.post("/token")
-async def create_token(request: Request, vad_silence: int | None = Form(None)) -> JSONResponse:
+async def create_token(
+    request: Request,
+    vad_silence: int | None = Form(None),
+    glossary_text: str | None = Form(None, alias="glossaryText"),
+    output_lang: str | None = Form(None, alias="outputLang"),
+) -> JSONResponse:
     # 認証必須: Firebase ID トークンを検証
     uid = get_uid_from_request(request)
     logger.info(f"Token requested by uid: {uid}")
@@ -1078,10 +1140,14 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
     # OpenAI docs: /v1/realtime/client_secrets with session wrapper
     # https://platform.openai.com/docs/guides/realtime-webrtc
     # 最小構成で疎通確認 - 追加オプションは疎通後に有効化
+    glossary_entries = parse_glossary_text(glossary_text)
+    instructions = build_session_instructions(glossary_entries, output_lang)
+
     payload = {
         "session": {
             "type": "realtime",
             "model": "gpt-4o-realtime-preview",
+            "instructions": instructions,
             "audio": {
                 "output": {
                     "voice": "alloy",
@@ -1105,8 +1171,10 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
     session_info = payload.get("session", {})
     logger.info(
         f"Requesting ephemeral key | type={session_info.get('type')}, "
-        f"model={session_info.get('model')}, voice={session_info.get('audio', {}).get('output', {}).get('voice')}"
+        f"model={session_info.get('model')}, voice={session_info.get('audio', {}).get('output', {}).get('voice')}, "
+        f"glossary_entries={len(glossary_entries)}, instructions_len={len(instructions)}"
     )
+    session_log = sanitize_session_for_log(session_info)
 
     try:
         data = await post_openai(
@@ -1119,13 +1187,19 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
         status_code = resp.status_code if resp is not None else 502
         reason = resp.reason_phrase if resp is not None else "Error"
         body_text = resp.text if resp is not None else ""
-        logger.error(f"OpenAI client_secrets error: status={status_code}, reason={reason}, body={mask_secrets(body_text)}")
+        logger.error(
+            "OpenAI client_secrets error: "
+            f"status={status_code}, reason={reason}, body={mask_secrets(body_text)}, session={session_log}"
+        )
         raise HTTPException(
             status_code=status_code,
             detail=f"OpenAI API error ({status_code} {reason})",
         ) from exc
     except httpx.RequestError as exc:
-        logger.error(f"OpenAI request error: {type(exc).__name__}: {exc}")
+        logger.error(
+            "OpenAI request error: "
+            f"{type(exc).__name__}: {exc} session={session_log}"
+        )
         raise HTTPException(
             status_code=502,
             detail="OpenAI request error",
@@ -1660,11 +1734,21 @@ SUMMARIZE_HEADERS = {
 }
 
 
+def build_glossary_instructions_for_summary(glossary_text: str | None) -> str:
+    """Build glossary instructions for summarize prompt (not for Realtime)."""
+    entries = parse_glossary_text(glossary_text)
+    if not entries:
+        return ""
+    lines = [f"{src}→{dst}" for src, dst in entries]
+    return f"\n\n用語は必ず次の表記に統一してください：{', '.join(lines)}。該当語が出たら置換して要約に反映すること。"
+
+
 @app.post("/summarize")
 async def summarize(
     request: Request,
     text: str = Form(...),
     output_lang: str = Form("ja"),
+    glossary_text: str = Form(""),
 ) -> JSONResponse:
     # 認証必須: Firebase ID トークンを検証
     get_uid_from_request(request)
@@ -1677,9 +1761,13 @@ async def summarize(
     headers_i18n = SUMMARIZE_HEADERS.get(output_lang, SUMMARIZE_HEADERS["ja"])
     target_lang_name = LANG_NAMES.get(output_lang, "Japanese")
 
+    # Build glossary instructions (only for summarize, not Realtime)
+    glossary_inst = build_glossary_instructions_for_summary(glossary_text)
+
     prompt = (
         f"You are a meeting summarizer. Produce concise Markdown in {target_lang_name} with three sections: "
         f"1) {headers_i18n['summary']} 2) {headers_i18n['key_points']} (bullets) 3) {headers_i18n['actions']} (bullets)."
+        f"{glossary_inst}"
     )
     payload = {"model": summarize_model_default, "input": text, "system": prompt}
     api_key = get_openai_api_key()

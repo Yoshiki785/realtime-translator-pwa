@@ -72,3 +72,39 @@ firebase deploy --only hosting
 - [x] ?debug=1 のときだけ Dev Panel が表示される（クエリをチェックしてボタン/モーダルを制御）
 - [x] Dev Panel に apiKey が表示されない（接続概要では projectId/API URL/言語のみを表示し、診断ログもマスク処理）
 - [x] 既存のログ・翻訳・マイク動作が壊れていない（コア処理は変更せず UI 補助コードのみ追加）
+
+---
+
+## P7) IDトークン取得とcurlテスト
+
+### ID_TOKEN取得手順
+1. ブラウザで `https://<hosting-url>/?debug=1` を開く
+2. ログイン
+3. Dev Panel を開く（右上のDevボタン）
+4. 「IDトークンをコピー」ボタンをクリック
+5. クリップボードにID_TOKENがコピーされる
+
+### curlテスト例（要約API）
+```bash
+export HOSTING="https://realtime-translator-pwa-483710.web.app"
+export ID_TOKEN="(コピーしたトークン)"
+
+# 要約（辞書なし）
+curl -sS -X POST "$HOSTING/summarize" \
+  -H "Authorization: Bearer $ID_TOKEN" \
+  -F "text=サンプル文章です。" \
+  -F "output_lang=ja" | jq .
+
+# 要約（辞書あり）
+curl -sS -X POST "$HOSTING/summarize" \
+  -H "Authorization: Bearer $ID_TOKEN" \
+  -F "text=サンプル文章です。用語Aが出ます。" \
+  -F "output_lang=ja" \
+  -F "glossary_text=用語A=用語B" | jq .
+```
+
+### ファイル同期ルール
+- **正規ソース**: `static/` ディレクトリ
+- **配信先**: `public/` ディレクトリ（Firebase Hosting）
+- **同期コマンド**: `cp static/app.js public/app.js && cp static/index.html public/index.html`
+- **注意**: index.html も static が正。public を直接編集しない

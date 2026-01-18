@@ -255,6 +255,8 @@ const isMissingConfigValue = (value) => !value || String(value).startsWith('PAST
 // Diagnostic log buffer (no secrets)
 const diagLogs = [];
 const MAX_DIAG_LOGS = 200;
+const rawRealtimeEvents = [];
+const MAX_RAW_REALTIME_EVENTS = 50;
 const SECRET_PATTERNS = [
   /apiKey[^\s]*/gi,
   /AIza[0-9a-zA-Z_\-]{10,}/g,
@@ -285,6 +287,28 @@ const addDiagLog = (msg) => {
   diagLogs.push(entry); // 末尾に追加（古い順に並ぶ）
   if (diagLogs.length > MAX_DIAG_LOGS) diagLogs.shift(); // 先頭（最古）を削除
   refreshDevLogs();
+};
+
+const logErrorDetails = (label, err) => {
+  const name = err?.name || 'Error';
+  const message = err?.message || String(err);
+  const stack = err?.stack || 'no_stack';
+  addDiagLog(`${label} error | name=${name} message=${message}`);
+  addDiagLog(`${label} error stack | ${stack}`);
+  console.error(label, err);
+};
+
+const addRawRealtimeEvent = (raw) => {
+  rawRealtimeEvents.push(raw);
+  if (rawRealtimeEvents.length > MAX_RAW_REALTIME_EVENTS) {
+    rawRealtimeEvents.shift();
+  }
+};
+
+const appendRawRealtimeToDiag = (text) => {
+  const header = '\n\nRAW REALTIME EVENTS (latest 50):\n';
+  if (!rawRealtimeEvents.length) return `${text}${header}(none)`;
+  return `${text}${header}${rawRealtimeEvents.join('\n')}`;
 };
 
 const DIAG_COPY_LIMIT = 50; // コピー時は直近50行のみ
@@ -479,6 +503,7 @@ const cacheElements = () => {
     devCopyLogs: document.getElementById('devCopyLogs'),
     devTestEvent: document.getElementById('devTestEvent'),
     devClearCache: document.getElementById('devClearCache'),
+    devCopyIdToken: document.getElementById('devCopyIdToken'),
     devCloseBtn: document.getElementById('devCloseBtn'),
     devCacheHelp: document.getElementById('devCacheHelp'),
     devNotice: document.getElementById('devNotice'),
@@ -642,18 +667,40 @@ const flushRealtimeEventQueue = () => {
 
 // Send session.update with glossary instructions
 const sendSessionUpdate = () => {
-  const glossaryEntries = parseGlossary(state.glossaryText);
-  const instructions = buildSessionInstructions(glossaryEntries, state.outputLang);
+  const transcriptionLanguage = state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined;
+  const silenceDurationMs = Number(state.vadSilence) || 500;
 
   const payload = {
     type: 'session.update',
     session: {
-      instructions: instructions,
+      type: 'realtime',
+      audio: {
+        input: {
+          transcription: {
+            model: 'gpt-4o-mini-transcribe',
+            ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
+          },
+          turn_detection: {
+            type: 'server_vad',
+            silence_duration_ms: silenceDurationMs,
+            prefix_padding_ms: 300,
+            threshold: 0.5,
+            create_response: false,
+          },
+          noise_reduction: { type: 'near_field' },
+        },
+      },
     },
   };
 
-  const sent = sendRealtimeEvent(payload);
-  addDiagLog(`session.update sent (glossary) | entries=${glossaryEntries.length} | instructions_len=${instructions.length} | queued=${!sent}`);
+  try {
+    addDiagLog(`STEP_SESSION_UPDATE: sending ${JSON.stringify(payload.session)}`);
+    const sent = sendRealtimeEvent(payload);
+    addDiagLog(`session.update sent (audio.input) | queued=${!sent}`);
+  } catch (err) {
+    logErrorDetails('sendSessionUpdate', err);
+    throw err;
+  }
 };
 
 const showDevNotice = (text = '') => {
@@ -726,7 +773,10 @@ const toggleCacheHelp = () => {
 
 const copyDiagnosticsToClipboard = async () => {
   if (!isDebugMode()) return;
-  const text = getDiagLogDump(DIAG_COPY_LIMIT);
+  let text = getDiagLogDump(DIAG_COPY_LIMIT);
+  if (text) {
+    text = appendRawRealtimeToDiag(text);
+  }
   if (!text) {
     showDevNotice('診断ログはまだありません');
     return;
@@ -796,6 +846,22 @@ const setupDevPanel = () => {
   els.devClearCache?.addEventListener('click', (e) => {
     e.preventDefault();
     toggleCacheHelp();
+  });
+  els.devCopyIdToken?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (!currentUser) {
+      showDevNotice('ログインしていません');
+      return;
+    }
+    try {
+      const token = await currentUser.getIdToken(true);
+      await navigator.clipboard.writeText(token);
+      showDevNotice('IDトークンをコピーしました (curlテスト用)');
+      addDiagLog('ID_TOKEN copied to clipboard');
+    } catch (err) {
+      showDevNotice(`IDトークン取得エラー: ${err.message}`);
+      addDiagLog(`ID_TOKEN copy failed: ${err.message}`);
+    }
   });
   if (els.devPanelModal) {
     els.devPanelModal.addEventListener('close', () => showDevNotice(''));
@@ -1362,6 +1428,9 @@ const saveTextDownloads = async () => {
     const fd = new FormData();
     fd.append('text', originals);
     fd.append('output_lang', state.outputLang);
+    if (state.glossaryText) {
+      fd.append('glossary_text', state.glossaryText);
+    }
     const summaryRes = await authFetch('/summarize', {
       method: 'POST',
       body: fd,
@@ -1483,18 +1552,63 @@ const handleCompleted = (payload) => {
 };
 
 const handleDataMessage = (event) => {
+  const raw = typeof event.data === 'string' ? event.data : JSON.stringify(event.data);
+  addRawRealtimeEvent(raw);
   try {
-    const payload = JSON.parse(event.data);
-    const type = payload.type || payload.event || '';
+    const msg = JSON.parse(event.data);
+    const type = msg.type || msg.event || '';
+    if (msg?.type === 'error') {
+      console.error('[realtime:error]', msg);
+      addDiagLog(`REALTIME_ERROR_JSON: ${JSON.stringify(msg)}`);
+    }
     if (type === 'conversation.item.input_audio_transcription.delta') {
-      handleDelta(payload);
+      handleDelta(msg);
     } else if (type === 'conversation.item.input_audio_transcription.completed') {
-      handleCompleted(payload);
-    } else if (type === 'error' || payload.type === 'error') {
-      setError(payload.error?.message || payload.message || 'Realtime error');
+      handleCompleted(msg);
+    } else if (type === 'error' || msg.error) {
+      setError(msg.error?.message || msg.message || 'Realtime error');
     }
   } catch (err) {
     console.error('message parse', err);
+  }
+};
+
+const fetchToken = async () => {
+  const fd = new FormData();
+  fd.append('vad_silence', String(state.vadSilence || 400));
+  fd.append('glossaryText', state.glossaryText || '');
+  fd.append('outputLang', state.outputLang || 'auto');
+  let res;
+  let statusLogged = false;
+
+  try {
+    res = await authFetch('/token', { method: 'POST', body: fd });
+    addDiagLog(`STEP4: token fetch response status=${res.status}`);
+    statusLogged = true;
+
+    if (!res.ok) {
+      const errorBody = await res.text();
+      const err = new Error(`/token ${res.status}: ${errorBody || res.statusText}`);
+      err._context = 'token';
+      throw err;
+    }
+
+    const data = await res.json().catch(() => ({}));
+    const clientSecret = data.value || data.client_secret || data.clientSecret;
+    if (!clientSecret) {
+      const err = new Error('client_secret missing in /token response');
+      err._context = 'token';
+      throw err;
+    }
+    return clientSecret;
+  } catch (err) {
+    err._context = err._context || 'token';
+    logErrorDetails('fetchToken', err);
+    throw err;
+  } finally {
+    if (!statusLogged) {
+      addDiagLog('STEP4: token fetch response status=no_response');
+    }
   }
 };
 
@@ -1504,6 +1618,16 @@ const handleDataMessage = (event) => {
   state.dataChannel = pc.createDataChannel('oai-events');
   state.dataChannel.onmessage = handleDataMessage;
   state.dataChannel.onclose = () => setStatus('Closed');
+  state.dataChannel.onopen = () => {
+    addDiagLog('STEP7: RTC connected / datachannel opened');
+    setStatus('Listening');
+    flushRealtimeEventQueue();
+    try {
+      sendSessionUpdate();
+    } catch (err) {
+      logErrorDetails('session.update', err);
+    }
+  };
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   state.mediaStream = stream;
@@ -1526,6 +1650,8 @@ const handleDataMessage = (event) => {
 
   const offerSdp = pc.localDescription.sdp;
 
+  addDiagLog(`STEP5: before negotiate | offerSdpLen=${offerSdp?.length || 0}`);
+
   // デバッグ: SDP offer の検証
   console.log('[negotiate] Offer SDP length:', offerSdp.length);
   if (!offerSdp.includes('v=0')) console.warn('[negotiate] SDP missing v=0');
@@ -1537,36 +1663,64 @@ const handleDataMessage = (event) => {
   console.log('[negotiate] clientSecret prefix:', clientSecret?.substring(0, 10) + '...');
 
   // OpenAI Realtime API (ephemeral flow): Content-Type: application/sdp, body: raw SDP
-  const res = await fetch(REALTIME_CALLS_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${clientSecret}`,
-      'Content-Type': 'application/sdp',
-    },
-    body: offerSdp,
-  });
+  let res;
+  let responseLogged = false;
+  try {
+    res = await fetch(REALTIME_CALLS_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${clientSecret}`,
+        'Content-Type': 'application/sdp',
+      },
+      body: offerSdp,
+    });
 
-  console.log('[negotiate] Response status:', res.status);
-  console.log('[negotiate] Response Location header:', res.headers.get('Location'));
+    console.log('[negotiate] Response status:', res.status);
+    console.log('[negotiate] Response Location header:', res.headers.get('Location'));
+    addDiagLog(`STEP6: negotiate response status=${res.status}`);
+    responseLogged = true;
 
-  if (!res.ok) {
-    const errorBody = await res.text();
-    console.error('[negotiate] OpenAI realtime/calls FAILED');
-    console.error('[negotiate] Status:', res.status);
-    console.error('[negotiate] Response headers:', [...res.headers.entries()]);
-    console.error('[negotiate] Response body:', errorBody);
-    throw new Error(`Realtime negotiate failed (${res.status}): ${errorBody || res.statusText}`);
+    if (!res.ok) {
+      const errorBody = await res.text();
+      console.error('[negotiate] OpenAI realtime/calls FAILED');
+      console.error('[negotiate] Status:', res.status);
+      console.error('[negotiate] Response headers:', [...res.headers.entries()]);
+      console.error('[negotiate] Response body:', errorBody);
+      const err = new Error(`Realtime negotiate failed (${res.status}): ${errorBody || res.statusText}`);
+      err._context = 'negotiate';
+      throw err;
+    }
+
+    const answerSdp = await res.text();
+    console.log('[negotiate] Answer SDP length:', answerSdp.length);
+    console.log('[negotiate] Answer SDP starts with v=0:', answerSdp.startsWith('v=0'));
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    console.log('[negotiate] setRemoteDescription completed');
+    setStatus('Connecting');
+  } catch (err) {
+    err._context = err._context || 'negotiate';
+    logErrorDetails('negotiate', err);
+    throw err;
+  } finally {
+    if (!responseLogged) {
+      addDiagLog('STEP6: negotiate response status=no_response');
+    }
   }
+};
 
-  const answerSdp = await res.text();
-  console.log('[negotiate] Answer SDP length:', answerSdp.length);
-  console.log('[negotiate] Answer SDP starts with v=0:', answerSdp.startsWith('v=0'));
-  await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-  console.log('[negotiate] setRemoteDescription completed');
-  setStatus('Connecting');
+const startConnectionAttempt = async () => {
+  addDiagLog('STEP3: before token fetch');
+  try {
+    const clientSecret = await fetchToken();
+    await negotiate(clientSecret);
+  } catch (err) {
+    logErrorDetails('startConnectionAttempt', err);
+    throw err;
+  }
 };
 
 const start = async () => {
+  addDiagLog('STEP1: start() entered');
   addDiagLog('Start requested');
   if (!firebaseState.initialized) {
     setError('Firebase初期化に失敗しました。設定を確認してください。');
@@ -1628,12 +1782,14 @@ const start = async () => {
       // state.jobActiveはreserveJobSlot内でtrueに設定される
       if (!state.jobActive) {
         await reserveJobSlot();
+        addDiagLog('STEP2: after reserveJobSlot success');
       }
 
       await startConnectionAttempt();
       return; // Success - exit the retry loop
 
     } catch (err) {
+      logErrorDetails('start', err);
       if (err._abortStart) {
         addDiagLog('Start aborted by user (takeover declined)');
         stopMedia();
@@ -1694,6 +1850,7 @@ const start = async () => {
 
   // jobActiveがtrueならジョブを0秒で完了させる（失敗時の後始末）
   if (state.jobActive) {
+    addDiagLog(`COMPLETE because start failed: ${finalClassified.category}`);
     await completeCurrentJob(0);
   }
 };
@@ -1862,6 +2019,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initFirebase();
   applyAuthUiState(null);
+  addDiagLog(`Auth init: currentUser=${currentUser?.uid || 'null'}`);
 
   if (els.loginBtn) {
     els.loginBtn.addEventListener('click', async () => {
@@ -1903,7 +2061,7 @@ document.addEventListener('DOMContentLoaded', () => {
     auth.onAuthStateChanged((user) => {
       currentUser = user;
       applyAuthUiState(user);
-      addDiagLog(user ? 'Auth state: logged in' : 'Auth state: signed out');
+      addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
       if (user) {
         refreshQuotaStatus();
       } else {
