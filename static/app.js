@@ -37,6 +37,8 @@ const STRINGS = {
     thisMonth: '今月:',
     remaining: '残り:',
     minutes: '分',
+    glossaryLabel: '辞書（用語集）',
+    glossaryHint: '1行1エントリ：source=target',
   },
   en: {
     login: 'Login',
@@ -72,6 +74,8 @@ const STRINGS = {
     thisMonth: 'Month:',
     remaining: 'Remaining:',
     minutes: 'min',
+    glossaryLabel: 'Glossary',
+    glossaryHint: 'One per line: source=target',
   },
   'zh-Hans': {
     login: '登录',
@@ -107,6 +111,8 @@ const STRINGS = {
     thisMonth: '本月:',
     remaining: '剩余:',
     minutes: '分钟',
+    glossaryLabel: '词汇表',
+    glossaryHint: '每行一条：source=target',
   },
 };
 
@@ -188,19 +194,24 @@ const sanitizeDiagMessage = (msg = '') => {
 
 const refreshDevLogs = () => {
   if (!isDebugMode() || !els.devLogArea) return;
-  const preview = diagLogs.slice(0, 50).join('\n');
+  // 直近50件を時系列順（古い→新しい）で表示
+  const preview = diagLogs.slice(-50).join('\n');
   els.devLogArea.textContent = preview || 'ログはまだありません。';
 };
 
 const addDiagLog = (msg) => {
   const safeMsg = sanitizeDiagMessage(msg);
   const entry = `[${new Date().toISOString()}] ${safeMsg}`;
-  diagLogs.unshift(entry);
-  if (diagLogs.length > MAX_DIAG_LOGS) diagLogs.pop();
+  diagLogs.push(entry); // 末尾に追加（古い順に並ぶ）
+  if (diagLogs.length > MAX_DIAG_LOGS) diagLogs.shift(); // 先頭（最古）を削除
   refreshDevLogs();
 };
 
-const getDiagLogDump = () => diagLogs.slice().reverse().join('\n');
+const DIAG_COPY_LIMIT = 50; // コピー時は直近50行のみ
+const getDiagLogDump = (limit = DIAG_COPY_LIMIT) => {
+  // 直近limit件を時系列順（古い→新しい）で返す
+  return diagLogs.slice(-limit).join('\n');
+};
 
 addDiagLog('App bootstrap start');
 
@@ -391,6 +402,8 @@ const cacheElements = () => {
     devCloseBtn: document.getElementById('devCloseBtn'),
     devCacheHelp: document.getElementById('devCacheHelp'),
     devNotice: document.getElementById('devNotice'),
+    // Glossary
+    glossaryText: document.getElementById('glossaryText'),
   };
 };
 
@@ -419,6 +432,148 @@ const state = {
   quota: createDefaultQuotaState(),
   currentJob: null,
   jobStartedAt: null,
+  jobActive: false, // ジョブが有効（予約済み〜完了前）かどうか
+  // スロットル/クールダウン管理
+  lastJobCreateAt: 0, // 最後にjobs/createを呼んだ時刻（Date.now()）
+  cooldownUntil: 0, // クールダウン終了時刻（Date.now()）
+  cooldownTimerId: null, // カウントダウン表示用タイマーID
+  // Glossary
+  glossaryText: localStorage.getItem('rt_glossary_text') || '',
+  // Realtime event queue (for session.update before dataChannel is open)
+  realtimeEventQueue: [],
+};
+
+// ========== Glossary Storage Adapter ==========
+const GLOSSARY_STORAGE_KEY = 'rt_glossary_text';
+const GLOSSARY_MAX_LINES = 200;
+
+const glossaryStorage = {
+  get: () => localStorage.getItem(GLOSSARY_STORAGE_KEY) || '',
+  set: (text) => {
+    localStorage.setItem(GLOSSARY_STORAGE_KEY, text);
+    state.glossaryText = text;
+  },
+};
+
+// ========== Glossary Parsing ==========
+// Parse glossary text into normalized entries: { source, target }[]
+const parseGlossary = (text) => {
+  if (!text || typeof text !== 'string') return [];
+  const lines = text.split('\n');
+  const entries = [];
+  let skippedCount = 0;
+
+  for (let i = 0; i < lines.length && entries.length < GLOSSARY_MAX_LINES; i++) {
+    const line = lines[i].trim();
+    // Skip empty lines and comments
+    if (!line || line.startsWith('#')) continue;
+
+    // Match "source=target" or "source=>target"
+    const match = line.match(/^(.+?)\s*=>\s*(.+)$/) || line.match(/^(.+?)\s*=\s*(.+)$/);
+    if (match) {
+      const source = match[1].trim();
+      const target = match[2].trim();
+      if (source && target) {
+        entries.push({ source, target });
+      } else {
+        skippedCount++;
+        addDiagLog(`glossary invalid line skipped: "${line.substring(0, 50)}"`);
+      }
+    } else {
+      skippedCount++;
+      addDiagLog(`glossary invalid line skipped: "${line.substring(0, 50)}"`);
+    }
+  }
+
+  if (lines.length > GLOSSARY_MAX_LINES) {
+    addDiagLog(`glossary truncated: ${lines.length} lines -> ${GLOSSARY_MAX_LINES} max`);
+  }
+
+  return entries;
+};
+
+// ========== Session Instructions Builder ==========
+const BASE_INSTRUCTIONS = [
+  'You are a real-time interpreter.',
+  'Output only the translated text. No extra commentary.',
+  'Preserve proper nouns, acronyms, and numbers.',
+].join(' ');
+
+const buildSessionInstructions = (glossaryEntries, outputLang) => {
+  let instructions = BASE_INSTRUCTIONS;
+
+  // Add output language hint
+  if (outputLang && outputLang !== 'auto') {
+    const langNames = { ja: 'Japanese', en: 'English', zh: 'Chinese' };
+    const langName = langNames[outputLang] || outputLang;
+    instructions += ` Translate into ${langName}.`;
+  }
+
+  // Add glossary section if entries exist
+  if (glossaryEntries && glossaryEntries.length > 0) {
+    instructions += '\n\nGlossary (must-follow):';
+    glossaryEntries.forEach(({ source, target }) => {
+      instructions += `\n- ${source} => ${target}`;
+    });
+    instructions += '\n\nGlossary rules:';
+    instructions += '\n- If a glossary entry matches, you MUST use the specified target term.';
+    instructions += '\n- Avoid partial-match mistakes; prefer whole-word matches when reasonable.';
+    instructions += '\n- Do not invent glossary entries.';
+  }
+
+  return instructions;
+};
+
+// ========== Realtime Event Sender with Queue ==========
+const sendRealtimeEvent = (payload) => {
+  const dc = state.dataChannel;
+  if (dc && dc.readyState === 'open') {
+    try {
+      dc.send(JSON.stringify(payload));
+      addDiagLog(`Realtime event sent: ${payload.type}`);
+      return true;
+    } catch (err) {
+      addDiagLog(`Realtime event send failed: ${err.message}`);
+      return false;
+    }
+  } else {
+    // Queue the event for later
+    state.realtimeEventQueue.push(payload);
+    addDiagLog(`Realtime event queued: ${payload.type} (dataChannel not open)`);
+    return false;
+  }
+};
+
+// Flush queued events when dataChannel opens
+const flushRealtimeEventQueue = () => {
+  const dc = state.dataChannel;
+  if (!dc || dc.readyState !== 'open') return;
+
+  while (state.realtimeEventQueue.length > 0) {
+    const payload = state.realtimeEventQueue.shift();
+    try {
+      dc.send(JSON.stringify(payload));
+      addDiagLog(`Realtime queued event sent: ${payload.type}`);
+    } catch (err) {
+      addDiagLog(`Realtime queued event send failed: ${err.message}`);
+    }
+  }
+};
+
+// Send session.update with glossary instructions
+const sendSessionUpdate = () => {
+  const glossaryEntries = parseGlossary(state.glossaryText);
+  const instructions = buildSessionInstructions(glossaryEntries, state.outputLang);
+
+  const payload = {
+    type: 'session.update',
+    session: {
+      instructions: instructions,
+    },
+  };
+
+  const sent = sendRealtimeEvent(payload);
+  addDiagLog(`session.update sent (glossary) | entries=${glossaryEntries.length} | instructions_len=${instructions.length} | queued=${!sent}`);
 };
 
 const showDevNotice = (text = '') => {
@@ -491,10 +646,15 @@ const toggleCacheHelp = () => {
 
 const copyDiagnosticsToClipboard = async () => {
   if (!isDebugMode()) return;
-  const text = getDiagLogDump() || '診断ログはまだありません。';
+  const text = getDiagLogDump(DIAG_COPY_LIMIT);
+  if (!text) {
+    showDevNotice('診断ログはまだありません');
+    return;
+  }
+  const lineCount = text.split('\n').length;
   try {
     await navigator.clipboard.writeText(text);
-    showDevNotice('診断ログをコピーしました');
+    showDevNotice(`診断ログ（直近${lineCount}行）をコピーしました`);
   } catch (err) {
     try {
       const textarea = document.createElement('textarea');
@@ -506,7 +666,7 @@ const copyDiagnosticsToClipboard = async () => {
       textarea.select();
       document.execCommand('copy');
       textarea.remove();
-      showDevNotice('診断ログをコピーしました（フォールバック）');
+      showDevNotice(`診断ログ（直近${lineCount}行）をコピーしました`);
     } catch (fallbackErr) {
       console.error('Copy failed', fallbackErr);
       showDevNotice('コピーに失敗しました');
@@ -733,6 +893,139 @@ const blockedReasonMessages = {
   daily_limit_reached: 'Freeプランの本日の利用上限(10分)に達しました。',
 };
 
+// ========== Connection Error Categories ==========
+const ERROR_CATEGORY = {
+  MIC_PERMISSION: 'mic_permission',
+  TOKEN_AUTH: 'token_auth',
+  REALTIME_NEGOTIATE: 'realtime_negotiate',
+  ICE_FAILED: 'ice_failed',
+  CONNECTION_TIMEOUT: 'connection_timeout',
+  NETWORK: 'network',
+  UNKNOWN: 'unknown',
+};
+
+const ERROR_MESSAGES = {
+  [ERROR_CATEGORY.MIC_PERMISSION]: 'マイクの使用が許可されていません。ブラウザの設定でマイクへのアクセスを許可してください。',
+  [ERROR_CATEGORY.TOKEN_AUTH]: '認証エラーが発生しました。再ログインしてください。',
+  [ERROR_CATEGORY.REALTIME_NEGOTIATE]: 'リアルタイム接続の確立に失敗しました。しばらくしてから再試行してください。',
+  [ERROR_CATEGORY.ICE_FAILED]: '通信経路の確立に失敗しました。ネットワーク接続を確認してください。',
+  [ERROR_CATEGORY.CONNECTION_TIMEOUT]: '接続がタイムアウトしました。ネットワーク状況を確認して再試行してください。',
+  [ERROR_CATEGORY.NETWORK]: 'ネットワークエラーが発生しました。インターネット接続を確認してください。',
+  [ERROR_CATEGORY.UNKNOWN]: '予期しないエラーが発生しました。再試行してください。',
+};
+
+const CONNECTION_TIMEOUT_MS = 10000; // 10秒でタイムアウト
+const RETRY_BACKOFF_MS = 750; // リトライまでの待機時間（500ms〜1sの中間）
+const MAX_RETRY_COUNT = 1; // リトライは1回のみ
+
+// ========== Start Throttle / Rate Limit ==========
+const START_THROTTLE_MS = 12000; // クライアント側スロットル: 12秒に1回まで（5回/分）
+const DEFAULT_RATE_LIMIT_WAIT_MS = 60000; // 429時のデフォルト待機時間
+
+// クールダウンタイマーをクリア
+const clearCooldownTimer = () => {
+  if (state.cooldownTimerId) {
+    clearInterval(state.cooldownTimerId);
+    state.cooldownTimerId = null;
+  }
+};
+
+// クールダウン残り秒数を取得
+const getCooldownRemainingSeconds = () => {
+  const now = Date.now();
+  if (state.cooldownUntil <= now) return 0;
+  return Math.ceil((state.cooldownUntil - now) / 1000);
+};
+
+// クールダウンUIを更新（カウントダウン表示）
+const updateCooldownDisplay = () => {
+  const remainingSec = getCooldownRemainingSeconds();
+  if (remainingSec <= 0) {
+    // クールダウン終了
+    clearCooldownTimer();
+    state.cooldownUntil = 0;
+    setError('');
+    setStatus('Standby');
+    if (els.start) els.start.disabled = false;
+    addDiagLog('Cooldown ended, Start re-enabled');
+    return;
+  }
+  setError(`あと${remainingSec}秒後に再試行できます`);
+  setStatus('Cooldown');
+};
+
+// クールダウンを開始（waitMs ミリ秒間Startを無効化）
+const startCooldown = (waitMs, reason = 'rate_limit') => {
+  clearCooldownTimer();
+  state.cooldownUntil = Date.now() + waitMs;
+  const waitSec = Math.ceil(waitMs / 1000);
+  addDiagLog(`Cooldown started | reason=${reason} | waitMs=${waitMs} | cooldownUntil=${state.cooldownUntil}`);
+
+  // UIを即時更新
+  if (els.start) els.start.disabled = true;
+  if (els.stop) els.stop.disabled = true;
+  setError(`あと${waitSec}秒後に再試行できます`);
+  setStatus('Cooldown');
+
+  // 1秒ごとにカウントダウン表示を更新
+  state.cooldownTimerId = setInterval(() => {
+    updateCooldownDisplay();
+  }, 1000);
+};
+
+// クライアント側スロットルチェック
+// returns: { allowed: boolean, waitMs: number }
+const checkClientThrottle = () => {
+  const now = Date.now();
+  const elapsed = now - state.lastJobCreateAt;
+  if (elapsed < START_THROTTLE_MS) {
+    const waitMs = START_THROTTLE_MS - elapsed;
+    return { allowed: false, waitMs };
+  }
+  return { allowed: true, waitMs: 0 };
+};
+
+// Classify error and return { category, message, retryable }
+const classifyError = (err, context = '') => {
+  const errMsg = (err?.message || String(err)).toLowerCase();
+  const errName = (err?.name || '').toLowerCase();
+
+  // マイク許可エラー
+  if (errName === 'notallowederror' || errMsg.includes('permission denied') || errMsg.includes('not allowed')) {
+    return { category: ERROR_CATEGORY.MIC_PERMISSION, message: ERROR_MESSAGES[ERROR_CATEGORY.MIC_PERMISSION], retryable: false };
+  }
+
+  // トークン認証エラー（/token 401, invalid_auth）
+  if (context === 'token' || errMsg.includes('401') || errMsg.includes('invalid_auth') || errMsg.includes('token') && errMsg.includes('expired')) {
+    return { category: ERROR_CATEGORY.TOKEN_AUTH, message: ERROR_MESSAGES[ERROR_CATEGORY.TOKEN_AUTH], retryable: false };
+  }
+
+  // Realtime negotiate エラー（400, 401）
+  if (context === 'negotiate' || errMsg.includes('negotiate') || errMsg.includes('realtime')) {
+    if (errMsg.includes('401') || errMsg.includes('unauthorized')) {
+      return { category: ERROR_CATEGORY.TOKEN_AUTH, message: ERROR_MESSAGES[ERROR_CATEGORY.TOKEN_AUTH], retryable: false };
+    }
+    return { category: ERROR_CATEGORY.REALTIME_NEGOTIATE, message: ERROR_MESSAGES[ERROR_CATEGORY.REALTIME_NEGOTIATE], retryable: true };
+  }
+
+  // ICE接続失敗
+  if (errMsg.includes('ice') || errMsg.includes('connection failed') || errMsg.includes('ice failed')) {
+    return { category: ERROR_CATEGORY.ICE_FAILED, message: ERROR_MESSAGES[ERROR_CATEGORY.ICE_FAILED], retryable: true };
+  }
+
+  // タイムアウト
+  if (errMsg.includes('timeout') || errMsg.includes('timed out')) {
+    return { category: ERROR_CATEGORY.CONNECTION_TIMEOUT, message: ERROR_MESSAGES[ERROR_CATEGORY.CONNECTION_TIMEOUT], retryable: true };
+  }
+
+  // ネットワークエラー
+  if (errMsg.includes('network') || errMsg.includes('fetch') || errName === 'typeerror') {
+    return { category: ERROR_CATEGORY.NETWORK, message: ERROR_MESSAGES[ERROR_CATEGORY.NETWORK], retryable: true };
+  }
+
+  return { category: ERROR_CATEGORY.UNKNOWN, message: ERROR_MESSAGES[ERROR_CATEGORY.UNKNOWN], retryable: true };
+};
+
 const hasQuotaForStart = () => {
   const quota = state.quota;
   if (!quota.loaded) {
@@ -763,8 +1056,32 @@ const hasQuotaForStart = () => {
 
 const reserveJobSlot = async () => {
   addDiagLog('Requesting job reservation');
+
+  // 呼び出し時刻を記録（スロットル用）
+  state.lastJobCreateAt = Date.now();
+
   const res = await authFetch('/api/v1/jobs/create', { method: 'POST' });
   const data = await res.json().catch(() => ({}));
+
+  // 429 Too Many Requests の処理
+  if (res.status === 429) {
+    const retryAfterHeader = res.headers.get('Retry-After');
+    let waitMs = DEFAULT_RATE_LIMIT_WAIT_MS;
+    if (retryAfterHeader) {
+      const retryAfterSec = parseInt(retryAfterHeader, 10);
+      if (!isNaN(retryAfterSec) && retryAfterSec > 0) {
+        waitMs = retryAfterSec * 1000;
+      }
+    }
+    addDiagLog(`429 Too Many Requests | Retry-After=${retryAfterHeader || 'none'} | waitMs=${waitMs}`);
+
+    // 特別なエラーをthrowして、呼び出し元でクールダウン処理を行う
+    const rateLimitErr = new Error('rate_limit');
+    rateLimitErr._isRateLimit = true;
+    rateLimitErr._waitMs = waitMs;
+    throw rateLimitErr;
+  }
+
   if (!res.ok) {
     const message = extractErrorMessage(data, 'ジョブの予約に失敗しました。');
     throw new Error(message);
@@ -776,8 +1093,9 @@ const reserveJobSlot = async () => {
     reservedTicketSeconds: data.reservedTicketSeconds,
   };
   state.jobStartedAt = Date.now();
+  state.jobActive = true; // ジョブ有効化
   applyQuotaFromPayload(data);
-  addDiagLog(`Job reserved | jobId=${data.jobId}`);
+  addDiagLog(`Job reserved | jobId=${data.jobId} | jobActive=true`);
   return data;
 };
 
@@ -787,7 +1105,14 @@ const getJobElapsedSeconds = () => {
 };
 
 const completeCurrentJob = async (audioSeconds) => {
-  if (!state.currentJob) return null;
+  if (!state.currentJob) {
+    addDiagLog('completeCurrentJob: no active job to complete');
+    return null;
+  }
+  if (!state.jobActive) {
+    addDiagLog('completeCurrentJob: job already marked inactive, skipping');
+    return null;
+  }
   const payload = { jobId: state.currentJob.jobId };
   if (typeof audioSeconds === 'number' && Number.isFinite(audioSeconds)) {
     payload.audioSeconds = Math.max(0, Math.round(audioSeconds));
@@ -804,7 +1129,7 @@ const completeCurrentJob = async (audioSeconds) => {
       throw new Error(message);
     }
     applyQuotaFromPayload(data);
-    addDiagLog(`Job completed | billed=${data.billedSeconds ?? 'n/a'}s`);
+    addDiagLog(`Job completed | billed=${data.billedSeconds ?? 'n/a'}s | jobActive=false`);
     return data;
   } catch (err) {
     addDiagLog(`Job completion failed: ${err.message || err}`);
@@ -812,6 +1137,7 @@ const completeCurrentJob = async (audioSeconds) => {
   } finally {
     state.currentJob = null;
     state.jobStartedAt = null;
+    state.jobActive = false; // ジョブ無効化
   }
 };
 
@@ -879,14 +1205,32 @@ const stopMedia = () => {
 
 const closeRtc = () => {
   if (state.dataChannel) {
-    state.dataChannel.close();
+    try {
+      state.dataChannel.onmessage = null;
+      state.dataChannel.onclose = null;
+      state.dataChannel.onerror = null;
+      state.dataChannel.close();
+    } catch (e) {
+      // ignore close errors
+    }
   }
   if (state.pc) {
-    state.pc.getSenders().forEach((s) => s.track && s.track.stop());
-    state.pc.close();
+    try {
+      // イベントハンドラを解除して残骸を防ぐ
+      state.pc.oniceconnectionstatechange = null;
+      state.pc.onicegatheringstatechange = null;
+      state.pc.onconnectionstatechange = null;
+      state.pc.onicecandidate = null;
+      state.pc.ontrack = null;
+      state.pc.getSenders().forEach((s) => s.track && s.track.stop());
+      state.pc.close();
+    } catch (e) {
+      // ignore close errors
+    }
   }
   state.pc = null;
   state.dataChannel = null;
+  addDiagLog('closeRtc: cleanup completed');
 };
 
 const startRecorder = (stream) => {
@@ -1136,6 +1480,22 @@ const start = async () => {
     addDiagLog('Start blocked: user not authenticated');
     return;
   }
+
+  // クールダウン中かチェック
+  if (getCooldownRemainingSeconds() > 0) {
+    addDiagLog('Start blocked: cooldown active');
+    return; // クールダウンタイマーがUIを更新中なのでここでは何もしない
+  }
+
+  // クライアント側スロットルチェック（12秒に1回）
+  const throttle = checkClientThrottle();
+  if (!throttle.allowed) {
+    const waitSec = Math.ceil(throttle.waitMs / 1000);
+    addDiagLog(`Start throttled (client) | waitMs=${throttle.waitMs}`);
+    startCooldown(throttle.waitMs, 'client_throttle');
+    return;
+  }
+
   if (!state.quota.loaded) {
     await refreshQuotaStatus();
   }
@@ -1144,6 +1504,8 @@ const start = async () => {
     els.stop.disabled = true;
     return;
   }
+
+  // Update UI state
   els.start.disabled = true;
   els.stop.disabled = false;
   clearGapTimer();
@@ -1155,41 +1517,82 @@ const start = async () => {
   state.partialByItem = new Map();
   state.committedItems = new Set();
   state.activeItemId = null;
+  state.realtimeEventQueue = []; // Clear any stale queued events
   updateLiveText();
   setError('');
 
-  try {
-    await reserveJobSlot();
-    setStatus('Preparing');
-    const fd = new FormData();
-    fd.append('vad_silence', String(state.vadSilence));
-    addDiagLog('Requesting realtime token');
-    const res = await authFetch('/token', { method: 'POST', body: fd });
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      const detail = errJson.detail || errJson.message || 'token取得に失敗';
-      throw new Error(detail);
+  let retryCount = 0;
+  let lastError = null;
+
+  while (retryCount <= MAX_RETRY_COUNT) {
+    try {
+      // Reserve job slot only once (before first attempt)
+      // state.jobActiveはreserveJobSlot内でtrueに設定される
+      if (!state.jobActive) {
+        await reserveJobSlot();
+      }
+
+      await startConnectionAttempt();
+      return; // Success - exit the retry loop
+
+    } catch (err) {
+      // 429 Rate Limit エラーの特別処理
+      if (err._isRateLimit) {
+        addDiagLog(`Start blocked: 429 rate limit | waitMs=${err._waitMs}`);
+        stopMedia();
+        closeRtc();
+        startCooldown(err._waitMs, '429_rate_limit');
+        return; // クールダウン中なのでここで終了
+      }
+
+      lastError = err;
+      const context = err._context || '';
+      const classified = classifyError(err, context);
+
+      addDiagLog(`Start attempt ${retryCount + 1} failed: [${classified.category}] ${err.message}`);
+
+      // Clean up current attempt
+      stopMedia();
+      closeRtc();
+
+      // Check if error is retryable
+      if (!classified.retryable) {
+        addDiagLog(`Error not retryable: ${classified.category}`);
+        break;
+      }
+
+      // Check if we have retries left
+      if (retryCount >= MAX_RETRY_COUNT) {
+        addDiagLog('Max retries reached');
+        break;
+      }
+
+      // Wait before retry
+      retryCount++;
+      addDiagLog(`Retrying in ${RETRY_BACKOFF_MS}ms (attempt ${retryCount + 1}/${MAX_RETRY_COUNT + 1})`);
+      setStatus('Retrying...');
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS));
     }
-    const data = await res.json();
-    const clientSecret = data.value;
-    if (!clientSecret) throw new Error('client secret missing');
-    addDiagLog('Realtime token received');
-    await negotiate(clientSecret);
-    setStatus('Listening');
-    addDiagLog('Realtime negotiation completed');
-  } catch (err) {
-    setError(err.message || 'start error');
-    els.start.disabled = false;
-    els.stop.disabled = true;
-    stopMedia();
-    closeRtc();
+  }
+
+  // All attempts failed - show classified error message
+  const finalClassified = classifyError(lastError, lastError?._context || '');
+  setError(finalClassified.message);
+  addDiagLog(`Start failed permanently: [${finalClassified.category}] ${finalClassified.message}`);
+
+  els.start.disabled = false;
+  els.stop.disabled = true;
+  stopMedia();
+  closeRtc();
+
+  // jobActiveがtrueならジョブを0秒で完了させる（失敗時の後始末）
+  if (state.jobActive) {
     await completeCurrentJob(0);
-    addDiagLog(`Start failed: ${err.message || err}`);
   }
 };
 
 const stop = async () => {
-  addDiagLog('Stop requested');
+  addDiagLog(`Stop requested | jobActive=${state.jobActive}`);
   els.start.disabled = false;
   els.stop.disabled = true;
   clearGapTimer();
@@ -1211,8 +1614,13 @@ const stop = async () => {
     }
   }
 
-  const elapsedSeconds = getJobElapsedSeconds();
-  await completeCurrentJob(elapsedSeconds);
+  // jobActiveがtrueの場合のみジョブを完了させる
+  if (state.jobActive) {
+    const elapsedSeconds = getJobElapsedSeconds();
+    await completeCurrentJob(elapsedSeconds);
+  } else {
+    addDiagLog('Stop: no active job to complete');
+  }
   await saveTextDownloads();
   addDiagLog('Stop completed');
 };
@@ -1248,6 +1656,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (els.uiLang) els.uiLang.value = state.uiLang;
   if (els.inputLang) els.inputLang.value = state.inputLang;
   if (els.outputLang) els.outputLang.value = state.outputLang;
+  if (els.glossaryText) els.glossaryText.value = state.glossaryText;
 
   // Apply i18n on load
   applyI18n();
@@ -1273,10 +1682,14 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('uiLang', state.uiLang);
       localStorage.setItem('inputLang', state.inputLang);
       localStorage.setItem('outputLang', state.outputLang);
+      // Save glossary
+      const glossaryTextValue = els.glossaryText?.value || '';
+      glossaryStorage.set(glossaryTextValue);
+      const glossaryEntries = parseGlossary(glossaryTextValue);
       applyI18n();
       els.settingsModal?.close();
       addDiagLog(
-        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang}`
+        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang} glossary_entries=${glossaryEntries.length}`
       );
       updateDevStatusSummary();
     });
@@ -1298,8 +1711,27 @@ document.addEventListener('DOMContentLoaded', () => {
     closeRtc();
   });
 
+  // Service Worker 登録（debug=1 時は無効化）
   if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
+    window.addEventListener('load', async () => {
+      if (isDebugMode()) {
+        // debug=1: SW を無効化し、既存の登録を解除
+        console.log('[SW] Debug mode: skipping SW registration');
+        const registrations = await navigator.serviceWorker.getRegistrations();
+        for (const reg of registrations) {
+          await reg.unregister();
+          console.log('[SW] Unregistered:', reg.scope);
+        }
+        // キャッシュもクリア
+        const cacheNames = await caches.keys();
+        for (const name of cacheNames) {
+          await caches.delete(name);
+          console.log('[SW] Cache deleted:', name);
+        }
+        console.log('[SW] Debug mode: SW disabled, caches cleared');
+        return;
+      }
+      // 通常モード: SW を登録
       navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
     });
   }

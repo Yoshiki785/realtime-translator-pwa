@@ -1,0 +1,58 @@
+name: Verify Realtime Negotiate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify-negotiate:
+    name: Verify Realtime Negotiate Spec
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Make verify script executable
+        run: chmod +x scripts/verify_realtime_negotiate.sh
+
+      - name: Run verification
+        run: ./scripts/verify_realtime_negotiate.sh
+
+      - name: Summary on failure
+        if: failure()
+        run: |
+          echo "## Realtime Negotiate Verification Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The negotiate implementation does not match the expected spec." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Expected Spec (OpenAI Realtime GA WebRTC)" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: \`POST https://api.openai.com/v1/realtime/calls\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Content-Type**: \`application/sdp\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Body**: raw SDP string (\`offerSdp\`)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Forbidden Patterns" >> $GITHUB_STEP_SUMMARY
+          echo "- \`/v1/realtime?model=...\` (that's for WebSocket)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`FormData\` / \`multipart/form-data\`" >> $GITHUB_STEP_SUMMARY
+          echo "- \`Content-Type: application/json\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### How to Fix" >> $GITHUB_STEP_SUMMARY
+          echo "1. Check \`static/app.js\` negotiate function" >> $GITHUB_STEP_SUMMARY
+          echo "2. Ensure \`fetch(REALTIME_CALLS_URL, { headers: { 'Content-Type': 'application/sdp' }, body: offerSdp })\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Run \`./scripts/verify_realtime_negotiate.sh\` locally to verify" >> $GITHUB_STEP_SUMMARY
+          echo "4. Sync: \`cp static/app.js public/app.js\`" >> $GITHUB_STEP_SUMMARY
+
+      - name: Summary on success
+        if: success()
+        run: |
+          echo "## Realtime Negotiate Verification Passed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All checks passed:" >> $GITHUB_STEP_SUMMARY
+          echo "- REALTIME_CALLS_URL correctly defined" >> $GITHUB_STEP_SUMMARY
+          echo "- negotiate uses correct fetch pattern" >> $GITHUB_STEP_SUMMARY
+          echo "- Content-Type: application/sdp" >> $GITHUB_STEP_SUMMARY
+          echo "- Body: raw SDP (offerSdp)" >> $GITHUB_STEP_SUMMARY
+          echo "- No forbidden patterns (FormData, JSON, ?model=)" >> $GITHUB_STEP_SUMMARY
+          echo "- Glossary & Takeover features maintained" >> $GITHUB_STEP_SUMMARY
