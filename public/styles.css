@@ -496,3 +496,67 @@ button.small:active {
   color: var(--fg);
   font-size: 14px;
 }
+
+/* Billing section */
+.billing-section {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+  text-align: center;
+}
+
+.billing-status {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.billing-status.success {
+  color: #4ade80;
+}
+
+.billing-status.error {
+  color: #f87171;
+}
+
+.billing-status.pending {
+  color: #fbbf24;
+}
+
+/* Billing success banner */
+.billing-success-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(135deg, #059669, #10b981);
+  color: white;
+  padding: 16px;
+  text-align: center;
+  z-index: 1000;
+  animation: slideDown 0.3s ease-out;
+}
+
+.billing-success-banner.pending {
+  background: linear-gradient(135deg, #d97706, #f59e0b);
+}
+
+@keyframes slideDown {
+  from { transform: translateY(-100%); }
+  to { transform: translateY(0); }
+}
+
+.billing-success-banner button {
+  margin-left: 16px;
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.billing-success-banner button:hover {
+  background: rgba(255, 255, 255, 0.3);
+}

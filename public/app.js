@@ -43,6 +43,13 @@ const STRINGS = {
     takeoverMessage: '別端末で翻訳が開始されています。この端末で開始すると他端末のセッションは停止扱いになります。',
     takeoverStart: 'この端末で開始（他を停止）',
     takeoverKeep: '別端末の継続を優先',
+    upgradeToPro: 'Proにアップグレード',
+    upgrading: '処理中...',
+    billingSuccess: 'アップグレード完了！',
+    billingPending: 'プラン反映中...',
+    billingCancelled: 'キャンセルしました',
+    billingError: 'エラーが発生しました',
+    alreadyPro: 'Proプラン利用中',
   },
   en: {
     login: 'Login',
@@ -84,6 +91,13 @@ const STRINGS = {
     takeoverMessage: 'Another device is already translating. Starting here will stop the other session.',
     takeoverStart: 'Start on this device (stop others)',
     takeoverKeep: 'Keep the other session',
+    upgradeToPro: 'Upgrade to Pro',
+    upgrading: 'Processing...',
+    billingSuccess: 'Upgrade complete!',
+    billingPending: 'Applying plan...',
+    billingCancelled: 'Cancelled',
+    billingError: 'An error occurred',
+    alreadyPro: 'Pro plan active',
   },
   'zh-Hans': {
     login: '登录',
@@ -125,6 +139,13 @@ const STRINGS = {
     takeoverMessage: '另一台设备正在翻译。若在此设备开始，将停止其他会话。',
     takeoverStart: '在此设备开始（停止其他）',
     takeoverKeep: '优先保留其他设备',
+    upgradeToPro: '升级到Pro',
+    upgrading: '处理中...',
+    billingSuccess: '升级完成！',
+    billingPending: '正在应用计划...',
+    billingCancelled: '已取消',
+    billingError: '发生错误',
+    alreadyPro: 'Pro计划使用中',
   },
 };
 
@@ -516,6 +537,10 @@ const cacheElements = () => {
     runSummary: document.getElementById('runSummary'),
     copySummary: document.getElementById('copySummary'),
     summaryOutput: document.getElementById('summaryOutput'),
+    // Billing Section
+    billingSection: document.getElementById('billingSection'),
+    upgradeProBtn: document.getElementById('upgradeProBtn'),
+    billingStatus: document.getElementById('billingStatus'),
   };
 };
 
@@ -975,6 +1000,7 @@ const updateQuotaBreakdown = () => {
   const q = state.quota;
   if (!q.loaded) {
     els.quotaBreakdown.textContent = '';
+    updateBillingSection(false);
     return;
   }
   const planLabel = q.plan === 'pro' ? 'Pro' : 'Free';
@@ -989,6 +1015,168 @@ const updateQuotaBreakdown = () => {
     <div class="breakdown-row total"><span>合計:</span><span>${totalMin}分</span></div>
     <div class="breakdown-row reset"><span>次回リセット:</span><span>${nextReset}</span></div>
   `;
+  // Show billing section for logged-in users
+  updateBillingSection(currentUser != null);
+};
+
+// ========== Billing / Stripe Checkout ==========
+const updateBillingSection = (show) => {
+  if (!els.billingSection) return;
+  els.billingSection.style.display = show ? 'block' : 'none';
+
+  // Update button state based on current plan
+  if (els.upgradeProBtn && state.quota.loaded) {
+    if (state.quota.plan === 'pro') {
+      els.upgradeProBtn.textContent = t('alreadyPro');
+      els.upgradeProBtn.disabled = true;
+      els.upgradeProBtn.classList.add('disabled');
+    } else {
+      els.upgradeProBtn.textContent = t('upgradeToPro');
+      els.upgradeProBtn.disabled = false;
+      els.upgradeProBtn.classList.remove('disabled');
+    }
+  }
+};
+
+const startCheckout = async () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  const btn = els.upgradeProBtn;
+  const statusEl = els.billingStatus;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = t('upgrading');
+  }
+  if (statusEl) {
+    statusEl.textContent = '';
+    statusEl.className = 'billing-status';
+  }
+
+  try {
+    const baseUrl = window.location.origin;
+    const successUrl = `${baseUrl}/#/billing/success`;
+    const cancelUrl = `${baseUrl}/#/billing/cancel`;
+
+    const res = await authFetch('/api/v1/billing/stripe/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        successUrl,
+        cancelUrl,
+        email: currentUser.email || undefined,
+      }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `Checkout failed (${res.status})`);
+    }
+
+    const data = await res.json();
+    addDiagLog(`Checkout session created | sessionId=${data.sessionId}`);
+
+    // Redirect to Stripe Checkout
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error('No checkout URL returned');
+    }
+  } catch (err) {
+    console.error('[startCheckout] Error:', err);
+    addDiagLog(`Checkout error: ${err.message}`);
+    if (statusEl) {
+      statusEl.textContent = t('billingError') + ': ' + err.message;
+      statusEl.className = 'billing-status error';
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = t('upgradeToPro');
+    }
+  }
+};
+
+// Poll for plan update after successful checkout
+const pollForPlanUpdate = async (maxAttempts = 12, intervalMs = 5000) => {
+  for (let i = 0; i < maxAttempts; i++) {
+    await refreshQuotaStatus();
+    if (state.quota.plan === 'pro') {
+      return true;
+    }
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+  return false;
+};
+
+// Handle billing result from hash routes
+const handleBillingRoute = async () => {
+  const hash = window.location.hash;
+
+  if (hash === '#/billing/success') {
+    // Show success banner with polling
+    showBillingBanner('pending');
+    const upgraded = await pollForPlanUpdate();
+    if (upgraded) {
+      showBillingBanner('success');
+      addDiagLog('Billing: Plan upgraded to Pro');
+    } else {
+      showBillingBanner('pending-timeout');
+      addDiagLog('Billing: Polling timeout, plan not yet updated');
+    }
+    // Clean up hash
+    history.replaceState(null, '', window.location.pathname);
+  } else if (hash === '#/billing/cancel') {
+    showBillingBanner('cancelled');
+    addDiagLog('Billing: Checkout cancelled');
+    history.replaceState(null, '', window.location.pathname);
+  }
+};
+
+const showBillingBanner = (status) => {
+  // Remove existing banner
+  const existing = document.querySelector('.billing-success-banner');
+  if (existing) existing.remove();
+
+  const banner = document.createElement('div');
+  banner.className = 'billing-success-banner';
+
+  let message = '';
+  let showClose = true;
+
+  switch (status) {
+    case 'success':
+      message = t('billingSuccess');
+      break;
+    case 'pending':
+      message = t('billingPending');
+      banner.classList.add('pending');
+      showClose = false;
+      break;
+    case 'pending-timeout':
+      message = t('billingPending') + ' (確認中...)';
+      banner.classList.add('pending');
+      break;
+    case 'cancelled':
+      message = t('billingCancelled');
+      break;
+    default:
+      message = status;
+  }
+
+  banner.innerHTML = `
+    <span>${message}</span>
+    ${showClose ? '<button onclick="this.parentElement.remove()">✕</button>' : ''}
+  `;
+
+  document.body.prepend(banner);
+
+  // Auto-remove after delay (except for pending without timeout)
+  if (status !== 'pending') {
+    setTimeout(() => banner.remove(), status === 'success' ? 5000 : 3000);
+  }
 };
 
 const applyQuotaFromPayload = (payload = {}) => {
@@ -2188,10 +2376,17 @@ document.addEventListener('DOMContentLoaded', () => {
       addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
       if (user) {
         refreshQuotaStatus();
+        // Handle billing route after auth is ready
+        handleBillingRoute();
       } else {
         resetQuotaState();
       }
     });
+  }
+
+  // Upgrade Pro button click handler
+  if (els.upgradeProBtn) {
+    els.upgradeProBtn.addEventListener('click', startCheckout);
   }
 
   updateLiveText();
