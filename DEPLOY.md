@@ -162,7 +162,7 @@ firebase deploy --only hosting
 STAGING_API_URL=$(gcloud run services describe realtime-translator-api-staging --region=$REGION --format='value(status.url)')
 
 # ヘルスチェック
-curl $STAGING_API_URL/healthz
+curl $STAGING_API_URL/health
 
 # Firebase Hosting URL取得
 STAGING_URL=$(firebase hosting:channel:list | grep staging | awk '{print $2}')
@@ -215,13 +215,39 @@ gcloud run deploy realtime-translator-api \
 
 ### 2. Firebase Hosting デプロイ（production）
 
-```bash
-# firebase.json の rewrites で serviceId を production に変更
-# "serviceId": "realtime-translator-api"
+#### ⚠️ 重要: static/ → public/ フロー
 
-# 本番デプロイ
+**ルール: `public/` は手編集禁止。必ず `static/` を編集し、デプロイスクリプトで同期する。**
+
+```bash
+# 推奨: デプロイスクリプトを使用（static/ → public/ 同期 + デプロイ）
+./scripts/deploy_hosting.sh
+
+# または手動で実行
+rm -rf public/* && cp -R static/* public/
 firebase deploy --only hosting
 ```
+
+#### Service Worker とキャッシュ
+
+- **通常モード**: SW が network-first で `app.js`, `index.html` を取得（常に最新版）
+- **デバッグモード** (`?debug=1`): SW を無効化し、キャッシュをクリア
+
+```bash
+# デバッグモードでアクセス（SW無効、常に最新版）
+open "https://realtime-translator-pwa-483710.web.app/?debug=1"
+
+# DevTools で確認:
+# Application → Service Workers → 「Unregistered」と表示されること
+# Console → [SW] Debug mode: SW disabled, caches cleared
+```
+
+#### Cache-Control ヘッダ
+
+| ファイル | Cache-Control |
+|----------|---------------|
+| `index.html`, `app.js`, `sw.js` | `no-cache, no-store, must-revalidate` |
+| 画像、フォント | `public, max-age=31536000, immutable` |
 
 ### 3. Cloud Scheduler 設定（cleanup 定期実行）
 

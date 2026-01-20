@@ -1690,14 +1690,13 @@ const fetchToken = async () => {
   addDiagLog(`STEP5: before negotiate | offerSdpLen=${offerSdp?.length || 0}`);
 
   // デバッグ: SDP offer の検証
+  console.log('[negotiate] Realtime URL:', REALTIME_URL);
+  console.log('[negotiate] clientSecret prefix:', clientSecret ? `${clientSecret.substring(0, 10)}...` : 'missing');
   console.log('[negotiate] Offer SDP length:', offerSdp.length);
   if (!offerSdp.includes('v=0')) console.warn('[negotiate] SDP missing v=0');
   if (!offerSdp.includes('m=audio')) console.warn('[negotiate] SDP missing m=audio');
   if (!offerSdp.includes('a=ice-ufrag')) console.warn('[negotiate] SDP missing a=ice-ufrag');
   if (!offerSdp.includes('a=ice-pwd')) console.warn('[negotiate] SDP missing a=ice-pwd');
-
-  // デバッグ: clientSecret の形式確認（先頭のみ）
-  console.log('[negotiate] clientSecret prefix:', clientSecret?.substring(0, 10) + '...');
 
   // OpenAI Realtime API (ephemeral flow): Content-Type: application/sdp, body: raw SDP
   let res;
