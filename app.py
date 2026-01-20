@@ -1597,12 +1597,19 @@ async def stripe_webhook(request: Request) -> JSONResponse:
     # Checkout完了イベント（購入直後のuid紐付け）
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
-        uid = session.get("client_reference_id") or (session.get("metadata") or {}).get("uid")
+        session_id = session.get("id")
+        client_ref_id = session.get("client_reference_id")
+        metadata_uid = (session.get("metadata") or {}).get("uid")
+        uid = client_ref_id or metadata_uid
         customer_id = session.get("customer")
         subscription_id = session.get("subscription")
 
+        # 抽出した全フィールドをログ出力（デバッグ用）
+        logger.info(f"[stripe_webhook] checkout.session.completed extracted | {json.dumps({'sessionId': session_id, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid, 'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id})}")
+        print(f"[stripe_webhook] checkout.session.completed extracted | sessionId={session_id} clientReferenceId={client_ref_id} metadataUid={metadata_uid} uid={uid} customerId={customer_id} subscriptionId={subscription_id}")
+
         if not uid:
-            logger.warning(f"[stripe_webhook] checkout.session.completed without uid | {json.dumps({'eventType': event_type, 'sessionId': session.get('id'), 'customerId': customer_id})}")
+            logger.warning(f"[stripe_webhook] checkout.session.completed without uid | {json.dumps({'sessionId': session_id, 'customerId': customer_id, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid})}")
             return JSONResponse({"received": True, "warning": "uid_not_found"})
 
         user_updates = {
@@ -1613,8 +1620,13 @@ async def stripe_webhook(request: Request) -> JSONResponse:
         if subscription_id:
             user_updates["stripeSubscriptionId"] = subscription_id
 
-        db.collection("users").document(uid).set(user_updates, merge=True)
-        logger.info(f"[stripe_webhook] checkout.session.completed | {json.dumps({'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id})}")
+        try:
+            db.collection("users").document(uid).set(user_updates, merge=True)
+            logger.info(f"[stripe_webhook] checkout.session.completed Firestore updated | {json.dumps({'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id, 'fields': list(user_updates.keys())})}")
+        except Exception as e:
+            logger.exception(f"[stripe_webhook] checkout.session.completed Firestore set FAILED | {json.dumps({'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id, 'error': str(e)})}")
+            return JSONResponse({"received": True, "error": "firestore_update_failed"}, status_code=500)
+
         return JSONResponse({"received": True})
 
     # サブスクリプション関連イベント
