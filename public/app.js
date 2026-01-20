@@ -37,6 +37,12 @@ const STRINGS = {
     thisMonth: '今月:',
     remaining: '残り:',
     minutes: '分',
+    glossaryLabel: '辞書（用語集）',
+    glossaryHint: '1行1エントリ：source=target',
+    takeoverTitle: '別端末で使用中です',
+    takeoverMessage: '別端末で翻訳が開始されています。この端末で開始すると他端末のセッションは停止扱いになります。',
+    takeoverStart: 'この端末で開始（他を停止）',
+    takeoverKeep: '別端末の継続を優先',
   },
   en: {
     login: 'Login',
@@ -72,6 +78,12 @@ const STRINGS = {
     thisMonth: 'Month:',
     remaining: 'Remaining:',
     minutes: 'min',
+    glossaryLabel: 'Glossary',
+    glossaryHint: 'One per line: source=target',
+    takeoverTitle: 'Translation is active elsewhere',
+    takeoverMessage: 'Another device is already translating. Starting here will stop the other session.',
+    takeoverStart: 'Start on this device (stop others)',
+    takeoverKeep: 'Keep the other session',
   },
   'zh-Hans': {
     login: '登录',
@@ -107,6 +119,12 @@ const STRINGS = {
     thisMonth: '本月:',
     remaining: '剩余:',
     minutes: '分钟',
+    glossaryLabel: '词汇表',
+    glossaryHint: '每行一条：source=target',
+    takeoverTitle: '其他设备正在使用',
+    takeoverMessage: '另一台设备正在翻译。若在此设备开始，将停止其他会话。',
+    takeoverStart: '在此设备开始（停止其他）',
+    takeoverKeep: '优先保留其他设备',
   },
 };
 
@@ -125,6 +143,73 @@ const applyI18n = () => {
     const key = el.getAttribute('data-i18n');
     if (key && STRINGS[getUiLang()]?.[key]) {
       el.textContent = t(key);
+    }
+  });
+};
+
+const ensureTakeoverDialog = () => {
+  let dialog = document.getElementById('takeoverModal');
+  if (dialog) return dialog;
+
+  dialog = document.createElement('dialog');
+  dialog.id = 'takeoverModal';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'modal';
+
+  const title = document.createElement('h2');
+  title.dataset.takeover = 'title';
+
+  const message = document.createElement('p');
+  message.dataset.takeover = 'message';
+
+  const actions = document.createElement('div');
+  actions.className = 'modal-actions';
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.type = 'button';
+  confirmBtn.dataset.takeover = 'confirm';
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.type = 'button';
+  cancelBtn.dataset.takeover = 'cancel';
+
+  actions.append(confirmBtn, cancelBtn);
+  wrapper.append(title, message, actions);
+  dialog.append(wrapper);
+  document.body.appendChild(dialog);
+  return dialog;
+};
+
+const showTakeoverDialog = () => {
+  const dialog = ensureTakeoverDialog();
+  const title = dialog.querySelector('[data-takeover="title"]');
+  const message = dialog.querySelector('[data-takeover="message"]');
+  const confirmBtn = dialog.querySelector('[data-takeover="confirm"]');
+  const cancelBtn = dialog.querySelector('[data-takeover="cancel"]');
+
+  if (title) title.textContent = t('takeoverTitle');
+  if (message) message.textContent = t('takeoverMessage');
+  if (confirmBtn) confirmBtn.textContent = t('takeoverStart');
+  if (cancelBtn) cancelBtn.textContent = t('takeoverKeep');
+
+  return new Promise((resolve) => {
+    const onConfirm = () => {
+      dialog.close();
+      resolve(true);
+    };
+    const onCancel = (event) => {
+      if (event) event.preventDefault();
+      dialog.close();
+      resolve(false);
+    };
+
+    confirmBtn?.addEventListener('click', onConfirm, { once: true });
+    cancelBtn?.addEventListener('click', onCancel, { once: true });
+    dialog.addEventListener('cancel', onCancel, { once: true });
+
+    if (!dialog.open) {
+      dialog.showModal();
     }
   });
 };
@@ -156,9 +241,7 @@ const createDefaultQuotaState = () => ({
 });
 
 const API_BASE_URL = window.location.origin;
-const DEFAULT_REALTIME_MODEL = 'gpt-4o-realtime-preview';
-const REALTIME_MODEL = window.OPENAI_REALTIME_MODEL || DEFAULT_REALTIME_MODEL;
-const REALTIME_URL = `https://api.openai.com/v1/realtime?model=${encodeURIComponent(REALTIME_MODEL)}`;
+const REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
 const LANGUAGE_SETTINGS = {
   input: 'Auto (mic)',
   output: 'Japanese',
@@ -172,6 +255,8 @@ const isMissingConfigValue = (value) => !value || String(value).startsWith('PAST
 // Diagnostic log buffer (no secrets)
 const diagLogs = [];
 const MAX_DIAG_LOGS = 200;
+const rawRealtimeEvents = [];
+const MAX_RAW_REALTIME_EVENTS = 50;
 const SECRET_PATTERNS = [
   /apiKey[^\s]*/gi,
   /AIza[0-9a-zA-Z_\-]{10,}/g,
@@ -191,19 +276,46 @@ const sanitizeDiagMessage = (msg = '') => {
 
 const refreshDevLogs = () => {
   if (!isDebugMode() || !els.devLogArea) return;
-  const preview = diagLogs.slice(0, 50).join('\n');
+  // 直近50件を時系列順（古い→新しい）で表示
+  const preview = diagLogs.slice(-50).join('\n');
   els.devLogArea.textContent = preview || 'ログはまだありません。';
 };
 
 const addDiagLog = (msg) => {
   const safeMsg = sanitizeDiagMessage(msg);
   const entry = `[${new Date().toISOString()}] ${safeMsg}`;
-  diagLogs.unshift(entry);
-  if (diagLogs.length > MAX_DIAG_LOGS) diagLogs.pop();
+  diagLogs.push(entry); // 末尾に追加（古い順に並ぶ）
+  if (diagLogs.length > MAX_DIAG_LOGS) diagLogs.shift(); // 先頭（最古）を削除
   refreshDevLogs();
 };
 
-const getDiagLogDump = () => diagLogs.slice().reverse().join('\n');
+const logErrorDetails = (label, err) => {
+  const name = err?.name || 'Error';
+  const message = err?.message || String(err);
+  const stack = err?.stack || 'no_stack';
+  addDiagLog(`${label} error | name=${name} message=${message}`);
+  addDiagLog(`${label} error stack | ${stack}`);
+  console.error(label, err);
+};
+
+const addRawRealtimeEvent = (raw) => {
+  rawRealtimeEvents.push(raw);
+  if (rawRealtimeEvents.length > MAX_RAW_REALTIME_EVENTS) {
+    rawRealtimeEvents.shift();
+  }
+};
+
+const appendRawRealtimeToDiag = (text) => {
+  const header = '\n\nRAW REALTIME EVENTS (latest 50):\n';
+  if (!rawRealtimeEvents.length) return `${text}${header}(none)`;
+  return `${text}${header}${rawRealtimeEvents.join('\n')}`;
+};
+
+const DIAG_COPY_LIMIT = 50; // コピー時は直近50行のみ
+const getDiagLogDump = (limit = DIAG_COPY_LIMIT) => {
+  // 直近limit件を時系列順（古い→新しい）で返す
+  return diagLogs.slice(-limit).join('\n');
+};
 
 addDiagLog('App bootstrap start');
 
@@ -391,9 +503,19 @@ const cacheElements = () => {
     devCopyLogs: document.getElementById('devCopyLogs'),
     devTestEvent: document.getElementById('devTestEvent'),
     devClearCache: document.getElementById('devClearCache'),
+    devCopyIdToken: document.getElementById('devCopyIdToken'),
     devCloseBtn: document.getElementById('devCloseBtn'),
     devCacheHelp: document.getElementById('devCacheHelp'),
     devNotice: document.getElementById('devNotice'),
+    // Glossary & Summary Settings
+    glossaryTextInput: document.getElementById('glossaryTextInput'),
+    summaryPromptInput: document.getElementById('summaryPromptInput'),
+    resetUserSettings: document.getElementById('resetUserSettings'),
+    // Summary Section (after Stop)
+    summarySection: document.getElementById('summarySection'),
+    runSummary: document.getElementById('runSummary'),
+    copySummary: document.getElementById('copySummary'),
+    summaryOutput: document.getElementById('summaryOutput'),
   };
 };
 
@@ -422,6 +544,191 @@ const state = {
   quota: createDefaultQuotaState(),
   currentJob: null,
   jobStartedAt: null,
+  jobActive: false, // ジョブが有効（予約済み〜完了前）かどうか
+  // スロットル/クールダウン管理
+  lastJobCreateAt: 0, // 最後にjobs/createを呼んだ時刻（Date.now()）
+  cooldownUntil: 0, // クールダウン終了時刻（Date.now()）
+  cooldownTimerId: null, // カウントダウン表示用タイマーID
+  // Glossary & Summary Settings
+  glossaryText: localStorage.getItem('rt_glossary_text') || '',
+  summaryPrompt: localStorage.getItem('rt_summary_prompt') || '',
+  // Realtime event queue (for session.update before dataChannel is open)
+  realtimeEventQueue: [],
+};
+
+// ========== Glossary Storage Adapter ==========
+const GLOSSARY_STORAGE_KEY = 'rt_glossary_text';
+const SUMMARY_PROMPT_STORAGE_KEY = 'rt_summary_prompt';
+const GLOSSARY_MAX_LINES = 200;
+const SUMMARY_PROMPT_MAX_LENGTH = 2000;
+
+const glossaryStorage = {
+  get: () => localStorage.getItem(GLOSSARY_STORAGE_KEY) || '',
+  set: (text) => {
+    localStorage.setItem(GLOSSARY_STORAGE_KEY, text);
+    state.glossaryText = text;
+  },
+  clear: () => {
+    localStorage.removeItem(GLOSSARY_STORAGE_KEY);
+    state.glossaryText = '';
+  },
+};
+
+const summaryPromptStorage = {
+  get: () => localStorage.getItem(SUMMARY_PROMPT_STORAGE_KEY) || '',
+  set: (text) => {
+    // Enforce max length
+    const trimmed = (text || '').trim().slice(0, SUMMARY_PROMPT_MAX_LENGTH);
+    localStorage.setItem(SUMMARY_PROMPT_STORAGE_KEY, trimmed);
+    state.summaryPrompt = trimmed;
+  },
+  clear: () => {
+    localStorage.removeItem(SUMMARY_PROMPT_STORAGE_KEY);
+    state.summaryPrompt = '';
+  },
+};
+
+// ========== Glossary Parsing ==========
+// Parse glossary text into normalized entries: { source, target }[]
+const parseGlossary = (text) => {
+  if (!text || typeof text !== 'string') return [];
+  const lines = text.split('\n');
+  const entries = [];
+  let skippedCount = 0;
+
+  for (let i = 0; i < lines.length && entries.length < GLOSSARY_MAX_LINES; i++) {
+    const line = lines[i].trim();
+    // Skip empty lines and comments
+    if (!line || line.startsWith('#')) continue;
+
+    // Match "source=target" or "source=>target"
+    const match = line.match(/^(.+?)\s*=>\s*(.+)$/) || line.match(/^(.+?)\s*=\s*(.+)$/);
+    if (match) {
+      const source = match[1].trim();
+      const target = match[2].trim();
+      if (source && target) {
+        entries.push({ source, target });
+      } else {
+        skippedCount++;
+        addDiagLog(`glossary invalid line skipped: "${line.substring(0, 50)}"`);
+      }
+    } else {
+      skippedCount++;
+      addDiagLog(`glossary invalid line skipped: "${line.substring(0, 50)}"`);
+    }
+  }
+
+  if (lines.length > GLOSSARY_MAX_LINES) {
+    addDiagLog(`glossary truncated: ${lines.length} lines -> ${GLOSSARY_MAX_LINES} max`);
+  }
+
+  return entries;
+};
+
+// ========== Session Instructions Builder ==========
+const BASE_INSTRUCTIONS = [
+  'You are a real-time interpreter.',
+  'Output only the translated text. No extra commentary.',
+  'Preserve proper nouns, acronyms, and numbers.',
+].join(' ');
+
+const buildSessionInstructions = (glossaryEntries, outputLang) => {
+  let instructions = BASE_INSTRUCTIONS;
+
+  // Add output language hint
+  if (outputLang && outputLang !== 'auto') {
+    const langNames = { ja: 'Japanese', en: 'English', zh: 'Chinese' };
+    const langName = langNames[outputLang] || outputLang;
+    instructions += ` Translate into ${langName}.`;
+  }
+
+  // Add glossary section if entries exist
+  if (glossaryEntries && glossaryEntries.length > 0) {
+    instructions += '\n\nGlossary (must-follow):';
+    glossaryEntries.forEach(({ source, target }) => {
+      instructions += `\n- ${source} => ${target}`;
+    });
+    instructions += '\n\nGlossary rules:';
+    instructions += '\n- If a glossary entry matches, you MUST use the specified target term.';
+    instructions += '\n- Avoid partial-match mistakes; prefer whole-word matches when reasonable.';
+    instructions += '\n- Do not invent glossary entries.';
+  }
+
+  return instructions;
+};
+
+// ========== Realtime Event Sender with Queue ==========
+const sendRealtimeEvent = (payload) => {
+  const dc = state.dataChannel;
+  if (dc && dc.readyState === 'open') {
+    try {
+      dc.send(JSON.stringify(payload));
+      addDiagLog(`Realtime event sent: ${payload.type}`);
+      return true;
+    } catch (err) {
+      addDiagLog(`Realtime event send failed: ${err.message}`);
+      return false;
+    }
+  } else {
+    // Queue the event for later
+    state.realtimeEventQueue.push(payload);
+    addDiagLog(`Realtime event queued: ${payload.type} (dataChannel not open)`);
+    return false;
+  }
+};
+
+// Flush queued events when dataChannel opens
+const flushRealtimeEventQueue = () => {
+  const dc = state.dataChannel;
+  if (!dc || dc.readyState !== 'open') return;
+
+  while (state.realtimeEventQueue.length > 0) {
+    const payload = state.realtimeEventQueue.shift();
+    try {
+      dc.send(JSON.stringify(payload));
+      addDiagLog(`Realtime queued event sent: ${payload.type}`);
+    } catch (err) {
+      addDiagLog(`Realtime queued event send failed: ${err.message}`);
+    }
+  }
+};
+
+// Send session.update with glossary instructions
+const sendSessionUpdate = () => {
+  const transcriptionLanguage = state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined;
+  const silenceDurationMs = Number(state.vadSilence) || 500;
+
+  const payload = {
+    type: 'session.update',
+    session: {
+      type: 'realtime',
+      audio: {
+        input: {
+          transcription: {
+            model: 'gpt-4o-mini-transcribe',
+            ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
+          },
+          turn_detection: {
+            type: 'server_vad',
+            silence_duration_ms: silenceDurationMs,
+            prefix_padding_ms: 300,
+            threshold: 0.5,
+            create_response: false,
+          },
+          noise_reduction: { type: 'near_field' },
+        },
+      },
+    },
+  };
+
+  try {
+    addDiagLog(`STEP_SESSION_UPDATE: sending ${JSON.stringify(payload.session)}`);
+    const sent = sendRealtimeEvent(payload);
+    addDiagLog(`session.update sent (audio.input) | queued=${!sent}`);
+  } catch (err) {
+    logErrorDetails('sendSessionUpdate', err);
+    throw err;
+  }
 };
 
 const showDevNotice = (text = '') => {
@@ -494,10 +801,18 @@ const toggleCacheHelp = () => {
 
 const copyDiagnosticsToClipboard = async () => {
   if (!isDebugMode()) return;
-  const text = getDiagLogDump() || '診断ログはまだありません。';
+  let text = getDiagLogDump(DIAG_COPY_LIMIT);
+  if (text) {
+    text = appendRawRealtimeToDiag(text);
+  }
+  if (!text) {
+    showDevNotice('診断ログはまだありません');
+    return;
+  }
+  const lineCount = text.split('\n').length;
   try {
     await navigator.clipboard.writeText(text);
-    showDevNotice('診断ログをコピーしました');
+    showDevNotice(`診断ログ（直近${lineCount}行）をコピーしました`);
   } catch (err) {
     try {
       const textarea = document.createElement('textarea');
@@ -509,7 +824,7 @@ const copyDiagnosticsToClipboard = async () => {
       textarea.select();
       document.execCommand('copy');
       textarea.remove();
-      showDevNotice('診断ログをコピーしました（フォールバック）');
+      showDevNotice(`診断ログ（直近${lineCount}行）をコピーしました`);
     } catch (fallbackErr) {
       console.error('Copy failed', fallbackErr);
       showDevNotice('コピーに失敗しました');
@@ -559,6 +874,22 @@ const setupDevPanel = () => {
   els.devClearCache?.addEventListener('click', (e) => {
     e.preventDefault();
     toggleCacheHelp();
+  });
+  els.devCopyIdToken?.addEventListener('click', async (e) => {
+    e.preventDefault();
+    if (!currentUser) {
+      showDevNotice('ログインしていません');
+      return;
+    }
+    try {
+      const token = await currentUser.getIdToken(true);
+      await navigator.clipboard.writeText(token);
+      showDevNotice('IDトークンをコピーしました (curlテスト用)');
+      addDiagLog('ID_TOKEN copied to clipboard');
+    } catch (err) {
+      showDevNotice(`IDトークン取得エラー: ${err.message}`);
+      addDiagLog(`ID_TOKEN copy failed: ${err.message}`);
+    }
   });
   if (els.devPanelModal) {
     els.devPanelModal.addEventListener('close', () => showDevNotice(''));
@@ -736,6 +1067,139 @@ const blockedReasonMessages = {
   daily_limit_reached: 'Freeプランの本日の利用上限(10分)に達しました。',
 };
 
+// ========== Connection Error Categories ==========
+const ERROR_CATEGORY = {
+  MIC_PERMISSION: 'mic_permission',
+  TOKEN_AUTH: 'token_auth',
+  REALTIME_NEGOTIATE: 'realtime_negotiate',
+  ICE_FAILED: 'ice_failed',
+  CONNECTION_TIMEOUT: 'connection_timeout',
+  NETWORK: 'network',
+  UNKNOWN: 'unknown',
+};
+
+const ERROR_MESSAGES = {
+  [ERROR_CATEGORY.MIC_PERMISSION]: 'マイクの使用が許可されていません。ブラウザの設定でマイクへのアクセスを許可してください。',
+  [ERROR_CATEGORY.TOKEN_AUTH]: '認証エラーが発生しました。再ログインしてください。',
+  [ERROR_CATEGORY.REALTIME_NEGOTIATE]: 'リアルタイム接続の確立に失敗しました。しばらくしてから再試行してください。',
+  [ERROR_CATEGORY.ICE_FAILED]: '通信経路の確立に失敗しました。ネットワーク接続を確認してください。',
+  [ERROR_CATEGORY.CONNECTION_TIMEOUT]: '接続がタイムアウトしました。ネットワーク状況を確認して再試行してください。',
+  [ERROR_CATEGORY.NETWORK]: 'ネットワークエラーが発生しました。インターネット接続を確認してください。',
+  [ERROR_CATEGORY.UNKNOWN]: '予期しないエラーが発生しました。再試行してください。',
+};
+
+const CONNECTION_TIMEOUT_MS = 10000; // 10秒でタイムアウト
+const RETRY_BACKOFF_MS = 750; // リトライまでの待機時間（500ms〜1sの中間）
+const MAX_RETRY_COUNT = 1; // リトライは1回のみ
+
+// ========== Start Throttle / Rate Limit ==========
+const START_THROTTLE_MS = 12000; // クライアント側スロットル: 12秒に1回まで（5回/分）
+const DEFAULT_RATE_LIMIT_WAIT_MS = 60000; // 429時のデフォルト待機時間
+
+// クールダウンタイマーをクリア
+const clearCooldownTimer = () => {
+  if (state.cooldownTimerId) {
+    clearInterval(state.cooldownTimerId);
+    state.cooldownTimerId = null;
+  }
+};
+
+// クールダウン残り秒数を取得
+const getCooldownRemainingSeconds = () => {
+  const now = Date.now();
+  if (state.cooldownUntil <= now) return 0;
+  return Math.ceil((state.cooldownUntil - now) / 1000);
+};
+
+// クールダウンUIを更新（カウントダウン表示）
+const updateCooldownDisplay = () => {
+  const remainingSec = getCooldownRemainingSeconds();
+  if (remainingSec <= 0) {
+    // クールダウン終了
+    clearCooldownTimer();
+    state.cooldownUntil = 0;
+    setError('');
+    setStatus('Standby');
+    if (els.start) els.start.disabled = false;
+    addDiagLog('Cooldown ended, Start re-enabled');
+    return;
+  }
+  setError(`あと${remainingSec}秒後に再試行できます`);
+  setStatus('Cooldown');
+};
+
+// クールダウンを開始（waitMs ミリ秒間Startを無効化）
+const startCooldown = (waitMs, reason = 'rate_limit') => {
+  clearCooldownTimer();
+  state.cooldownUntil = Date.now() + waitMs;
+  const waitSec = Math.ceil(waitMs / 1000);
+  addDiagLog(`Cooldown started | reason=${reason} | waitMs=${waitMs} | cooldownUntil=${state.cooldownUntil}`);
+
+  // UIを即時更新
+  if (els.start) els.start.disabled = true;
+  if (els.stop) els.stop.disabled = true;
+  setError(`あと${waitSec}秒後に再試行できます`);
+  setStatus('Cooldown');
+
+  // 1秒ごとにカウントダウン表示を更新
+  state.cooldownTimerId = setInterval(() => {
+    updateCooldownDisplay();
+  }, 1000);
+};
+
+// クライアント側スロットルチェック
+// returns: { allowed: boolean, waitMs: number }
+const checkClientThrottle = () => {
+  const now = Date.now();
+  const elapsed = now - state.lastJobCreateAt;
+  if (elapsed < START_THROTTLE_MS) {
+    const waitMs = START_THROTTLE_MS - elapsed;
+    return { allowed: false, waitMs };
+  }
+  return { allowed: true, waitMs: 0 };
+};
+
+// Classify error and return { category, message, retryable }
+const classifyError = (err, context = '') => {
+  const errMsg = (err?.message || String(err)).toLowerCase();
+  const errName = (err?.name || '').toLowerCase();
+
+  // マイク許可エラー
+  if (errName === 'notallowederror' || errMsg.includes('permission denied') || errMsg.includes('not allowed')) {
+    return { category: ERROR_CATEGORY.MIC_PERMISSION, message: ERROR_MESSAGES[ERROR_CATEGORY.MIC_PERMISSION], retryable: false };
+  }
+
+  // トークン認証エラー（/token 401, invalid_auth）
+  if (context === 'token' || errMsg.includes('401') || errMsg.includes('invalid_auth') || errMsg.includes('token') && errMsg.includes('expired')) {
+    return { category: ERROR_CATEGORY.TOKEN_AUTH, message: ERROR_MESSAGES[ERROR_CATEGORY.TOKEN_AUTH], retryable: false };
+  }
+
+  // Realtime negotiate エラー（400, 401）
+  if (context === 'negotiate' || errMsg.includes('negotiate') || errMsg.includes('realtime')) {
+    if (errMsg.includes('401') || errMsg.includes('unauthorized')) {
+      return { category: ERROR_CATEGORY.TOKEN_AUTH, message: ERROR_MESSAGES[ERROR_CATEGORY.TOKEN_AUTH], retryable: false };
+    }
+    return { category: ERROR_CATEGORY.REALTIME_NEGOTIATE, message: ERROR_MESSAGES[ERROR_CATEGORY.REALTIME_NEGOTIATE], retryable: true };
+  }
+
+  // ICE接続失敗
+  if (errMsg.includes('ice') || errMsg.includes('connection failed') || errMsg.includes('ice failed')) {
+    return { category: ERROR_CATEGORY.ICE_FAILED, message: ERROR_MESSAGES[ERROR_CATEGORY.ICE_FAILED], retryable: true };
+  }
+
+  // タイムアウト
+  if (errMsg.includes('timeout') || errMsg.includes('timed out')) {
+    return { category: ERROR_CATEGORY.CONNECTION_TIMEOUT, message: ERROR_MESSAGES[ERROR_CATEGORY.CONNECTION_TIMEOUT], retryable: true };
+  }
+
+  // ネットワークエラー
+  if (errMsg.includes('network') || errMsg.includes('fetch') || errName === 'typeerror') {
+    return { category: ERROR_CATEGORY.NETWORK, message: ERROR_MESSAGES[ERROR_CATEGORY.NETWORK], retryable: true };
+  }
+
+  return { category: ERROR_CATEGORY.UNKNOWN, message: ERROR_MESSAGES[ERROR_CATEGORY.UNKNOWN], retryable: true };
+};
+
 const hasQuotaForStart = () => {
   const quota = state.quota;
   if (!quota.loaded) {
@@ -764,10 +1228,53 @@ const hasQuotaForStart = () => {
   return true;
 };
 
-const reserveJobSlot = async () => {
+const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   addDiagLog('Requesting job reservation');
-  const res = await authFetch('/api/v1/jobs/create', { method: 'POST' });
+
+  // 呼び出し時刻を記録（スロットル用）
+  state.lastJobCreateAt = Date.now();
+
+  const createUrl = forceTakeover
+    ? '/api/v1/jobs/create?force_takeover=true'
+    : '/api/v1/jobs/create';
+  const res = await authFetch(createUrl, { method: 'POST' });
   const data = await res.json().catch(() => ({}));
+
+  if (res.status === 409 && data?.error === 'active_job_in_progress') {
+    addDiagLog('Job create blocked: active_job_in_progress');
+    if (forceTakeover) {
+      const takeoverErr = new Error('active_job_in_progress');
+      takeoverErr._context = 'job_create';
+      throw takeoverErr;
+    }
+    const shouldTakeover = await showTakeoverDialog();
+    if (!shouldTakeover) {
+      const cancelErr = new Error('takeover_declined');
+      cancelErr._abortStart = true;
+      throw cancelErr;
+    }
+    return reserveJobSlot({ forceTakeover: true });
+  }
+
+  // 429 Too Many Requests の処理
+  if (res.status === 429) {
+    const retryAfterHeader = res.headers.get('Retry-After');
+    let waitMs = DEFAULT_RATE_LIMIT_WAIT_MS;
+    if (retryAfterHeader) {
+      const retryAfterSec = parseInt(retryAfterHeader, 10);
+      if (!isNaN(retryAfterSec) && retryAfterSec > 0) {
+        waitMs = retryAfterSec * 1000;
+      }
+    }
+    addDiagLog(`429 Too Many Requests | Retry-After=${retryAfterHeader || 'none'} | waitMs=${waitMs}`);
+
+    // 特別なエラーをthrowして、呼び出し元でクールダウン処理を行う
+    const rateLimitErr = new Error('rate_limit');
+    rateLimitErr._isRateLimit = true;
+    rateLimitErr._waitMs = waitMs;
+    throw rateLimitErr;
+  }
+
   if (!res.ok) {
     const message = extractErrorMessage(data, 'ジョブの予約に失敗しました。');
     throw new Error(message);
@@ -779,8 +1286,9 @@ const reserveJobSlot = async () => {
     reservedTicketSeconds: data.reservedTicketSeconds,
   };
   state.jobStartedAt = Date.now();
+  state.jobActive = true; // ジョブ有効化
   applyQuotaFromPayload(data);
-  addDiagLog(`Job reserved | jobId=${data.jobId}`);
+  addDiagLog(`Job reserved | jobId=${data.jobId} | jobActive=true`);
   return data;
 };
 
@@ -790,7 +1298,14 @@ const getJobElapsedSeconds = () => {
 };
 
 const completeCurrentJob = async (audioSeconds) => {
-  if (!state.currentJob) return null;
+  if (!state.currentJob) {
+    addDiagLog('completeCurrentJob: no active job to complete');
+    return null;
+  }
+  if (!state.jobActive) {
+    addDiagLog('completeCurrentJob: job already marked inactive, skipping');
+    return null;
+  }
   const payload = { jobId: state.currentJob.jobId };
   if (typeof audioSeconds === 'number' && Number.isFinite(audioSeconds)) {
     payload.audioSeconds = Math.max(0, Math.round(audioSeconds));
@@ -807,7 +1322,7 @@ const completeCurrentJob = async (audioSeconds) => {
       throw new Error(message);
     }
     applyQuotaFromPayload(data);
-    addDiagLog(`Job completed | billed=${data.billedSeconds ?? 'n/a'}s`);
+    addDiagLog(`Job completed | billed=${data.billedSeconds ?? 'n/a'}s | jobActive=false`);
     return data;
   } catch (err) {
     addDiagLog(`Job completion failed: ${err.message || err}`);
@@ -815,6 +1330,7 @@ const completeCurrentJob = async (audioSeconds) => {
   } finally {
     state.currentJob = null;
     state.jobStartedAt = null;
+    state.jobActive = false; // ジョブ無効化
   }
 };
 
@@ -882,14 +1398,32 @@ const stopMedia = () => {
 
 const closeRtc = () => {
   if (state.dataChannel) {
-    state.dataChannel.close();
+    try {
+      state.dataChannel.onmessage = null;
+      state.dataChannel.onclose = null;
+      state.dataChannel.onerror = null;
+      state.dataChannel.close();
+    } catch (e) {
+      // ignore close errors
+    }
   }
   if (state.pc) {
-    state.pc.getSenders().forEach((s) => s.track && s.track.stop());
-    state.pc.close();
+    try {
+      // イベントハンドラを解除して残骸を防ぐ
+      state.pc.oniceconnectionstatechange = null;
+      state.pc.onicegatheringstatechange = null;
+      state.pc.onconnectionstatechange = null;
+      state.pc.onicecandidate = null;
+      state.pc.ontrack = null;
+      state.pc.getSenders().forEach((s) => s.track && s.track.stop());
+      state.pc.close();
+    } catch (e) {
+      // ignore close errors
+    }
   }
   state.pc = null;
   state.dataChannel = null;
+  addDiagLog('closeRtc: cleanup completed');
 };
 
 const startRecorder = (stream) => {
@@ -922,6 +1456,12 @@ const saveTextDownloads = async () => {
     const fd = new FormData();
     fd.append('text', originals);
     fd.append('output_lang', state.outputLang);
+    if (state.glossaryText) {
+      fd.append('glossary_text', state.glossaryText);
+    }
+    if (state.summaryPrompt) {
+      fd.append('summary_prompt', state.summaryPrompt);
+    }
     const summaryRes = await authFetch('/summarize', {
       method: 'POST',
       body: fd,
@@ -940,6 +1480,12 @@ const saveTextDownloads = async () => {
   makeBlobLink('原文.txt', originals);
   makeBlobLink('原文+日本語.txt', bilingual);
   if (summaryMd) makeBlobLink('要約.md', summaryMd, 'text/markdown');
+
+  // Show summary section for manual summary generation
+  if (originals.trim() && els.summarySection) {
+    els.summarySection.style.display = 'block';
+    if (els.runSummary) els.runSummary.disabled = false;
+  }
 };
 
 const translateCompleted = async (text) => {
@@ -1043,18 +1589,63 @@ const handleCompleted = (payload) => {
 };
 
 const handleDataMessage = (event) => {
+  const raw = typeof event.data === 'string' ? event.data : JSON.stringify(event.data);
+  addRawRealtimeEvent(raw);
   try {
-    const payload = JSON.parse(event.data);
-    const type = payload.type || payload.event || '';
+    const msg = JSON.parse(event.data);
+    const type = msg.type || msg.event || '';
+    if (msg?.type === 'error') {
+      console.error('[realtime:error]', msg);
+      addDiagLog(`REALTIME_ERROR_JSON: ${JSON.stringify(msg)}`);
+    }
     if (type === 'conversation.item.input_audio_transcription.delta') {
-      handleDelta(payload);
+      handleDelta(msg);
     } else if (type === 'conversation.item.input_audio_transcription.completed') {
-      handleCompleted(payload);
-    } else if (type === 'error' || payload.type === 'error') {
-      setError(payload.error?.message || payload.message || 'Realtime error');
+      handleCompleted(msg);
+    } else if (type === 'error' || msg.error) {
+      setError(msg.error?.message || msg.message || 'Realtime error');
     }
   } catch (err) {
     console.error('message parse', err);
+  }
+};
+
+const fetchToken = async () => {
+  const fd = new FormData();
+  fd.append('vad_silence', String(state.vadSilence || 400));
+  fd.append('glossaryText', state.glossaryText || '');
+  fd.append('outputLang', state.outputLang || 'auto');
+  let res;
+  let statusLogged = false;
+
+  try {
+    res = await authFetch('/token', { method: 'POST', body: fd });
+    addDiagLog(`STEP4: token fetch response status=${res.status}`);
+    statusLogged = true;
+
+    if (!res.ok) {
+      const errorBody = await res.text();
+      const err = new Error(`/token ${res.status}: ${errorBody || res.statusText}`);
+      err._context = 'token';
+      throw err;
+    }
+
+    const data = await res.json().catch(() => ({}));
+    const clientSecret = data.value || data.client_secret || data.clientSecret;
+    if (!clientSecret) {
+      const err = new Error('client_secret missing in /token response');
+      err._context = 'token';
+      throw err;
+    }
+    return clientSecret;
+  } catch (err) {
+    err._context = err._context || 'token';
+    logErrorDetails('fetchToken', err);
+    throw err;
+  } finally {
+    if (!statusLogged) {
+      addDiagLog('STEP4: token fetch response status=no_response');
+    }
   }
 };
 
@@ -1064,6 +1655,16 @@ const handleDataMessage = (event) => {
   state.dataChannel = pc.createDataChannel('oai-events');
   state.dataChannel.onmessage = handleDataMessage;
   state.dataChannel.onclose = () => setStatus('Closed');
+  state.dataChannel.onopen = () => {
+    addDiagLog('STEP7: RTC connected / datachannel opened');
+    setStatus('Listening');
+    flushRealtimeEventQueue();
+    try {
+      sendSessionUpdate();
+    } catch (err) {
+      logErrorDetails('session.update', err);
+    }
+  };
 
   const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
   state.mediaStream = stream;
@@ -1086,6 +1687,8 @@ const handleDataMessage = (event) => {
 
   const offerSdp = pc.localDescription.sdp;
 
+  addDiagLog(`STEP5: before negotiate | offerSdpLen=${offerSdp?.length || 0}`);
+
   // デバッグ: SDP offer の検証
   console.log('[negotiate] Realtime URL:', REALTIME_URL);
   console.log('[negotiate] clientSecret prefix:', clientSecret ? `${clientSecret.substring(0, 10)}...` : 'missing');
@@ -1096,46 +1699,64 @@ const handleDataMessage = (event) => {
   if (!offerSdp.includes('a=ice-pwd')) console.warn('[negotiate] SDP missing a=ice-pwd');
 
   // OpenAI Realtime API (ephemeral flow): Content-Type: application/sdp, body: raw SDP
-  // model パラメータを URL に追加
-  const res = await fetch(REALTIME_URL, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${clientSecret}`,
-      'Content-Type': 'application/sdp',
-    },
-    body: offerSdp,
-  });
+  let res;
+  let responseLogged = false;
+  try {
+    res = await fetch(REALTIME_CALLS_URL, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${clientSecret}`,
+        'Content-Type': 'application/sdp',
+      },
+      body: offerSdp,
+    });
 
-  console.log('[negotiate] Response status:', res.status);
-  console.log('[negotiate] Response Location header:', res.headers.get('Location'));
+    console.log('[negotiate] Response status:', res.status);
+    console.log('[negotiate] Response Location header:', res.headers.get('Location'));
+    addDiagLog(`STEP6: negotiate response status=${res.status}`);
+    responseLogged = true;
 
-  if (!res.ok) {
-    let errorBody = '';
-    try {
-      errorBody = await res.text();
-    } catch (err) {
-      console.error('[negotiate] Response text read failed:', err);
-    }
-    console.error('[negotiate] OpenAI realtime negotiate FAILED');
-    console.error('[negotiate] Status:', res.status, res.statusText);
-    console.error('[negotiate] Response headers:', [...res.headers.entries()]);
-    if (errorBody) {
+    if (!res.ok) {
+      const errorBody = await res.text();
+      console.error('[negotiate] OpenAI realtime/calls FAILED');
+      console.error('[negotiate] Status:', res.status);
+      console.error('[negotiate] Response headers:', [...res.headers.entries()]);
       console.error('[negotiate] Response body:', errorBody);
+      const err = new Error(`Realtime negotiate failed (${res.status}): ${errorBody || res.statusText}`);
+      err._context = 'negotiate';
+      throw err;
     }
-    throw new Error(
-      `Realtime negotiate failed (${res.status} ${res.statusText}): ${errorBody || 'no body'}`
-    );
-  }
 
-  const answerSdp = await res.text();
-  console.log('[negotiate] Answer SDP length:', answerSdp.length);
-  console.log('[negotiate] Answer SDP starts with v=0:', answerSdp.startsWith('v=0'));
-  await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
-  console.log('[negotiate] setRemoteDescription completed');
-  setStatus('Connecting');
+    const answerSdp = await res.text();
+    console.log('[negotiate] Answer SDP length:', answerSdp.length);
+    console.log('[negotiate] Answer SDP starts with v=0:', answerSdp.startsWith('v=0'));
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+    console.log('[negotiate] setRemoteDescription completed');
+    setStatus('Connecting');
+  } catch (err) {
+    err._context = err._context || 'negotiate';
+    logErrorDetails('negotiate', err);
+    throw err;
+  } finally {
+    if (!responseLogged) {
+      addDiagLog('STEP6: negotiate response status=no_response');
+    }
+  }
+};
+
+const startConnectionAttempt = async () => {
+  addDiagLog('STEP3: before token fetch');
+  try {
+    const clientSecret = await fetchToken();
+    await negotiate(clientSecret);
+  } catch (err) {
+    logErrorDetails('startConnectionAttempt', err);
+    throw err;
+  }
 };
 
 const start = async () => {
+  addDiagLog('STEP1: start() entered');
   addDiagLog('Start requested');
   if (!firebaseState.initialized) {
     setError('Firebase初期化に失敗しました。設定を確認してください。');
@@ -1147,6 +1768,22 @@ const start = async () => {
     addDiagLog('Start blocked: user not authenticated');
     return;
   }
+
+  // クールダウン中かチェック
+  if (getCooldownRemainingSeconds() > 0) {
+    addDiagLog('Start blocked: cooldown active');
+    return; // クールダウンタイマーがUIを更新中なのでここでは何もしない
+  }
+
+  // クライアント側スロットルチェック（12秒に1回）
+  const throttle = checkClientThrottle();
+  if (!throttle.allowed) {
+    const waitSec = Math.ceil(throttle.waitMs / 1000);
+    addDiagLog(`Start throttled (client) | waitMs=${throttle.waitMs}`);
+    startCooldown(throttle.waitMs, 'client_throttle');
+    return;
+  }
+
   if (!state.quota.loaded) {
     await refreshQuotaStatus();
   }
@@ -1155,6 +1792,8 @@ const start = async () => {
     els.stop.disabled = true;
     return;
   }
+
+  // Update UI state
   els.start.disabled = true;
   els.stop.disabled = false;
   clearGapTimer();
@@ -1166,41 +1805,94 @@ const start = async () => {
   state.partialByItem = new Map();
   state.committedItems = new Set();
   state.activeItemId = null;
+  state.realtimeEventQueue = []; // Clear any stale queued events
   updateLiveText();
   setError('');
 
-  try {
-    await reserveJobSlot();
-    setStatus('Preparing');
-    const fd = new FormData();
-    fd.append('vad_silence', String(state.vadSilence));
-    addDiagLog('Requesting realtime token');
-    const res = await authFetch('/token', { method: 'POST', body: fd });
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => ({}));
-      const detail = errJson.detail || errJson.message || 'token取得に失敗';
-      throw new Error(detail);
+  let retryCount = 0;
+  let lastError = null;
+
+  while (retryCount <= MAX_RETRY_COUNT) {
+    try {
+      // Reserve job slot only once (before first attempt)
+      // state.jobActiveはreserveJobSlot内でtrueに設定される
+      if (!state.jobActive) {
+        await reserveJobSlot();
+        addDiagLog('STEP2: after reserveJobSlot success');
+      }
+
+      await startConnectionAttempt();
+      return; // Success - exit the retry loop
+
+    } catch (err) {
+      logErrorDetails('start', err);
+      if (err._abortStart) {
+        addDiagLog('Start aborted by user (takeover declined)');
+        stopMedia();
+        closeRtc();
+        setStatus('Standby');
+        els.start.disabled = false;
+        els.stop.disabled = true;
+        return;
+      }
+      // 429 Rate Limit エラーの特別処理
+      if (err._isRateLimit) {
+        addDiagLog(`Start blocked: 429 rate limit | waitMs=${err._waitMs}`);
+        stopMedia();
+        closeRtc();
+        startCooldown(err._waitMs, '429_rate_limit');
+        return; // クールダウン中なのでここで終了
+      }
+
+      lastError = err;
+      const context = err._context || '';
+      const classified = classifyError(err, context);
+
+      addDiagLog(`Start attempt ${retryCount + 1} failed: [${classified.category}] ${err.message}`);
+
+      // Clean up current attempt
+      stopMedia();
+      closeRtc();
+
+      // Check if error is retryable
+      if (!classified.retryable) {
+        addDiagLog(`Error not retryable: ${classified.category}`);
+        break;
+      }
+
+      // Check if we have retries left
+      if (retryCount >= MAX_RETRY_COUNT) {
+        addDiagLog('Max retries reached');
+        break;
+      }
+
+      // Wait before retry
+      retryCount++;
+      addDiagLog(`Retrying in ${RETRY_BACKOFF_MS}ms (attempt ${retryCount + 1}/${MAX_RETRY_COUNT + 1})`);
+      setStatus('Retrying...');
+      await new Promise((resolve) => setTimeout(resolve, RETRY_BACKOFF_MS));
     }
-    const data = await res.json();
-    const clientSecret = data.value;
-    if (!clientSecret) throw new Error('client secret missing');
-    addDiagLog('Realtime token received');
-    await negotiate(clientSecret);
-    setStatus('Listening');
-    addDiagLog('Realtime negotiation completed');
-  } catch (err) {
-    setError(err.message || 'start error');
-    els.start.disabled = false;
-    els.stop.disabled = true;
-    stopMedia();
-    closeRtc();
+  }
+
+  // All attempts failed - show classified error message
+  const finalClassified = classifyError(lastError, lastError?._context || '');
+  setError(finalClassified.message);
+  addDiagLog(`Start failed permanently: [${finalClassified.category}] ${finalClassified.message}`);
+
+  els.start.disabled = false;
+  els.stop.disabled = true;
+  stopMedia();
+  closeRtc();
+
+  // jobActiveがtrueならジョブを0秒で完了させる（失敗時の後始末）
+  if (state.jobActive) {
+    addDiagLog(`COMPLETE because start failed: ${finalClassified.category}`);
     await completeCurrentJob(0);
-    addDiagLog(`Start failed: ${err.message || err}`);
   }
 };
 
 const stop = async () => {
-  addDiagLog('Stop requested');
+  addDiagLog(`Stop requested | jobActive=${state.jobActive}`);
   els.start.disabled = false;
   els.stop.disabled = true;
   clearGapTimer();
@@ -1222,8 +1914,13 @@ const stop = async () => {
     }
   }
 
-  const elapsedSeconds = getJobElapsedSeconds();
-  await completeCurrentJob(elapsedSeconds);
+  // jobActiveがtrueの場合のみジョブを完了させる
+  if (state.jobActive) {
+    const elapsedSeconds = getJobElapsedSeconds();
+    await completeCurrentJob(elapsedSeconds);
+  } else {
+    addDiagLog('Stop: no active job to complete');
+  }
   await saveTextDownloads();
   addDiagLog('Stop completed');
 };
@@ -1259,6 +1956,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (els.uiLang) els.uiLang.value = state.uiLang;
   if (els.inputLang) els.inputLang.value = state.inputLang;
   if (els.outputLang) els.outputLang.value = state.outputLang;
+  // Glossary & Summary Settings
+  if (els.glossaryTextInput) els.glossaryTextInput.value = state.glossaryText;
+  if (els.summaryPromptInput) els.summaryPromptInput.value = state.summaryPrompt;
 
   // Apply i18n on load
   applyI18n();
@@ -1284,10 +1984,16 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('uiLang', state.uiLang);
       localStorage.setItem('inputLang', state.inputLang);
       localStorage.setItem('outputLang', state.outputLang);
+      // Save glossary & summary prompt
+      const glossaryTextValue = els.glossaryTextInput?.value || '';
+      glossaryStorage.set(glossaryTextValue);
+      const glossaryEntries = parseGlossary(glossaryTextValue);
+      const summaryPromptValue = els.summaryPromptInput?.value || '';
+      summaryPromptStorage.set(summaryPromptValue);
       applyI18n();
       els.settingsModal?.close();
       addDiagLog(
-        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang}`
+        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang} glossary_entries=${glossaryEntries.length} summaryPrompt_len=${state.summaryPrompt.length}`
       );
       updateDevStatusSummary();
     });
@@ -1302,6 +2008,90 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (els.presetStable) {
     els.presetStable.addEventListener('click', () => applyPreset('stable'));
+  }
+
+  // Reset user settings (glossary & summary prompt)
+  if (els.resetUserSettings) {
+    els.resetUserSettings.addEventListener('click', () => {
+      glossaryStorage.clear();
+      summaryPromptStorage.clear();
+      if (els.glossaryTextInput) els.glossaryTextInput.value = '';
+      if (els.summaryPromptInput) els.summaryPromptInput.value = '';
+      addDiagLog('User settings reset (glossary & summaryPrompt cleared)');
+    });
+  }
+
+  // Run Summary button (manual summary generation after Stop)
+  if (els.runSummary) {
+    els.runSummary.addEventListener('click', async () => {
+      const originals = state.logs.join('\n');
+      const bilingual = state.logs
+        .map((orig, idx) => `${orig}\n${state.translations[idx] || ''}`)
+        .join('\n\n');
+
+      if (!originals.trim()) {
+        setError(t('errorNoTextToSummarize') || 'No text to summarize');
+        return;
+      }
+
+      els.runSummary.disabled = true;
+      els.runSummary.textContent = t('generating') || '生成中...';
+
+      try {
+        const fd = new FormData();
+        // Use bilingual text (original + translation) for richer summary
+        fd.append('text', bilingual);
+        fd.append('output_lang', state.outputLang);
+        if (state.glossaryText) {
+          fd.append('glossary_text', state.glossaryText);
+        }
+        if (state.summaryPrompt) {
+          fd.append('summary_prompt', state.summaryPrompt);
+        }
+        const res = await authFetch('/summarize', { method: 'POST', body: fd });
+        if (!res.ok) {
+          throw new Error(t('errorSummaryFailed') || 'Summary generation failed');
+        }
+        const data = await res.json();
+        const summaryMd = data.summary || '';
+        if (els.summaryOutput) {
+          els.summaryOutput.textContent = summaryMd;
+        }
+        if (els.copySummary && summaryMd) {
+          els.copySummary.style.display = 'inline-block';
+        }
+        addDiagLog(`Summary generated | length=${summaryMd.length}`);
+      } catch (err) {
+        const errorMsg = err.message || 'Summary failed';
+        setError(errorMsg);
+        if (els.summaryOutput) {
+          els.summaryOutput.textContent = `エラー: ${errorMsg}`;
+        }
+        console.error('[runSummary] Error:', err);
+        addDiagLog(`Summary error: ${errorMsg}`);
+      } finally {
+        els.runSummary.disabled = false;
+        els.runSummary.textContent = t('generateSummary') || '要約を生成';
+      }
+    });
+  }
+
+  // Copy Summary button
+  if (els.copySummary) {
+    els.copySummary.addEventListener('click', async () => {
+      const text = els.summaryOutput?.textContent || '';
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = els.copySummary.textContent;
+        els.copySummary.textContent = t('copied') || 'コピー完了';
+        setTimeout(() => {
+          els.copySummary.textContent = original;
+        }, 1500);
+      } catch (err) {
+        setError(t('errorCopyFailed') || 'Copy failed');
+      }
+    });
   }
 
   window.addEventListener('beforeunload', () => {
@@ -1353,6 +2143,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   initFirebase();
   applyAuthUiState(null);
+  addDiagLog(`Auth init: currentUser=${currentUser?.uid || 'null'}`);
 
   if (els.loginBtn) {
     els.loginBtn.addEventListener('click', async () => {
@@ -1394,7 +2185,7 @@ document.addEventListener('DOMContentLoaded', () => {
     auth.onAuthStateChanged((user) => {
       currentUser = user;
       applyAuthUiState(user);
-      addDiagLog(user ? 'Auth state: logged in' : 'Auth state: signed out');
+      addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
       if (user) {
         refreshQuotaStatus();
       } else {

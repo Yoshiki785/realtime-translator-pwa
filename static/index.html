@@ -52,6 +52,13 @@
       <button id="stopBtn" class="cta secondary" disabled>Stop</button>
       <div class="error" id="error"></div>
       <div class="downloads" id="downloads"></div>
+      <div class="summary-section" id="summarySection" style="display:none;">
+        <div class="summary-actions">
+          <button id="runSummary" class="secondary small" data-i18n="generateSummary">要約を生成</button>
+          <button id="copySummary" class="secondary small" data-i18n="copy" style="display:none;">コピー</button>
+        </div>
+        <pre id="summaryOutput" class="summary-output"></pre>
+      </div>
       <div class="a2hs" id="a2hs">ホーム画面に追加してオフラインでも使えます</div>
     </footer>
   </div>
@@ -104,6 +111,16 @@
           <option value="zh">中文</option>
         </select>
       </label>
+      <hr class="settings-divider" />
+      <label data-i18n="glossaryLabel">辞書（要約用）
+        <textarea id="glossaryTextInput" class="settings-textarea" rows="4" placeholder="1行1エントリ: source=target 例）半導体=semiconductor"></textarea>
+      </label>
+      <label data-i18n="summaryPromptLabel">要約カスタムプロンプト
+        <textarea id="summaryPromptInput" class="settings-textarea" rows="3" placeholder="要約の指示を自由に書けます（例：決裁用に3行で、リスクと次アクション必須）"></textarea>
+      </label>
+      <div class="settings-actions-row">
+        <button type="button" id="resetUserSettings" class="secondary small" data-i18n="reset">リセット</button>
+      </div>
       <div class="modal-actions">
         <button value="cancel" class="secondary" data-i18n="close">閉じる</button>
         <button value="default" id="saveSettings" data-i18n="save">保存</button>
@@ -126,6 +143,7 @@
           <button id="devCopyLogs" class="secondary">ログをコピー</button>
           <button id="devTestEvent" class="secondary">UIテスト行追加</button>
           <button id="devClearCache" class="secondary">キャッシュクリア案内</button>
+          <button id="devCopyIdToken" class="secondary">IDトークンをコピー</button>
         </div>
         <div id="devCacheHelp" class="dev-cache-help" hidden>
           <strong>キャッシュクリア手順</strong>

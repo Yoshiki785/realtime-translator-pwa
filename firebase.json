@@ -1,6 +1,10 @@
 {
   "hosting": {
     "public": "public",
+    "predeploy": [
+      "./scripts/sync_public.sh",
+      "./scripts/check_public_sync.sh"
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",

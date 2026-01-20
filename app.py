@@ -381,6 +381,18 @@ def safe_int(value, default: int = 0) -> int:
         return default
 
 
+def parse_bool(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return False
+    if isinstance(value, (int, float)):
+        return value == 1
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return False
+
+
 def usage_doc_id(uid: str, yyyymm: str) -> str:
     return f"{uid}_{yyyymm}"
 
@@ -587,51 +599,75 @@ def _create_job_core(
     job_id: str,
     current_jst: datetime,
     now_utc: datetime,
+    force_takeover: bool = False,
     transaction: firebase_firestore.Transaction | MockTransaction | None = None,
 ) -> dict:
-    user_ref, user_state, plan, plan_config = read_user_state(db, uid, current_jst, transaction)
-    snapshot = build_quota_snapshot(user_state, plan_config)
-    base_remaining = snapshot["baseRemainingThisMonth"]
-    ticket_balance = snapshot["ticketSecondsBalance"]
-    total_available = snapshot["totalAvailableThisMonth"]
+    force_takeover_used = False
+    while True:
+        user_ref, user_state, plan, plan_config = read_user_state(db, uid, current_jst, transaction)
+        snapshot = build_quota_snapshot(user_state, plan_config)
+        base_remaining = snapshot["baseRemainingThisMonth"]
+        ticket_balance = snapshot["ticketSecondsBalance"]
+        total_available = snapshot["totalAvailableThisMonth"]
 
-    if total_available <= 0:
-        raise HTTPException(
-            status_code=402,
-            detail={
-                "error": "no_remaining_minutes",
-                "message": "No remaining minutes (monthly base + tickets exhausted)",
-            },
-        )
+        if total_available <= 0:
+            raise HTTPException(
+                status_code=402,
+                detail={
+                    "error": "no_remaining_minutes",
+                    "message": "No remaining minutes (monthly base + tickets exhausted)",
+                },
+            )
 
-    daily_cap = plan_config.get("baseDailyQuotaSeconds")
-    daily_remaining = snapshot["dailyRemainingSeconds"] if daily_cap is not None else None
-    if daily_cap is not None and (daily_remaining is None or daily_remaining <= 0):
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "error": "daily_limit_reached",
-                "message": "Daily limit reached (10 min/day)",
-            },
-        )
+        daily_cap = plan_config.get("baseDailyQuotaSeconds")
+        daily_remaining = snapshot["dailyRemainingSeconds"] if daily_cap is not None else None
+        if daily_cap is not None and (daily_remaining is None or daily_remaining <= 0):
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "daily_limit_reached",
+                    "message": "Daily limit reached (10 min/day)",
+                },
+            )
 
-    minute_key = current_jst.strftime("%Y-%m-%dT%H:%M")
-    create_limit = safe_int(plan_config.get("createRateLimitPerMin"), 0)
-    stored_minute = user_state.get("jobCreateMinuteKey")
-    create_count = safe_int(user_state.get("jobCreateCount"), 0)
-    if stored_minute != minute_key:
-        stored_minute = minute_key
-        create_count = 0
-    if create_limit and create_count >= create_limit:
-        raise HTTPException(
-            status_code=429,
-            detail={
-                "error": "rate_limited",
-                "message": "Too many job requests this minute",
-            },
-        )
+        minute_key = current_jst.strftime("%Y-%m-%dT%H:%M")
+        create_limit = safe_int(plan_config.get("createRateLimitPerMin"), 0)
+        stored_minute = user_state.get("jobCreateMinuteKey")
+        create_count = safe_int(user_state.get("jobCreateCount"), 0)
+        if stored_minute != minute_key:
+            stored_minute = minute_key
+            create_count = 0
+        if create_limit and create_count >= create_limit:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": "rate_limited",
+                    "message": "Too many job requests this minute",
+                },
+            )
 
-    max_session = plan_config.get("maxSessionSeconds", 600)
+        max_session = plan_config.get("maxSessionSeconds", 600)
+        active_job_id = user_state.get("activeJobId")
+        active_job_started_at = to_utc_datetime(user_state.get("activeJobStartedAt"))
+        if active_job_id:
+            grace_window = max_session + 120
+            should_block = True
+            if active_job_started_at is None:
+                should_block = False
+            else:
+                elapsed = (now_utc - active_job_started_at).total_seconds()
+                should_block = elapsed <= grace_window
+            if should_block and force_takeover:
+                if force_takeover_used:
+                    raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
+                job_ref = db.collection("jobs").document(active_job_id)
+                _complete_job_core(db, job_ref, uid, None, current_jst, now_utc, transaction)
+                force_takeover_used = True
+                continue
+            if should_block:
+                raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
+        break
+
     reserved_seconds = min(total_available, max_session)
     if daily_remaining is not None:
         reserved_seconds = min(reserved_seconds, daily_remaining)
@@ -641,19 +677,6 @@ def _create_job_core(
             status_code=402,
             detail={"error": "no_reservable_minutes", "message": "No minutes available for reservation"},
         )
-
-    active_job_id = user_state.get("activeJobId")
-    active_job_started_at = to_utc_datetime(user_state.get("activeJobStartedAt"))
-    if active_job_id:
-        grace_window = max_session + 120
-        should_block = True
-        if active_job_started_at is None:
-            should_block = False
-        else:
-            elapsed = (now_utc - active_job_started_at).total_seconds()
-            should_block = elapsed <= grace_window
-        if should_block:
-            raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
 
     retention_days = plan_config.get("retentionDays", 7)
     delete_at = (current_jst + timedelta(days=retention_days)).astimezone(timezone.utc)
@@ -728,8 +751,11 @@ def create_job_transaction_simple(
     job_id: str,
     current_jst: datetime,
     now_utc: datetime,
+    force_takeover: bool = False,
 ) -> dict:
-    return _create_job_core(db, uid, job_id, current_jst, now_utc, transaction=None)
+    return _create_job_core(
+        db, uid, job_id, current_jst, now_utc, force_takeover=force_takeover, transaction=None
+    )
 
 
 @firebase_firestore.transactional
@@ -740,8 +766,11 @@ def create_job_transaction(
     job_id: str,
     current_jst: datetime,
     now_utc: datetime,
+    force_takeover: bool = False,
 ) -> dict:
-    return _create_job_core(db, uid, job_id, current_jst, now_utc, transaction=transaction)
+    return _create_job_core(
+        db, uid, job_id, current_jst, now_utc, force_takeover=force_takeover, transaction=transaction
+    )
 
 
 def _complete_job_core(
@@ -1021,6 +1050,63 @@ def extract_output_text(result: dict) -> str:
     return (result.get("output_text") or result.get("content") or "").strip()
 
 
+BASE_SESSION_INSTRUCTIONS = (
+    "You are a real-time interpreter. "
+    "Output only the translated text. No extra commentary. "
+    "Preserve proper nouns, acronyms, and numbers."
+)
+GLOSSARY_MAX_LINES = 200
+
+
+def parse_glossary_text(text: str | None) -> list[tuple[str, str]]:
+    if not text:
+        return []
+    entries: list[tuple[str, str]] = []
+    for line in text.splitlines():
+        if len(entries) >= GLOSSARY_MAX_LINES:
+            break
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        match = re.match(r"^(.+?)\s*(?:=>|=)\s*(.+)$", line)
+        if not match:
+            continue
+        source = match.group(1).strip()
+        target = match.group(2).strip()
+        if source and target:
+            entries.append((source, target))
+    return entries
+
+
+def build_session_instructions(glossary_entries: list[tuple[str, str]], output_lang: str | None) -> str:
+    instructions = BASE_SESSION_INSTRUCTIONS
+    if output_lang and output_lang != "auto":
+        lang_names = {"ja": "Japanese", "en": "English", "zh": "Chinese"}
+        lang_name = lang_names.get(output_lang, output_lang)
+        instructions += f" Translate into {lang_name}."
+    if glossary_entries:
+        instructions += "\n\nGlossary (must-follow):"
+        for source, target in glossary_entries:
+            instructions += f"\n- {source} => {target}"
+        instructions += "\n\nGlossary rules:"
+        instructions += "\n- If a glossary entry matches, you MUST use the specified target term."
+        instructions += "\n- Avoid partial-match mistakes; prefer whole-word matches when reasonable."
+        instructions += "\n- Do not invent glossary entries."
+    return instructions
+
+
+def sanitize_session_for_log(session: dict) -> dict:
+    if not isinstance(session, dict):
+        return {}
+    sanitized: dict = {}
+    for key, value in session.items():
+        if key == "instructions" and isinstance(value, str):
+            sanitized[key] = f"<len={len(value)}>"
+        else:
+            sanitized[key] = value
+    return sanitized
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index() -> HTMLResponse:
     index_file = STATIC_DIR / "index.html"
@@ -1038,7 +1124,12 @@ async def favicon() -> FileResponse:
 
 
 @app.post("/token")
-async def create_token(request: Request, vad_silence: int | None = Form(None)) -> JSONResponse:
+async def create_token(
+    request: Request,
+    vad_silence: int | None = Form(None),
+    glossary_text: str | None = Form(None, alias="glossaryText"),
+    output_lang: str | None = Form(None, alias="outputLang"),
+) -> JSONResponse:
     # 認証必須: Firebase ID トークンを検証
     uid = get_uid_from_request(request)
     logger.info(f"Token requested by uid: {uid}")
@@ -1049,10 +1140,14 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
     # OpenAI docs: /v1/realtime/client_secrets with session wrapper
     # https://platform.openai.com/docs/guides/realtime-webrtc
     # 最小構成で疎通確認 - 追加オプションは疎通後に有効化
+    glossary_entries = parse_glossary_text(glossary_text)
+    instructions = build_session_instructions(glossary_entries, output_lang)
+
     payload = {
         "session": {
             "type": "realtime",
             "model": "gpt-4o-realtime-preview",
+            "instructions": instructions,
             "audio": {
                 "output": {
                     "voice": "alloy",
@@ -1076,8 +1171,10 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
     session_info = payload.get("session", {})
     logger.info(
         f"Requesting ephemeral key | type={session_info.get('type')}, "
-        f"model={session_info.get('model')}, voice={session_info.get('audio', {}).get('output', {}).get('voice')}"
+        f"model={session_info.get('model')}, voice={session_info.get('audio', {}).get('output', {}).get('voice')}, "
+        f"glossary_entries={len(glossary_entries)}, instructions_len={len(instructions)}"
     )
+    session_log = sanitize_session_for_log(session_info)
 
     try:
         data = await post_openai(
@@ -1090,13 +1187,19 @@ async def create_token(request: Request, vad_silence: int | None = Form(None)) -
         status_code = resp.status_code if resp is not None else 502
         reason = resp.reason_phrase if resp is not None else "Error"
         body_text = resp.text if resp is not None else ""
-        logger.error(f"OpenAI client_secrets error: status={status_code}, reason={reason}, body={mask_secrets(body_text)}")
+        logger.error(
+            "OpenAI client_secrets error: "
+            f"status={status_code}, reason={reason}, body={mask_secrets(body_text)}, session={session_log}"
+        )
         raise HTTPException(
             status_code=status_code,
             detail=f"OpenAI API error ({status_code} {reason})",
         ) from exc
     except httpx.RequestError as exc:
-        logger.error(f"OpenAI request error: {type(exc).__name__}: {exc}")
+        logger.error(
+            "OpenAI request error: "
+            f"{type(exc).__name__}: {exc} session={session_log}"
+        )
         raise HTTPException(
             status_code=502,
             detail="OpenAI request error",
@@ -1123,15 +1226,34 @@ async def create_job(request: Request) -> JSONResponse:
     now_utc = datetime.now(timezone.utc)
     job_id = uuid.uuid4().hex
 
+    force_takeover = False
+    raw_force_takeover = request.query_params.get("force_takeover")
+    if raw_force_takeover is not None:
+        force_takeover = parse_bool(raw_force_takeover)
+    else:
+        try:
+            body = await request.json()
+        except Exception:
+            body = {}
+        if isinstance(body, dict):
+            raw_force_takeover = body.get("force_takeover")
+            if raw_force_takeover is None:
+                raw_force_takeover = body.get("forceTakeover")
+            force_takeover = parse_bool(raw_force_takeover)
+
     use_simple = False
     if not IS_PRODUCTION:
         use_simple = os.getenv("DEBUG_AUTH_BYPASS") == "1"
 
     if use_simple:
-        result = create_job_transaction_simple(db, uid, job_id, current_jst, now_utc)
+        result = create_job_transaction_simple(
+            db, uid, job_id, current_jst, now_utc, force_takeover=force_takeover
+        )
     else:
         transaction = db.transaction(max_attempts=10)
-        result = create_job_transaction(transaction, db, uid, job_id, current_jst, now_utc)
+        result = create_job_transaction(
+            transaction, db, uid, job_id, current_jst, now_utc, force_takeover=force_takeover
+        )
 
     log_payload = {
         "uid": uid,
@@ -1382,6 +1504,7 @@ async def create_checkout_session(request: Request) -> JSONResponse:
                     "quantity": 1,
                 }
             ],
+            client_reference_id=uid,
             metadata={"uid": uid},
             subscription_data={"metadata": {"uid": uid}},
             success_url=success_url,
@@ -1440,28 +1563,59 @@ async def stripe_webhook(request: Request) -> JSONResponse:
     - invoice.paid
     - invoice.payment_failed
     """
-    secret_key = os.getenv("STRIPE_SECRET_KEY")
     webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
-    if not secret_key or not webhook_secret:
-        raise HTTPException(status_code=500, detail="stripe_not_configured")
+    if not webhook_secret:
+        logger.error("STRIPE_WEBHOOK_SECRET is not configured")
+        raise HTTPException(status_code=500, detail="stripe_webhook_not_configured")
+
+    sig_header = request.headers.get("Stripe-Signature")
+    if not sig_header:
+        logger.warning("Stripe webhook called without Stripe-Signature header")
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
 
     payload = await request.body()
-    sig_header = request.headers.get("stripe-signature", "")
-    stripe.api_key = secret_key
 
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
-    except stripe.error.SignatureVerificationError as exc:
-        logger.error(f"Stripe webhook signature verification failed")
-        raise HTTPException(status_code=400, detail="invalid_signature") from exc
-    except ValueError as exc:
-        logger.error(f"Stripe webhook invalid payload")
-        raise HTTPException(status_code=400, detail="invalid_payload") from exc
+    except stripe.SignatureVerificationError:
+        logger.error("Stripe webhook signature verification failed")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    except ValueError:
+        logger.error("Stripe webhook invalid payload (JSON parse error)")
+        raise HTTPException(status_code=400, detail="Invalid payload")
 
-    event_type = event.get("type", "")
-    logger.info(f"Stripe webhook received: {event_type} | {json.dumps({'eventType': event_type, 'eventId': event.get('id')})}")
+    event_type = event.get("type", "unknown")
+    event_id = event.get("id", "unknown")
+
+    # stdout に出力（Cloud Logging で確認用）
+    print(f"[stripe_webhook] received event type={event_type} id={event_id}")
+
+    logger.info(f"Stripe webhook received | {json.dumps({'eventType': event_type, 'eventId': event_id})}")
 
     db = get_firestore_client()
+
+    # Checkout完了イベント（購入直後のuid紐付け）
+    if event_type == "checkout.session.completed":
+        session = event["data"]["object"]
+        uid = session.get("client_reference_id") or (session.get("metadata") or {}).get("uid")
+        customer_id = session.get("customer")
+        subscription_id = session.get("subscription")
+
+        if not uid:
+            logger.warning(f"[stripe_webhook] checkout.session.completed without uid | {json.dumps({'eventType': event_type, 'sessionId': session.get('id'), 'customerId': customer_id})}")
+            return JSONResponse({"received": True, "warning": "uid_not_found"})
+
+        user_updates = {
+            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+        }
+        if customer_id:
+            user_updates["stripeCustomerId"] = customer_id
+        if subscription_id:
+            user_updates["stripeSubscriptionId"] = subscription_id
+
+        db.collection("users").document(uid).set(user_updates, merge=True)
+        logger.info(f"[stripe_webhook] checkout.session.completed | {json.dumps({'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id})}")
+        return JSONResponse({"received": True})
 
     # サブスクリプション関連イベント
     if event_type in ["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"]:
@@ -1612,11 +1766,25 @@ SUMMARIZE_HEADERS = {
 }
 
 
+def build_glossary_instructions_for_summary(glossary_text: str | None) -> str:
+    """Build glossary instructions for summarize prompt (not for Realtime)."""
+    entries = parse_glossary_text(glossary_text)
+    if not entries:
+        return ""
+    lines = [f"{src}→{dst}" for src, dst in entries]
+    return f"\n\n用語は必ず次の表記に統一してください：{', '.join(lines)}。該当語が出たら置換して要約に反映すること。"
+
+
+SUMMARY_PROMPT_MAX_LENGTH = 2000
+
+
 @app.post("/summarize")
 async def summarize(
     request: Request,
     text: str = Form(...),
     output_lang: str = Form("ja"),
+    glossary_text: str = Form(""),
+    summary_prompt: str = Form(""),
 ) -> JSONResponse:
     # 認証必須: Firebase ID トークンを検証
     get_uid_from_request(request)
@@ -1629,13 +1797,32 @@ async def summarize(
     headers_i18n = SUMMARIZE_HEADERS.get(output_lang, SUMMARIZE_HEADERS["ja"])
     target_lang_name = LANG_NAMES.get(output_lang, "Japanese")
 
-    prompt = (
+    # Build glossary instructions (only for summarize, not Realtime)
+    glossary_inst = build_glossary_instructions_for_summary(glossary_text)
+
+    # Build custom summary prompt (user-provided, optional)
+    custom_inst = ""
+    if summary_prompt:
+        # Sanitize: trim and enforce max length
+        sanitized = summary_prompt.strip()[:SUMMARY_PROMPT_MAX_LENGTH]
+        if sanitized:
+            custom_inst = f"\n\n追加の指示: {sanitized}"
+
+    system_prompt = (
         f"You are a meeting summarizer. Produce concise Markdown in {target_lang_name} with three sections: "
         f"1) {headers_i18n['summary']} 2) {headers_i18n['key_points']} (bullets) 3) {headers_i18n['actions']} (bullets)."
+        f"{glossary_inst}{custom_inst}"
     )
-    payload = {"model": summarize_model_default, "input": text, "system": prompt}
+    # Use same Responses API format as /translate (input array with roles, no top-level "system")
+    payload = {
+        "model": summarize_model_default,
+        "input": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ],
+    }
     api_key = get_openai_api_key()
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     result = await post_openai("https://api.openai.com/v1/responses", payload, headers)
     summary = extract_output_text(result)
     return JSONResponse({"summary": summary})

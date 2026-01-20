@@ -430,3 +430,69 @@ button.small:active {
   color: var(--accent);
   min-height: 16px;
 }
+
+/* Settings textarea */
+.settings-textarea {
+  width: 100%;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  font-family: inherit;
+  font-size: 13px;
+  resize: vertical;
+}
+
+.settings-textarea::placeholder {
+  color: var(--muted);
+  opacity: 0.7;
+}
+
+.settings-actions-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* Summary section */
+.summary-section {
+  margin-top: 8px;
+  padding: 12px;
+  background: var(--card);
+  border-radius: 12px;
+}
+
+.summary-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.summary-output {
+  margin: 0;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.summary-output:empty {
+  display: none;
+}
+
+/* Settings select styling */
+.settings-select {
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  font-size: 14px;
+}

@@ -29,6 +29,9 @@
 └─ downloads/             # m4a 変換結果など（起動時自動作成）
 ```
 
+## フロントエンド同期ルール
+- `static/app.js` を正とし、配信用の `public/app.js` は更新後に `cp static/app.js public/app.js` で同期します。
+
 ## 使い方
 - **Start**: マイク権限を取得し、Realtime へ WebRTC で接続。字幕（原文）が delta で更新され、**確定（completed または gap）後に原文ログへ保存し、その原文のみを翻訳**します。
 - **Stop**: 接続を終了し、録音した webm をダウンロードリンク化。バックエンドで m4a 変換 `/audio_m4a` にも送信し、m4a リンクも生成。原文/日英/要約ファイルも生成します。
