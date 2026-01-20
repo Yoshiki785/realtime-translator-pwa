@@ -1504,6 +1504,7 @@ async def create_checkout_session(request: Request) -> JSONResponse:
                     "quantity": 1,
                 }
             ],
+            client_reference_id=uid,
             metadata={"uid": uid},
             subscription_data={"metadata": {"uid": uid}},
             success_url=success_url,
@@ -1562,28 +1563,59 @@ async def stripe_webhook(request: Request) -> JSONResponse:
     - invoice.paid
     - invoice.payment_failed
     """
-    secret_key = os.getenv("STRIPE_SECRET_KEY")
     webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
-    if not secret_key or not webhook_secret:
-        raise HTTPException(status_code=500, detail="stripe_not_configured")
+    if not webhook_secret:
+        logger.error("STRIPE_WEBHOOK_SECRET is not configured")
+        raise HTTPException(status_code=500, detail="stripe_webhook_not_configured")
+
+    sig_header = request.headers.get("Stripe-Signature")
+    if not sig_header:
+        logger.warning("Stripe webhook called without Stripe-Signature header")
+        raise HTTPException(status_code=400, detail="Missing Stripe-Signature header")
 
     payload = await request.body()
-    sig_header = request.headers.get("stripe-signature", "")
-    stripe.api_key = secret_key
 
     try:
         event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
-    except stripe.error.SignatureVerificationError as exc:
-        logger.error(f"Stripe webhook signature verification failed")
-        raise HTTPException(status_code=400, detail="invalid_signature") from exc
-    except ValueError as exc:
-        logger.error(f"Stripe webhook invalid payload")
-        raise HTTPException(status_code=400, detail="invalid_payload") from exc
+    except stripe.SignatureVerificationError:
+        logger.error("Stripe webhook signature verification failed")
+        raise HTTPException(status_code=400, detail="Invalid signature")
+    except ValueError:
+        logger.error("Stripe webhook invalid payload (JSON parse error)")
+        raise HTTPException(status_code=400, detail="Invalid payload")
 
-    event_type = event.get("type", "")
-    logger.info(f"Stripe webhook received: {event_type} | {json.dumps({'eventType': event_type, 'eventId': event.get('id')})}")
+    event_type = event.get("type", "unknown")
+    event_id = event.get("id", "unknown")
+
+    # stdout に出力（Cloud Logging で確認用）
+    print(f"[stripe_webhook] received event type={event_type} id={event_id}")
+
+    logger.info(f"Stripe webhook received | {json.dumps({'eventType': event_type, 'eventId': event_id})}")
 
     db = get_firestore_client()
+
+    # Checkout完了イベント（購入直後のuid紐付け）
+    if event_type == "checkout.session.completed":
+        session = event["data"]["object"]
+        uid = session.get("client_reference_id") or (session.get("metadata") or {}).get("uid")
+        customer_id = session.get("customer")
+        subscription_id = session.get("subscription")
+
+        if not uid:
+            logger.warning(f"[stripe_webhook] checkout.session.completed without uid | {json.dumps({'eventType': event_type, 'sessionId': session.get('id'), 'customerId': customer_id})}")
+            return JSONResponse({"received": True, "warning": "uid_not_found"})
+
+        user_updates = {
+            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+        }
+        if customer_id:
+            user_updates["stripeCustomerId"] = customer_id
+        if subscription_id:
+            user_updates["stripeSubscriptionId"] = subscription_id
+
+        db.collection("users").document(uid).set(user_updates, merge=True)
+        logger.info(f"[stripe_webhook] checkout.session.completed | {json.dumps({'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id})}")
+        return JSONResponse({"received": True})
 
     # サブスクリプション関連イベント
     if event_type in ["customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"]:
@@ -1743,12 +1775,16 @@ def build_glossary_instructions_for_summary(glossary_text: str | None) -> str:
     return f"\n\n用語は必ず次の表記に統一してください：{', '.join(lines)}。該当語が出たら置換して要約に反映すること。"
 
 
+SUMMARY_PROMPT_MAX_LENGTH = 2000
+
+
 @app.post("/summarize")
 async def summarize(
     request: Request,
     text: str = Form(...),
     output_lang: str = Form("ja"),
     glossary_text: str = Form(""),
+    summary_prompt: str = Form(""),
 ) -> JSONResponse:
     # 認証必須: Firebase ID トークンを検証
     get_uid_from_request(request)
@@ -1764,14 +1800,29 @@ async def summarize(
     # Build glossary instructions (only for summarize, not Realtime)
     glossary_inst = build_glossary_instructions_for_summary(glossary_text)
 
-    prompt = (
+    # Build custom summary prompt (user-provided, optional)
+    custom_inst = ""
+    if summary_prompt:
+        # Sanitize: trim and enforce max length
+        sanitized = summary_prompt.strip()[:SUMMARY_PROMPT_MAX_LENGTH]
+        if sanitized:
+            custom_inst = f"\n\n追加の指示: {sanitized}"
+
+    system_prompt = (
         f"You are a meeting summarizer. Produce concise Markdown in {target_lang_name} with three sections: "
         f"1) {headers_i18n['summary']} 2) {headers_i18n['key_points']} (bullets) 3) {headers_i18n['actions']} (bullets)."
-        f"{glossary_inst}"
+        f"{glossary_inst}{custom_inst}"
     )
-    payload = {"model": summarize_model_default, "input": text, "system": prompt}
+    # Use same Responses API format as /translate (input array with roles, no top-level "system")
+    payload = {
+        "model": summarize_model_default,
+        "input": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": text},
+        ],
+    }
     api_key = get_openai_api_key()
-    headers = {"Authorization": f"Bearer {api_key}"}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     result = await post_openai("https://api.openai.com/v1/responses", payload, headers)
     summary = extract_output_text(result)
     return JSONResponse({"summary": summary})

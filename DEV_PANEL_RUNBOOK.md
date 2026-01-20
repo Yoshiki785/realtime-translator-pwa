@@ -108,3 +108,85 @@ curl -sS -X POST "$HOSTING/summarize" \
 - **配信先**: `public/` ディレクトリ（Firebase Hosting）
 - **同期コマンド**: `cp static/app.js public/app.js && cp static/index.html public/index.html`
 - **注意**: index.html も static が正。public を直接編集しない
+
+---
+
+## P8) 要約機能の使い方
+
+### 概要
+Stop後に生成される成果物（音声/テキスト/翻訳）に加えて、同じ画面導線で「要約」を出せる機能。ユーザーは辞書（用語置換）と要約用カスタムプロンプトを設定できる。
+
+- **辞書**: 要約（/summarize）時のみ適用。Realtime には使用しない。
+- **要約プロンプト**: 要約時にLLMへ追加指示として渡される。
+
+### 使い方手順
+
+1. **設定で辞書と要約プロンプトを保存**
+   - 画面右上の⚙ボタン（設定）をクリック
+   - 「辞書（要約用）」textarea に用語置換ルールを入力
+     - 形式: `source=target` または `source=>target`（1行1エントリ）
+     - 例: `半導体=semiconductor`
+   - 「要約カスタムプロンプト」textarea に追加指示を入力
+     - 例: `決裁用に3行で、リスクと次アクション必須`
+   - 「保存」ボタンで保存
+
+2. **Realtimeで録音→Stop**
+   - 「Start」ボタンで録音開始
+   - 会話が終わったら「Stop」ボタン
+
+3. **要約ボタン→結果コピー**
+   - Stop後、downloads エリアの下に「要約を生成」ボタンが表示される
+   - ボタンをクリックすると要約が生成され、画面に表示される
+   - 「コピー」ボタンで要約をクリップボードにコピー
+
+### 設定リセット
+- 設定モーダル内の「リセット」ボタンで辞書と要約プロンプトをクリア
+
+### curlテスト例（要約API + カスタムプロンプト）
+```bash
+export HOSTING="https://realtime-translator-pwa-483710.web.app"
+export ID_TOKEN="(コピーしたトークン)"
+
+# 要約（辞書＋カスタムプロンプト）
+curl -sS -X POST "$HOSTING/summarize" \
+  -H "Authorization: Bearer $ID_TOKEN" \
+  -F "text=今日の会議では半導体の供給問題について議論しました。リスクは納期遅延です。" \
+  -F "output_lang=ja" \
+  -F "glossary_text=半導体=semiconductor" \
+  -F "summary_prompt=決裁用に3行で、リスクと次アクション必須" | jq .
+```
+
+### localStorage キー
+| キー | 用途 |
+|------|------|
+| `rt_glossary_text` | 辞書テキスト |
+| `rt_summary_prompt` | 要約カスタムプロンプト |
+
+### 制限事項
+- 要約プロンプトは最大2000文字
+- 辞書は最大200行
+
+### 使用モデル
+- **summarize_model_default**: `gpt-4o-mini`（app.py 1039行で定義）
+- 環境変数での上書きなし（ハードコード）
+
+---
+
+## P9) PWA キャッシュで更新が反映されない時の対処
+
+### 症状
+- デプロイ後もUIが更新されない
+- 古い JavaScript が実行される
+- 「要約を生成」ボタンが出ない等
+
+### 対処手順
+1. Chrome DevTools を開く（F12 または Cmd+Option+I）
+2. **Application** タブを選択
+3. 左メニュー「Service Workers」→ **Unregister** をクリック
+4. 左メニュー「Storage」→ **Clear site data** をクリック
+5. **Cmd+Shift+R**（Mac）または **Ctrl+Shift+R**（Win）でハードリロード
+6. 必要に応じてシークレットウィンドウで再確認
+
+### 補足
+- `?debug=1` モードでは Service Worker が自動的に無効化される（sw.js 登録スキップ＋既存登録解除）
+- デプロイ直後のテストは `?debug=1` を付けると確実

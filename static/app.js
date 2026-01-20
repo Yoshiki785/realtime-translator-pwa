@@ -507,8 +507,15 @@ const cacheElements = () => {
     devCloseBtn: document.getElementById('devCloseBtn'),
     devCacheHelp: document.getElementById('devCacheHelp'),
     devNotice: document.getElementById('devNotice'),
-    // Glossary
-    glossaryText: document.getElementById('glossaryText'),
+    // Glossary & Summary Settings
+    glossaryTextInput: document.getElementById('glossaryTextInput'),
+    summaryPromptInput: document.getElementById('summaryPromptInput'),
+    resetUserSettings: document.getElementById('resetUserSettings'),
+    // Summary Section (after Stop)
+    summarySection: document.getElementById('summarySection'),
+    runSummary: document.getElementById('runSummary'),
+    copySummary: document.getElementById('copySummary'),
+    summaryOutput: document.getElementById('summaryOutput'),
   };
 };
 
@@ -542,21 +549,42 @@ const state = {
   lastJobCreateAt: 0, // 最後にjobs/createを呼んだ時刻（Date.now()）
   cooldownUntil: 0, // クールダウン終了時刻（Date.now()）
   cooldownTimerId: null, // カウントダウン表示用タイマーID
-  // Glossary
+  // Glossary & Summary Settings
   glossaryText: localStorage.getItem('rt_glossary_text') || '',
+  summaryPrompt: localStorage.getItem('rt_summary_prompt') || '',
   // Realtime event queue (for session.update before dataChannel is open)
   realtimeEventQueue: [],
 };
 
 // ========== Glossary Storage Adapter ==========
 const GLOSSARY_STORAGE_KEY = 'rt_glossary_text';
+const SUMMARY_PROMPT_STORAGE_KEY = 'rt_summary_prompt';
 const GLOSSARY_MAX_LINES = 200;
+const SUMMARY_PROMPT_MAX_LENGTH = 2000;
 
 const glossaryStorage = {
   get: () => localStorage.getItem(GLOSSARY_STORAGE_KEY) || '',
   set: (text) => {
     localStorage.setItem(GLOSSARY_STORAGE_KEY, text);
     state.glossaryText = text;
+  },
+  clear: () => {
+    localStorage.removeItem(GLOSSARY_STORAGE_KEY);
+    state.glossaryText = '';
+  },
+};
+
+const summaryPromptStorage = {
+  get: () => localStorage.getItem(SUMMARY_PROMPT_STORAGE_KEY) || '',
+  set: (text) => {
+    // Enforce max length
+    const trimmed = (text || '').trim().slice(0, SUMMARY_PROMPT_MAX_LENGTH);
+    localStorage.setItem(SUMMARY_PROMPT_STORAGE_KEY, trimmed);
+    state.summaryPrompt = trimmed;
+  },
+  clear: () => {
+    localStorage.removeItem(SUMMARY_PROMPT_STORAGE_KEY);
+    state.summaryPrompt = '';
   },
 };
 
@@ -1431,6 +1459,9 @@ const saveTextDownloads = async () => {
     if (state.glossaryText) {
       fd.append('glossary_text', state.glossaryText);
     }
+    if (state.summaryPrompt) {
+      fd.append('summary_prompt', state.summaryPrompt);
+    }
     const summaryRes = await authFetch('/summarize', {
       method: 'POST',
       body: fd,
@@ -1449,6 +1480,12 @@ const saveTextDownloads = async () => {
   makeBlobLink('原文.txt', originals);
   makeBlobLink('原文+日本語.txt', bilingual);
   if (summaryMd) makeBlobLink('要約.md', summaryMd, 'text/markdown');
+
+  // Show summary section for manual summary generation
+  if (originals.trim() && els.summarySection) {
+    els.summarySection.style.display = 'block';
+    if (els.runSummary) els.runSummary.disabled = false;
+  }
 };
 
 const translateCompleted = async (text) => {
@@ -1920,7 +1957,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (els.uiLang) els.uiLang.value = state.uiLang;
   if (els.inputLang) els.inputLang.value = state.inputLang;
   if (els.outputLang) els.outputLang.value = state.outputLang;
-  if (els.glossaryText) els.glossaryText.value = state.glossaryText;
+  // Glossary & Summary Settings
+  if (els.glossaryTextInput) els.glossaryTextInput.value = state.glossaryText;
+  if (els.summaryPromptInput) els.summaryPromptInput.value = state.summaryPrompt;
 
   // Apply i18n on load
   applyI18n();
@@ -1946,14 +1985,16 @@ document.addEventListener('DOMContentLoaded', () => {
       localStorage.setItem('uiLang', state.uiLang);
       localStorage.setItem('inputLang', state.inputLang);
       localStorage.setItem('outputLang', state.outputLang);
-      // Save glossary
-      const glossaryTextValue = els.glossaryText?.value || '';
+      // Save glossary & summary prompt
+      const glossaryTextValue = els.glossaryTextInput?.value || '';
       glossaryStorage.set(glossaryTextValue);
       const glossaryEntries = parseGlossary(glossaryTextValue);
+      const summaryPromptValue = els.summaryPromptInput?.value || '';
+      summaryPromptStorage.set(summaryPromptValue);
       applyI18n();
       els.settingsModal?.close();
       addDiagLog(
-        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang} glossary_entries=${glossaryEntries.length}`
+        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang} glossary_entries=${glossaryEntries.length} summaryPrompt_len=${state.summaryPrompt.length}`
       );
       updateDevStatusSummary();
     });
@@ -1968,6 +2009,90 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   if (els.presetStable) {
     els.presetStable.addEventListener('click', () => applyPreset('stable'));
+  }
+
+  // Reset user settings (glossary & summary prompt)
+  if (els.resetUserSettings) {
+    els.resetUserSettings.addEventListener('click', () => {
+      glossaryStorage.clear();
+      summaryPromptStorage.clear();
+      if (els.glossaryTextInput) els.glossaryTextInput.value = '';
+      if (els.summaryPromptInput) els.summaryPromptInput.value = '';
+      addDiagLog('User settings reset (glossary & summaryPrompt cleared)');
+    });
+  }
+
+  // Run Summary button (manual summary generation after Stop)
+  if (els.runSummary) {
+    els.runSummary.addEventListener('click', async () => {
+      const originals = state.logs.join('\n');
+      const bilingual = state.logs
+        .map((orig, idx) => `${orig}\n${state.translations[idx] || ''}`)
+        .join('\n\n');
+
+      if (!originals.trim()) {
+        setError(t('errorNoTextToSummarize') || 'No text to summarize');
+        return;
+      }
+
+      els.runSummary.disabled = true;
+      els.runSummary.textContent = t('generating') || '生成中...';
+
+      try {
+        const fd = new FormData();
+        // Use bilingual text (original + translation) for richer summary
+        fd.append('text', bilingual);
+        fd.append('output_lang', state.outputLang);
+        if (state.glossaryText) {
+          fd.append('glossary_text', state.glossaryText);
+        }
+        if (state.summaryPrompt) {
+          fd.append('summary_prompt', state.summaryPrompt);
+        }
+        const res = await authFetch('/summarize', { method: 'POST', body: fd });
+        if (!res.ok) {
+          throw new Error(t('errorSummaryFailed') || 'Summary generation failed');
+        }
+        const data = await res.json();
+        const summaryMd = data.summary || '';
+        if (els.summaryOutput) {
+          els.summaryOutput.textContent = summaryMd;
+        }
+        if (els.copySummary && summaryMd) {
+          els.copySummary.style.display = 'inline-block';
+        }
+        addDiagLog(`Summary generated | length=${summaryMd.length}`);
+      } catch (err) {
+        const errorMsg = err.message || 'Summary failed';
+        setError(errorMsg);
+        if (els.summaryOutput) {
+          els.summaryOutput.textContent = `エラー: ${errorMsg}`;
+        }
+        console.error('[runSummary] Error:', err);
+        addDiagLog(`Summary error: ${errorMsg}`);
+      } finally {
+        els.runSummary.disabled = false;
+        els.runSummary.textContent = t('generateSummary') || '要約を生成';
+      }
+    });
+  }
+
+  // Copy Summary button
+  if (els.copySummary) {
+    els.copySummary.addEventListener('click', async () => {
+      const text = els.summaryOutput?.textContent || '';
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = els.copySummary.textContent;
+        els.copySummary.textContent = t('copied') || 'コピー完了';
+        setTimeout(() => {
+          els.copySummary.textContent = original;
+        }, 1500);
+      } catch (err) {
+        setError(t('errorCopyFailed') || 'Copy failed');
+      }
+    });
   }
 
   window.addEventListener('beforeunload', () => {
