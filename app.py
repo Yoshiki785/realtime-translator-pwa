@@ -1663,6 +1663,46 @@ async def save_company_profile(request: Request) -> JSONResponse:
     })
 
 
+@app.get("/api/v1/billing/status")
+async def get_billing_status(request: Request) -> JSONResponse:
+    """サブスクリプション状態を取得"""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+    user_ref = db.collection("users").document(uid)
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+
+    plan = normalize_plan(user_data.get("plan"))
+    subscription_status = user_data.get("subscriptionStatus", "free")
+    cancel_at_period_end = user_data.get("cancelAtPeriodEnd", False)
+    current_period_end = user_data.get("currentPeriodEnd")
+
+    # currentPeriodEnd を ISO 文字列に変換
+    current_period_end_iso = None
+    current_period_end_unix = None
+    if current_period_end:
+        if hasattr(current_period_end, "isoformat"):
+            current_period_end_iso = current_period_end.isoformat()
+            current_period_end_unix = int(current_period_end.timestamp())
+        elif isinstance(current_period_end, (int, float)):
+            current_period_end_unix = int(current_period_end)
+            current_period_end_iso = datetime.fromtimestamp(current_period_end, tz=timezone.utc).isoformat()
+
+    response = {
+        "plan": plan,
+        "subscriptionStatus": subscription_status,
+        "cancelAtPeriodEnd": cancel_at_period_end,
+        "currentPeriodEnd": current_period_end_iso,
+        "currentPeriodEndUnix": current_period_end_unix,
+        "isPro": plan == "pro",
+        "isPastDue": subscription_status == "past_due",
+        "isCanceling": cancel_at_period_end and plan == "pro",
+    }
+
+    logger.info(f"[billing_status] GET | {json.dumps({'uid': uid, 'plan': plan, 'status': subscription_status})}")
+    return JSONResponse(response)
+
+
 @app.post("/api/v1/billing/stripe/portal")
 async def create_portal_session(request: Request) -> JSONResponse:
     """Stripe Customer Portal Session 作成（サブスク管理用）"""
@@ -1799,9 +1839,15 @@ async def stripe_webhook(request: Request) -> JSONResponse:
         current_period_end = subscription.get("current_period_end")
         cancel_at_period_end = subscription.get("cancel_at_period_end", False)
 
+        # customer.subscription.deleted の場合は明示的に free に戻す
+        if event_type == "customer.subscription.deleted":
+            plan = "free"
+            status = "canceled"
+            cancel_at_period_end = False
+            logger.info(f"[stripe_webhook] Subscription deleted, resetting to free | {json.dumps({'uid': uid, 'subscriptionId': subscription.get('id')})}")
         # ステータスに応じてプラン設定
         # active または trialing の場合は pro、それ以外は free
-        if status in ("active", "trialing"):
+        elif status in ("active", "trialing"):
             plan = "pro"
         else:
             plan = "free"
