@@ -51,6 +51,11 @@ const STRINGS = {
     billingError: 'エラーが発生しました',
     alreadyPro: 'Proプラン利用中',
     manageSubscription: 'サブスク管理',
+    billingStatusFree: 'Freeプラン',
+    billingStatusPro: 'Proプラン',
+    billingStatusCanceling: '解約予定（{date}まで有効）',
+    billingStatusPastDue: '⚠️ 支払いが滞っています。お支払い方法を更新してください。',
+    billingStatusActive: '有効（次回更新: {date}）',
     companyInfo: '会社情報',
     companyNote: '※ Stripeの請求先情報・解約は「サブスク管理」から行えます',
     companyName: '会社名',
@@ -115,6 +120,11 @@ const STRINGS = {
     billingError: 'An error occurred',
     alreadyPro: 'Pro plan active',
     manageSubscription: 'Manage Subscription',
+    billingStatusFree: 'Free Plan',
+    billingStatusPro: 'Pro Plan',
+    billingStatusCanceling: 'Canceling (valid until {date})',
+    billingStatusPastDue: '⚠️ Payment overdue. Please update your payment method.',
+    billingStatusActive: 'Active (renews: {date})',
     companyInfo: 'Company Info',
     companyNote: '* For billing & cancellation, use "Manage Subscription"',
     companyName: 'Company Name',
@@ -179,6 +189,11 @@ const STRINGS = {
     billingError: '发生错误',
     alreadyPro: 'Pro计划使用中',
     manageSubscription: '管理订阅',
+    billingStatusFree: '免费版',
+    billingStatusPro: 'Pro版',
+    billingStatusCanceling: '取消中（{date}前有效）',
+    billingStatusPastDue: '⚠️ 付款逾期，请更新付款方式。',
+    billingStatusActive: '有效（下次续费: {date}）',
     companyInfo: '公司信息',
     companyNote: '※ Stripe的账单信息/取消请前往"管理订阅"',
     companyName: '公司名称',
@@ -1116,6 +1131,79 @@ const updateBillingSection = (show) => {
   // Show company section for logged-in users
   if (els.companySection) {
     els.companySection.style.display = show ? 'block' : 'none';
+  }
+};
+
+// Refresh billing status from backend and update UI
+const refreshBillingStatus = async () => {
+  if (!currentUser) return;
+
+  const statusEl = els.billingStatus;
+  if (!statusEl) return;
+
+  try {
+    const token = await currentUser.getIdToken();
+    const res = await fetch(`${API_BASE_URL}/api/v1/billing/status`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    addDiagLog(`Billing status: ${JSON.stringify(data)}`);
+
+    // Format date for display
+    const formatDate = (isoString) => {
+      if (!isoString) return '';
+      try {
+        const d = new Date(isoString);
+        return d.toLocaleDateString(getUiLang() === 'en' ? 'en-US' : getUiLang() === 'zh-Hans' ? 'zh-CN' : 'ja-JP', {
+          year: 'numeric',
+          month: 'short',
+          day: 'numeric',
+        });
+      } catch {
+        return '';
+      }
+    };
+
+    // Build status message
+    let message = '';
+    let className = 'billing-status';
+
+    if (data.isPastDue) {
+      message = t('billingStatusPastDue');
+      className = 'billing-status error';
+    } else if (data.isCanceling) {
+      message = t('billingStatusCanceling').replace('{date}', formatDate(data.currentPeriodEnd));
+      className = 'billing-status pending';
+    } else if (data.isPro) {
+      message = t('billingStatusActive').replace('{date}', formatDate(data.currentPeriodEnd));
+      className = 'billing-status success';
+    } else {
+      message = t('billingStatusFree');
+      className = 'billing-status';
+    }
+
+    statusEl.textContent = message;
+    statusEl.className = className;
+
+    // Update button visibility based on fresh data
+    if (els.upgradeProBtn) {
+      els.upgradeProBtn.style.display = data.isPro ? 'none' : '';
+    }
+    if (els.manageBillingBtn) {
+      els.manageBillingBtn.style.display = data.isPro ? '' : 'none';
+    }
+
+  } catch (err) {
+    console.error('[refreshBillingStatus] Error:', err);
+    addDiagLog(`Billing status error: ${err.message}`);
   }
 };
 
@@ -2631,6 +2719,8 @@ document.addEventListener('DOMContentLoaded', () => {
         handleBillingRoute();
         // Load company profile for logged-in users
         loadCompanyProfile();
+        // Refresh billing status
+        refreshBillingStatus();
       } else {
         resetQuotaState();
       }
@@ -2651,6 +2741,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (els.saveCompanyBtn) {
     els.saveCompanyBtn.addEventListener('click', saveCompanyProfile);
   }
+
+  // Refresh billing status when returning from Customer Portal
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && currentUser) {
+      refreshBillingStatus();
+    }
+  });
 
   updateLiveText();
 });
