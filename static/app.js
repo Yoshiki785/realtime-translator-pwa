@@ -63,6 +63,8 @@ const STRINGS = {
     taxIdValue: '税ID値',
     saveCompany: '保存',
     companySaved: '保存しました',
+    companySavedWithStripe: '保存しました（Stripe同期完了）',
+    companySavedStripeSkipped: '保存しました（Stripe未同期）',
     companySaveError: '保存に失敗しました',
   },
   en: {
@@ -125,6 +127,8 @@ const STRINGS = {
     taxIdValue: 'Tax ID',
     saveCompany: 'Save',
     companySaved: 'Saved',
+    companySavedWithStripe: 'Saved (Stripe synced)',
+    companySavedStripeSkipped: 'Saved (Stripe not synced)',
     companySaveError: 'Failed to save',
   },
   'zh-Hans': {
@@ -187,6 +191,8 @@ const STRINGS = {
     taxIdValue: '税号',
     saveCompany: '保存',
     companySaved: '已保存',
+    companySavedWithStripe: '已保存（Stripe已同步）',
+    companySavedStripeSkipped: '已保存（Stripe未同步）',
     companySaveError: '保存失败',
   },
 };
@@ -1308,11 +1314,22 @@ const saveCompanyProfile = async () => {
       throw new Error(`HTTP ${res.status}`);
     }
 
+    const data = await res.json();
+    const stripeSync = data.stripeSync || {};
+
+    // Determine message based on Stripe sync result
+    let message = t('companySaved');
+    if (stripeSync.updated) {
+      message = t('companySavedWithStripe');
+    } else if (stripeSync.skipped) {
+      message = t('companySavedStripeSkipped');
+    }
+
     if (statusEl) {
-      statusEl.textContent = t('companySaved');
+      statusEl.textContent = message;
       statusEl.className = 'company-status success';
     }
-    addDiagLog('Company profile saved');
+    addDiagLog(`Company profile saved | stripeSync: ${JSON.stringify(stripeSync)}`);
 
     // Clear status after 3 seconds
     setTimeout(() => {
