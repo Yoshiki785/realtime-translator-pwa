@@ -1531,6 +1531,86 @@ async def get_company_profile(request: Request) -> JSONResponse:
     return JSONResponse({"companyProfile": company_profile})
 
 
+def build_stripe_customer_payload(company_profile: dict) -> dict:
+    """
+    companyProfile から Stripe Customer.modify 用の payload を構築
+    安全域のみ: name, address, metadata
+    """
+    payload = {}
+
+    # name = companyName（あれば）
+    company_name = company_profile.get("companyName", "").strip()
+    if company_name:
+        payload["name"] = company_name
+
+    # address（line1, postal_code, country）
+    address = {}
+    addr_line1 = company_profile.get("address", "").strip()
+    if addr_line1:
+        address["line1"] = addr_line1
+    postal_code = company_profile.get("postalCode", "").strip()
+    if postal_code:
+        address["postal_code"] = postal_code
+    country = company_profile.get("country", "").strip()
+    if country:
+        address["country"] = country
+    if address:
+        payload["address"] = address
+
+    # metadata に全フィールドを保存
+    metadata = {
+        "source": "company_profile_sync",
+    }
+    for key in ["companyName", "department", "position", "address", "postalCode", "country", "taxIdLabel", "taxIdValue"]:
+        val = company_profile.get(key, "").strip()
+        if val:
+            metadata[key] = val[:500]  # Stripe metadata value limit
+    payload["metadata"] = metadata
+
+    return payload
+
+
+def sync_company_profile_to_stripe(customer_id: str, company_profile: dict) -> dict:
+    """
+    companyProfile を Stripe Customer に同期（ベストエフォート）
+    Returns: {"attempted": bool, "updated": bool, "skipped": bool, "reason": str|None, "error": str|None}
+    """
+    result = {
+        "attempted": False,
+        "updated": False,
+        "skipped": False,
+        "reason": None,
+        "error": None,
+    }
+
+    secret_key = os.getenv("STRIPE_SECRET_KEY")
+    if not secret_key:
+        result["skipped"] = True
+        result["reason"] = "stripe_not_configured"
+        logger.info(f"[stripe_sync] Skipped: STRIPE_SECRET_KEY not set")
+        return result
+
+    if not customer_id:
+        result["skipped"] = True
+        result["reason"] = "no_customer_id"
+        logger.info(f"[stripe_sync] Skipped: no stripeCustomerId")
+        return result
+
+    result["attempted"] = True
+    stripe.api_key = secret_key
+
+    try:
+        payload = build_stripe_customer_payload(company_profile)
+        stripe.Customer.modify(customer_id, **payload)
+        result["updated"] = True
+        logger.info(f"[stripe_sync] Customer updated | {json.dumps({'customerId': customer_id, 'fields': list(payload.keys())})}")
+    except Exception as e:
+        result["error"] = str(e)
+        logger.error(f"[stripe_sync] Customer update failed | {json.dumps({'customerId': customer_id, 'error': str(e)})}")
+
+    return result
+
+
 @app.post("/api/v1/company/profile")
 async def save_company_profile(request: Request) -> JSONResponse:
     """会社情報を保存"""
@@ -1544,13 +1624,43 @@ async def save_company_profile(request: Request) -> JSONResponse:
 
     db = get_firestore_client()
     user_ref = db.collection("users").document(uid)
+
+    # Firestore に保存
     user_ref.set({
         "companyProfile": sanitized,
         "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
     }, merge=True)
 
     logger.info(f"[company_profile] POST | {json.dumps({'uid': uid, 'fields': list(sanitized.keys())})}")
-    return JSONResponse({"ok": True, "companyProfile": sanitized})
+
+    # Stripe Customer に同期（ベストエフォート）
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    customer_id = user_data.get("stripeCustomerId")
+
+    stripe_sync = sync_company_profile_to_stripe(customer_id, sanitized)
+
+    # Firestore に同期結果を保存（任意）
+    sync_status = {
+        "lastCompanyProfileSyncAt": firebase_firestore.SERVER_TIMESTAMP,
+    }
+    if stripe_sync["updated"]:
+        sync_status["lastCompanyProfileSyncOk"] = True
+        sync_status["lastCompanyProfileSyncError"] = None
+    elif stripe_sync["error"]:
+        sync_status["lastCompanyProfileSyncOk"] = False
+        sync_status["lastCompanyProfileSyncError"] = stripe_sync["error"]
+    elif stripe_sync["skipped"]:
+        sync_status["lastCompanyProfileSyncOk"] = None
+        sync_status["lastCompanyProfileSyncError"] = stripe_sync["reason"]
+
+    user_ref.set({"stripeSync": sync_status}, merge=True)
+
+    return JSONResponse({
+        "ok": True,
+        "companyProfile": sanitized,
+        "stripeSync": stripe_sync,
+    })
 
 
 @app.post("/api/v1/billing/stripe/portal")
