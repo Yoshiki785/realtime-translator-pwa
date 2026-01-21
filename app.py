@@ -1518,6 +1518,41 @@ async def create_checkout_session(request: Request) -> JSONResponse:
         raise HTTPException(status_code=500, detail=f"checkout_failed: {str(e)}")
 
 
+@app.get("/api/v1/company/profile")
+async def get_company_profile(request: Request) -> JSONResponse:
+    """会社情報を取得"""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+    user_ref = db.collection("users").document(uid)
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    company_profile = user_data.get("companyProfile", {})
+    logger.info(f"[company_profile] GET | {json.dumps({'uid': uid})}")
+    return JSONResponse({"companyProfile": company_profile})
+
+
+@app.post("/api/v1/company/profile")
+async def save_company_profile(request: Request) -> JSONResponse:
+    """会社情報を保存"""
+    uid = get_uid_from_request(request)
+    body = await request.json()
+    company_profile = body.get("companyProfile", {})
+
+    # 許可するフィールドのみ保存
+    allowed_fields = ["companyName", "department", "position", "address", "postalCode", "country", "taxIdLabel", "taxIdValue"]
+    sanitized = {k: v for k, v in company_profile.items() if k in allowed_fields and isinstance(v, str)}
+
+    db = get_firestore_client()
+    user_ref = db.collection("users").document(uid)
+    user_ref.set({
+        "companyProfile": sanitized,
+        "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+    }, merge=True)
+
+    logger.info(f"[company_profile] POST | {json.dumps({'uid': uid, 'fields': list(sanitized.keys())})}")
+    return JSONResponse({"ok": True, "companyProfile": sanitized})
+
+
 @app.post("/api/v1/billing/stripe/portal")
 async def create_portal_session(request: Request) -> JSONResponse:
     """Stripe Customer Portal Session 作成（サブスク管理用）"""

@@ -77,6 +77,42 @@
           <div id="billingStatus" class="billing-status"></div>
         </div>
       </section>
+      <section id="companySection" class="company-section" style="display:none;">
+        <h3 data-i18n="companyInfo">会社情報</h3>
+        <p class="company-note" data-i18n="companyNote">※ Stripeの請求先情報・解約は「サブスク管理」から行えます</p>
+        <div class="company-form">
+          <label data-i18n="companyName">会社名
+            <input id="companyName" type="text" placeholder="" />
+          </label>
+          <label data-i18n="department">部署
+            <input id="companyDepartment" type="text" placeholder="" />
+          </label>
+          <label data-i18n="position">役職
+            <input id="companyPosition" type="text" placeholder="" />
+          </label>
+          <label data-i18n="companyAddress">住所
+            <input id="companyAddress" type="text" placeholder="" />
+          </label>
+          <label data-i18n="postalCode">郵便番号
+            <input id="companyPostalCode" type="text" placeholder="" />
+          </label>
+          <label data-i18n="country">国
+            <input id="companyCountry" type="text" placeholder="" />
+          </label>
+          <div class="tax-id-row">
+            <label data-i18n="taxIdLabel">税ID種別
+              <input id="companyTaxIdLabel" type="text" placeholder="例: 法人番号" />
+            </label>
+            <label data-i18n="taxIdValue">税ID値
+              <input id="companyTaxIdValue" type="text" placeholder="" />
+            </label>
+          </div>
+          <div class="company-actions">
+            <button id="saveCompanyBtn" class="cta small" data-i18n="saveCompany">保存</button>
+            <span id="companyStatus" class="company-status"></span>
+          </div>
+        </div>
+      </section>
       <hr class="settings-divider" />
       <label>maxChars
         <input id="maxChars" type="number" min="200" max="20000" step="50" value="300" />
