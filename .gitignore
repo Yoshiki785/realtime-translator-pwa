@@ -9,3 +9,19 @@ static/icon-192.png
 static/icon-512.png
 .Python
 .pytest_cache/
+
+# Node.js
+node_modules/
+
+# Firebase
+.firebase/
+
+# Ops logs
+ops/logs/*.err
+ops/logs/*.out
+ops/logs/*.rotated_date
+ops/logs/*.err.*
+ops/logs/*.out.*
+
+# Runbooks (managed in separate branch)
+runbooks/

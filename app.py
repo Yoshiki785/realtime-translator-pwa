@@ -1539,7 +1539,7 @@ async def create_portal_session(request: Request) -> JSONResponse:
     customer_id = user_data.get("stripeCustomerId")
 
     if not customer_id:
-        logger.error(f"No Stripe customer ID for uid: {uid} | {json.dumps({'uid': uid})}")
+        logger.error(f"[stripe_portal] No Stripe customer ID for uid: {uid} | {json.dumps({'uid': uid})}")
         raise HTTPException(status_code=400, detail="no_customer_id")
 
     try:
@@ -1547,10 +1547,11 @@ async def create_portal_session(request: Request) -> JSONResponse:
             customer=customer_id,
             return_url=return_url,
         )
-        logger.info(f"Portal session created for uid: {uid} | {json.dumps({'uid': uid, 'customerId': customer_id})}")
+        logger.info(f"[stripe_portal] Portal session created for uid: {uid} | {json.dumps({'uid': uid, 'customerId': customer_id})}")
+        print(f"[stripe_portal] Portal session created for uid: {uid} | customerId={customer_id}")
         return JSONResponse({"url": session.url})
     except Exception as e:
-        logger.error(f"Stripe portal session creation failed: {e} | {json.dumps({'uid': uid, 'error': str(e)})}")
+        logger.error(f"[stripe_portal] Stripe portal session creation failed: {e} | {json.dumps({'uid': uid, 'error': str(e)})}")
         raise HTTPException(status_code=500, detail=f"portal_failed: {str(e)}")
 
 
@@ -1651,9 +1652,11 @@ async def stripe_webhook(request: Request) -> JSONResponse:
 
         status = subscription.get("status", "")
         current_period_end = subscription.get("current_period_end")
+        cancel_at_period_end = subscription.get("cancel_at_period_end", False)
 
         # ステータスに応じてプラン設定
-        if status == "active":
+        # active または trialing の場合は pro、それ以外は free
+        if status in ("active", "trialing"):
             plan = "pro"
         else:
             plan = "free"
@@ -1665,6 +1668,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
             "quotaSeconds": plan_config["quotaSeconds"],
             "retentionDays": plan_config["retentionDays"],
             "subscriptionStatus": status,
+            "cancelAtPeriodEnd": cancel_at_period_end,
             "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
         }
 
@@ -1674,7 +1678,8 @@ async def stripe_webhook(request: Request) -> JSONResponse:
             user_updates["currentPeriodEnd"] = datetime.fromtimestamp(current_period_end, tz=timezone.utc)
 
         db.collection("users").document(uid).set(user_updates, merge=True)
-        logger.info(f"User plan updated from subscription event | {json.dumps({'uid': uid, 'plan': plan, 'status': status})}")
+        logger.info(f"[stripe_webhook] User plan updated from subscription event | {json.dumps({'uid': uid, 'plan': plan, 'status': status, 'cancelAtPeriodEnd': cancel_at_period_end})}")
+        print(f"[stripe_webhook] User plan updated | uid={uid} plan={plan} status={status} cancelAtPeriodEnd={cancel_at_period_end}")
 
     # 支払い成功
     elif event_type == "invoice.paid":
@@ -1687,7 +1692,8 @@ async def stripe_webhook(request: Request) -> JSONResponse:
             users_query = db.collection("users").where("stripeCustomerId", "==", customer_id).limit(1)
             for user_doc in users_query.stream():
                 uid = user_doc.id
-                logger.info(f"Invoice paid for uid: {uid} | {json.dumps({'uid': uid, 'invoiceId': invoice.get('id')})}")
+                logger.info(f"[stripe_webhook] Invoice paid for uid: {uid} | {json.dumps({'uid': uid, 'invoiceId': invoice.get('id')})}")
+                print(f"[stripe_webhook] Invoice paid | uid={uid} invoiceId={invoice.get('id')}")
                 # 必要に応じて追加処理（通知等）
                 break
 
@@ -1700,8 +1706,13 @@ async def stripe_webhook(request: Request) -> JSONResponse:
             users_query = db.collection("users").where("stripeCustomerId", "==", customer_id).limit(1)
             for user_doc in users_query.stream():
                 uid = user_doc.id
-                logger.warning(f"Invoice payment failed for uid: {uid} | {json.dumps({'uid': uid, 'invoiceId': invoice.get('id')})}")
-                # 必要に応じて通知やフラグ設定
+                # subscriptionStatus を past_due に更新（plan は即 free にしない方針）
+                db.collection("users").document(uid).set({
+                    "subscriptionStatus": "past_due",
+                    "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+                }, merge=True)
+                logger.warning(f"[stripe_webhook] Invoice payment failed for uid: {uid} | {json.dumps({'uid': uid, 'invoiceId': invoice.get('id')})}")
+                print(f"[stripe_webhook] Invoice payment failed | uid={uid} invoiceId={invoice.get('id')} subscriptionStatus=past_due")
                 break
 
     return JSONResponse({"received": True})
