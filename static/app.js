@@ -50,6 +50,7 @@ const STRINGS = {
     billingCancelled: 'キャンセルしました',
     billingError: 'エラーが発生しました',
     alreadyPro: 'Proプラン利用中',
+    manageSubscription: 'サブスク管理',
   },
   en: {
     login: 'Login',
@@ -98,6 +99,7 @@ const STRINGS = {
     billingCancelled: 'Cancelled',
     billingError: 'An error occurred',
     alreadyPro: 'Pro plan active',
+    manageSubscription: 'Manage Subscription',
   },
   'zh-Hans': {
     login: '登录',
@@ -146,6 +148,7 @@ const STRINGS = {
     billingCancelled: '已取消',
     billingError: '发生错误',
     alreadyPro: 'Pro计划使用中',
+    manageSubscription: '管理订阅',
   },
 };
 
@@ -540,6 +543,7 @@ const cacheElements = () => {
     // Billing Section
     billingSection: document.getElementById('billingSection'),
     upgradeProBtn: document.getElementById('upgradeProBtn'),
+    manageBillingBtn: document.getElementById('manageBillingBtn'),
     billingStatus: document.getElementById('billingStatus'),
   };
 };
@@ -1024,16 +1028,31 @@ const updateBillingSection = (show) => {
   if (!els.billingSection) return;
   els.billingSection.style.display = show ? 'block' : 'none';
 
-  // Update button state based on current plan
-  if (els.upgradeProBtn && state.quota.loaded) {
-    if (state.quota.plan === 'pro') {
-      els.upgradeProBtn.textContent = t('alreadyPro');
-      els.upgradeProBtn.disabled = true;
-      els.upgradeProBtn.classList.add('disabled');
-    } else {
-      els.upgradeProBtn.textContent = t('upgradeToPro');
-      els.upgradeProBtn.disabled = false;
-      els.upgradeProBtn.classList.remove('disabled');
+  // Update button visibility based on current plan
+  if (state.quota.loaded) {
+    const isPro = state.quota.plan === 'pro';
+
+    // Upgrade button: show for Free, hide for Pro
+    if (els.upgradeProBtn) {
+      if (isPro) {
+        els.upgradeProBtn.style.display = 'none';
+      } else {
+        els.upgradeProBtn.style.display = '';
+        els.upgradeProBtn.textContent = t('upgradeToPro');
+        els.upgradeProBtn.disabled = false;
+        els.upgradeProBtn.classList.remove('disabled');
+      }
+    }
+
+    // Manage subscription button: show for Pro, hide for Free
+    if (els.manageBillingBtn) {
+      if (isPro) {
+        els.manageBillingBtn.style.display = '';
+        els.manageBillingBtn.textContent = t('manageSubscription');
+        els.manageBillingBtn.disabled = false;
+      } else {
+        els.manageBillingBtn.style.display = 'none';
+      }
     }
   }
 };
@@ -1095,6 +1114,62 @@ const startCheckout = async () => {
     if (btn) {
       btn.disabled = false;
       btn.textContent = t('upgradeToPro');
+    }
+  }
+};
+
+// Open Stripe Customer Portal for subscription management
+const openManageSubscription = async () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  const btn = els.manageBillingBtn;
+  const statusEl = els.billingStatus;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = t('upgrading');
+  }
+  if (statusEl) {
+    statusEl.textContent = '';
+    statusEl.className = 'billing-status';
+  }
+
+  try {
+    const returnUrl = `${window.location.origin}/#/settings`;
+
+    const res = await authFetch('/api/v1/billing/stripe/portal', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ returnUrl }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `Portal failed (${res.status})`);
+    }
+
+    const data = await res.json();
+    addDiagLog(`Portal session created`);
+
+    // Redirect to Stripe Customer Portal
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error('No portal URL returned');
+    }
+  } catch (err) {
+    console.error('[openManageSubscription] Error:', err);
+    addDiagLog(`Portal error: ${err.message}`);
+    if (statusEl) {
+      statusEl.textContent = t('billingError') + ': ' + err.message;
+      statusEl.className = 'billing-status error';
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = t('manageSubscription');
     }
   }
 };
@@ -2387,6 +2462,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Upgrade Pro button click handler
   if (els.upgradeProBtn) {
     els.upgradeProBtn.addEventListener('click', startCheckout);
+  }
+
+  // Manage subscription button click handler
+  if (els.manageBillingBtn) {
+    els.manageBillingBtn.addEventListener('click', openManageSubscription);
   }
 
   updateLiveText();
