@@ -51,6 +51,19 @@ const STRINGS = {
     billingError: 'エラーが発生しました',
     alreadyPro: 'Proプラン利用中',
     manageSubscription: 'サブスク管理',
+    companyInfo: '会社情報',
+    companyNote: '※ Stripeの請求先情報・解約は「サブスク管理」から行えます',
+    companyName: '会社名',
+    department: '部署',
+    position: '役職',
+    companyAddress: '住所',
+    postalCode: '郵便番号',
+    country: '国',
+    taxIdLabel: '税ID種別',
+    taxIdValue: '税ID値',
+    saveCompany: '保存',
+    companySaved: '保存しました',
+    companySaveError: '保存に失敗しました',
   },
   en: {
     login: 'Login',
@@ -100,6 +113,19 @@ const STRINGS = {
     billingError: 'An error occurred',
     alreadyPro: 'Pro plan active',
     manageSubscription: 'Manage Subscription',
+    companyInfo: 'Company Info',
+    companyNote: '* For billing & cancellation, use "Manage Subscription"',
+    companyName: 'Company Name',
+    department: 'Department',
+    position: 'Position',
+    companyAddress: 'Address',
+    postalCode: 'Postal Code',
+    country: 'Country',
+    taxIdLabel: 'Tax ID Type',
+    taxIdValue: 'Tax ID',
+    saveCompany: 'Save',
+    companySaved: 'Saved',
+    companySaveError: 'Failed to save',
   },
   'zh-Hans': {
     login: '登录',
@@ -149,6 +175,19 @@ const STRINGS = {
     billingError: '发生错误',
     alreadyPro: 'Pro计划使用中',
     manageSubscription: '管理订阅',
+    companyInfo: '公司信息',
+    companyNote: '※ Stripe的账单信息/取消请前往"管理订阅"',
+    companyName: '公司名称',
+    department: '部门',
+    position: '职位',
+    companyAddress: '地址',
+    postalCode: '邮政编码',
+    country: '国家',
+    taxIdLabel: '税号类型',
+    taxIdValue: '税号',
+    saveCompany: '保存',
+    companySaved: '已保存',
+    companySaveError: '保存失败',
   },
 };
 
@@ -545,6 +584,18 @@ const cacheElements = () => {
     upgradeProBtn: document.getElementById('upgradeProBtn'),
     manageBillingBtn: document.getElementById('manageBillingBtn'),
     billingStatus: document.getElementById('billingStatus'),
+    // Company Section
+    companySection: document.getElementById('companySection'),
+    companyName: document.getElementById('companyName'),
+    companyDepartment: document.getElementById('companyDepartment'),
+    companyPosition: document.getElementById('companyPosition'),
+    companyAddress: document.getElementById('companyAddress'),
+    companyPostalCode: document.getElementById('companyPostalCode'),
+    companyCountry: document.getElementById('companyCountry'),
+    companyTaxIdLabel: document.getElementById('companyTaxIdLabel'),
+    companyTaxIdValue: document.getElementById('companyTaxIdValue'),
+    saveCompanyBtn: document.getElementById('saveCompanyBtn'),
+    companyStatus: document.getElementById('companyStatus'),
   };
 };
 
@@ -1055,6 +1106,11 @@ const updateBillingSection = (show) => {
       }
     }
   }
+
+  // Show company section for logged-in users
+  if (els.companySection) {
+    els.companySection.style.display = show ? 'block' : 'none';
+  }
 };
 
 const startCheckout = async () => {
@@ -1171,6 +1227,109 @@ const openManageSubscription = async () => {
       btn.disabled = false;
       btn.textContent = t('manageSubscription');
     }
+  }
+};
+
+// ========== Company Profile ==========
+const loadCompanyProfile = async () => {
+  if (!currentUser) return;
+
+  try {
+    const token = await currentUser.getIdToken();
+    const res = await fetch(`${API_BASE_URL}/api/v1/company/profile`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const data = await res.json();
+    const profile = data.companyProfile || {};
+
+    // Populate form fields
+    if (els.companyName) els.companyName.value = profile.companyName || '';
+    if (els.companyDepartment) els.companyDepartment.value = profile.department || '';
+    if (els.companyPosition) els.companyPosition.value = profile.position || '';
+    if (els.companyAddress) els.companyAddress.value = profile.address || '';
+    if (els.companyPostalCode) els.companyPostalCode.value = profile.postalCode || '';
+    if (els.companyCountry) els.companyCountry.value = profile.country || '';
+    if (els.companyTaxIdLabel) els.companyTaxIdLabel.value = profile.taxIdLabel || '';
+    if (els.companyTaxIdValue) els.companyTaxIdValue.value = profile.taxIdValue || '';
+
+    addDiagLog('Company profile loaded');
+  } catch (err) {
+    console.error('[loadCompanyProfile] Error:', err);
+    addDiagLog(`Company profile load error: ${err.message}`);
+  }
+};
+
+const saveCompanyProfile = async () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  const btn = els.saveCompanyBtn;
+  const statusEl = els.companyStatus;
+
+  if (btn) btn.disabled = true;
+  if (statusEl) {
+    statusEl.textContent = '';
+    statusEl.className = 'company-status';
+  }
+
+  const companyProfile = {
+    companyName: els.companyName?.value?.trim() || '',
+    department: els.companyDepartment?.value?.trim() || '',
+    position: els.companyPosition?.value?.trim() || '',
+    address: els.companyAddress?.value?.trim() || '',
+    postalCode: els.companyPostalCode?.value?.trim() || '',
+    country: els.companyCountry?.value?.trim() || '',
+    taxIdLabel: els.companyTaxIdLabel?.value?.trim() || '',
+    taxIdValue: els.companyTaxIdValue?.value?.trim() || '',
+  };
+
+  try {
+    const token = await currentUser.getIdToken();
+    const res = await fetch(`${API_BASE_URL}/api/v1/company/profile`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ companyProfile }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    if (statusEl) {
+      statusEl.textContent = t('companySaved');
+      statusEl.className = 'company-status success';
+    }
+    addDiagLog('Company profile saved');
+
+    // Clear status after 3 seconds
+    setTimeout(() => {
+      if (statusEl) {
+        statusEl.textContent = '';
+        statusEl.className = 'company-status';
+      }
+    }, 3000);
+  } catch (err) {
+    console.error('[saveCompanyProfile] Error:', err);
+    addDiagLog(`Company profile save error: ${err.message}`);
+    if (statusEl) {
+      statusEl.textContent = t('companySaveError');
+      statusEl.className = 'company-status error';
+    }
+  } finally {
+    if (btn) btn.disabled = false;
   }
 };
 
@@ -2453,6 +2612,8 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshQuotaStatus();
         // Handle billing route after auth is ready
         handleBillingRoute();
+        // Load company profile for logged-in users
+        loadCompanyProfile();
       } else {
         resetQuotaState();
       }
@@ -2467,6 +2628,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Manage subscription button click handler
   if (els.manageBillingBtn) {
     els.manageBillingBtn.addEventListener('click', openManageSubscription);
+  }
+
+  // Save company profile button click handler
+  if (els.saveCompanyBtn) {
+    els.saveCompanyBtn.addEventListener('click', saveCompanyProfile);
   }
 
   updateLiveText();
