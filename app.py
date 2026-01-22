@@ -100,15 +100,63 @@ DEFAULT_TICKET_PRICE_MAP = {
     }
 }
 
+def _is_production_env() -> bool:
+    """本番/staging環境かどうかを判定"""
+    env = os.getenv("ENV", "development").lower()
+    return env in ("production", "prod", "staging")
+
+def _validate_ticket_price_map(price_map: dict) -> bool:
+    """チケット価格マップのバリデーション"""
+    if not isinstance(price_map, dict):
+        return False
+    packs = price_map.get("packs")
+    if not isinstance(packs, dict) or not packs:
+        return False
+    required_keys = {"priceId", "seconds"}
+    for pack_id, pack_info in packs.items():
+        if not isinstance(pack_info, dict):
+            return False
+        if not required_keys.issubset(pack_info.keys()):
+            return False
+        if not isinstance(pack_info["priceId"], str) or not pack_info["priceId"]:
+            return False
+        if not isinstance(pack_info["seconds"], int) or pack_info["seconds"] <= 0:
+            return False
+    return True
+
 def get_ticket_price_map() -> dict:
-    """環境変数からチケット価格マップを取得"""
+    """
+    環境変数からチケット価格マップを取得
+    本番/staging: STRIPE_TICKET_PRICE_MAP_JSON 必須、不正ならエラー
+    開発: 未設定ならデフォルト値を使用（警告ログ）
+    """
+    is_prod = _is_production_env()
     price_map_json = os.getenv("STRIPE_TICKET_PRICE_MAP_JSON")
-    if price_map_json:
-        try:
-            return json.loads(price_map_json)
-        except json.JSONDecodeError as e:
-            logger.warning(f"Failed to parse STRIPE_TICKET_PRICE_MAP_JSON: {e}")
-    return DEFAULT_TICKET_PRICE_MAP
+
+    if not price_map_json:
+        if is_prod:
+            logger.error("[ticket_price_map] STRIPE_TICKET_PRICE_MAP_JSON is required in production/staging")
+            raise HTTPException(status_code=500, detail="ticket_price_map_missing")
+        logger.warning("[ticket_price_map] Using DEFAULT_TICKET_PRICE_MAP (dev mode only, priceIds are dummy)")
+        return DEFAULT_TICKET_PRICE_MAP
+
+    try:
+        price_map = json.loads(price_map_json)
+    except json.JSONDecodeError as e:
+        if is_prod:
+            logger.error(f"[ticket_price_map] Failed to parse STRIPE_TICKET_PRICE_MAP_JSON: {e}")
+            raise HTTPException(status_code=500, detail="ticket_price_map_invalid")
+        logger.warning(f"[ticket_price_map] Failed to parse STRIPE_TICKET_PRICE_MAP_JSON: {e}, using default")
+        return DEFAULT_TICKET_PRICE_MAP
+
+    if not _validate_ticket_price_map(price_map):
+        if is_prod:
+            logger.error("[ticket_price_map] STRIPE_TICKET_PRICE_MAP_JSON validation failed (missing priceId/seconds)")
+            raise HTTPException(status_code=500, detail="ticket_price_map_invalid")
+        logger.warning("[ticket_price_map] Validation failed, using DEFAULT_TICKET_PRICE_MAP (dev mode)")
+        return DEFAULT_TICKET_PRICE_MAP
+
+    return price_map
 
 def get_ticket_pack(pack_id: str) -> dict | None:
     """packIdからパック情報を取得。存在しなければNone"""
@@ -1912,17 +1960,48 @@ async def stripe_webhook(request: Request) -> JSONResponse:
 
         # チケット購入の処理（mode=payment かつ type=ticket or ticket_purchase）
         if session_mode == "payment" and metadata_type in ("ticket", "ticket_purchase"):
-            # 新方式: packIdから秒数を取得
+            # 支払い状態を確認（paid でなければ付与しない）
+            payment_status = session.get("payment_status")
+            if payment_status != "paid":
+                logger.warning(f"[stripe_ticket] payment_status is not paid, skipping credit | {json.dumps({'uid': uid, 'sessionId': session_id, 'paymentStatus': payment_status})}")
+                return JSONResponse({"received": True, "skipped": "not_paid"})
+
+            # 新方式: packIdから秒数を取得（priceId整合チェック含む）
             if pack_id:
                 pack_info = get_ticket_pack(pack_id)
-                if pack_info:
-                    pack_seconds = pack_info["seconds"]
-                else:
-                    logger.warning(f"[stripe_ticket] Unknown packId in webhook, using fallback | {json.dumps({'uid': uid, 'packId': pack_id})}")
-                    pack_seconds = int(pack_seconds_str) if pack_seconds_str else 1800
-            # 旧方式: packSecondsから直接取得（後方互換）
+                if not pack_info:
+                    logger.error(f"[stripe_ticket] Unknown packId in webhook | {json.dumps({'uid': uid, 'sessionId': session_id, 'packId': pack_id})}")
+                    return JSONResponse({"received": True, "skipped": "unknown_pack"})
+
+                pack_seconds = pack_info["seconds"]
+                expected_price_id = pack_info["priceId"]
+
+                # Stripe API で実際の line_items を取得して priceId を検証
+                try:
+                    stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+                    line_items = stripe.checkout.Session.list_line_items(session_id, limit=10)
+                    if not line_items.data:
+                        logger.error(f"[stripe_ticket] No line items found | {json.dumps({'uid': uid, 'sessionId': session_id})}")
+                        return JSONResponse({"received": True, "skipped": "no_line_items"})
+
+                    actual_price_id = line_items.data[0].price.id
+                    if actual_price_id != expected_price_id:
+                        logger.error(f"[stripe_ticket] Price ID mismatch | {json.dumps({'uid': uid, 'sessionId': session_id, 'packId': pack_id, 'expected': expected_price_id, 'actual': actual_price_id})}")
+                        return JSONResponse({"received": True, "skipped": "price_mismatch"})
+
+                    logger.info(f"[stripe_ticket] Price ID verified | {json.dumps({'uid': uid, 'sessionId': session_id, 'packId': pack_id, 'priceId': actual_price_id})}")
+                except Exception as e:
+                    logger.error(f"[stripe_ticket] Failed to verify line items | {json.dumps({'uid': uid, 'sessionId': session_id, 'error': str(e)})}")
+                    # 本番では検証失敗時は付与しない（セキュリティ優先）
+                    if _is_production_env():
+                        return JSONResponse({"received": True, "skipped": "verification_failed"})
+                    # 開発環境では警告のみで続行
+                    logger.warning(f"[stripe_ticket] Skipping price verification in dev mode")
+
+            # 旧方式: packSecondsから直接取得（後方互換、ただしpayment_status=paidは必須）
             else:
                 pack_seconds = int(pack_seconds_str) if pack_seconds_str else 1800
+                logger.info(f"[stripe_ticket] Using legacy packSeconds (no packId) | {json.dumps({'uid': uid, 'sessionId': session_id, 'packSeconds': pack_seconds})}")
 
             # 冪等性: ledger docId = session_id で重複チェック
             ledger_ref = db.collection("credit_ledger").document(uid).collection("entries").document(session_id)

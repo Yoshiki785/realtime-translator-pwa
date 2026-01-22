@@ -52,6 +52,8 @@ const STRINGS = {
     alreadyPro: 'Proプラン利用中',
     manageSubscription: 'サブスク管理',
     buyTicket: '追加購入',
+    buyTicketProOnly: '追加購入（Pro限定）',
+    proRequiredHint: 'Proプランのみ購入可能です。アップグレードしてください。',
     purchasing: '購入中...',
     ticketSuccess: 'チケット購入完了！',
     ticketCancelled: '購入キャンセル',
@@ -128,6 +130,8 @@ const STRINGS = {
     alreadyPro: 'Pro plan active',
     manageSubscription: 'Manage Subscription',
     buyTicket: 'Buy Add-on',
+    buyTicketProOnly: 'Buy Add-on (Pro only)',
+    proRequiredHint: 'Available for Pro plans only. Please upgrade.',
     purchasing: 'Purchasing...',
     ticketSuccess: 'Ticket purchased!',
     ticketCancelled: 'Purchase cancelled',
@@ -204,6 +208,8 @@ const STRINGS = {
     alreadyPro: 'Pro计划使用中',
     manageSubscription: '管理订阅',
     buyTicket: '追加购买',
+    buyTicketProOnly: '追加购买（仅Pro）',
+    proRequiredHint: '仅限Pro计划购买，请升级。',
     purchasing: '购买中...',
     ticketSuccess: '购买成功！',
     ticketCancelled: '购买已取消',
@@ -1153,14 +1159,17 @@ const updateBillingSection = (show) => {
       }
     }
 
-    // Buy ticket button: show only for Pro users
+    // Buy ticket button: enabled for Pro, disabled for Free (visible to both)
     if (els.buyTicketBtn) {
+      els.buyTicketBtn.style.display = '';
       if (isPro) {
-        els.buyTicketBtn.style.display = '';
         els.buyTicketBtn.textContent = t('buyTicket');
         els.buyTicketBtn.disabled = false;
+        els.buyTicketBtn.classList.remove('disabled');
       } else {
-        els.buyTicketBtn.style.display = 'none';
+        els.buyTicketBtn.textContent = t('buyTicketProOnly');
+        els.buyTicketBtn.disabled = true;
+        els.buyTicketBtn.classList.add('disabled');
       }
     }
   }
@@ -1367,6 +1376,23 @@ const openTicketModal = () => {
     setError(t('errorLoginRequired'));
     return;
   }
+
+  // Check if user is Pro - Free users cannot buy tickets
+  const isPro = state.quota.plan === 'pro';
+  if (!isPro) {
+    // Show hint in billingStatus and highlight upgrade button
+    if (els.billingStatus) {
+      els.billingStatus.textContent = t('proRequiredHint');
+      els.billingStatus.className = 'billing-status error';
+    }
+    // Pulse the upgrade button to draw attention
+    if (els.upgradeProBtn) {
+      els.upgradeProBtn.classList.add('pulse');
+      setTimeout(() => els.upgradeProBtn.classList.remove('pulse'), 2000);
+    }
+    return;
+  }
+
   if (!els.ticketModal) return;
 
   // Clear any previous status
