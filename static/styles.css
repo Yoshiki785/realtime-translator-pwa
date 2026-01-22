@@ -636,3 +636,109 @@ button.small:active {
 .company-status.error {
   color: #f87171;
 }
+
+/* Ticket Purchase Modal */
+.ticket-modal {
+  max-width: 400px;
+  width: 90vw;
+}
+
+.ticket-modal header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.ticket-modal h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.modal-close-btn {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.modal-close-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--fg);
+}
+
+.ticket-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.ticket-pack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.ticket-pack:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.ticket-pack:active {
+  transform: translateY(0);
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.ticket-pack:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ticket-minutes {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.ticket-price {
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.ticket-pack:active .ticket-price {
+  color: var(--bg);
+}
+
+/* Pro required badge for Free users */
+.pro-required-note {
+  font-size: 12px;
+  color: var(--danger);
+  margin-top: 8px;
+  text-align: center;
+}
+
+/* Mobile responsive */
+@media (max-width: 360px) {
+  .ticket-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket-modal {
+    width: 95vw;
+  }
+}

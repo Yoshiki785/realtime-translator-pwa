@@ -74,7 +74,7 @@
         <div id="billingSection" class="billing-section" style="display:none;">
           <button id="upgradeProBtn" class="cta small" data-i18n="upgradeToPro">Proにアップグレード</button>
           <button id="manageBillingBtn" class="cta small secondary" data-i18n="manageSubscription" style="display:none;">サブスク管理</button>
-          <button id="buyTicketBtn" class="cta small secondary" data-i18n="buyTicket">追加購入（+30分）</button>
+          <button id="buyTicketBtn" class="cta small secondary" data-i18n="buyTicket">追加購入</button>
           <div id="billingStatus" class="billing-status"></div>
         </div>
       </section>
@@ -205,6 +205,43 @@
       <div class="modal-actions">
         <button id="devCloseBtn" class="secondary">閉じる</button>
       </div>
+    </div>
+  </dialog>
+
+  <!-- Ticket Purchase Modal -->
+  <dialog id="ticketModal">
+    <div class="modal ticket-modal">
+      <header>
+        <h2 data-i18n="ticketSelectTitle">追加チケットを選択</h2>
+        <button id="ticketModalClose" class="modal-close-btn" aria-label="Close">✕</button>
+      </header>
+      <div class="ticket-grid">
+        <button class="ticket-pack" data-pack-id="t120">
+          <span class="ticket-minutes">+120分</span>
+          <span class="ticket-price">¥1,440</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t240">
+          <span class="ticket-minutes">+240分</span>
+          <span class="ticket-price">¥2,440</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t360">
+          <span class="ticket-minutes">+360分</span>
+          <span class="ticket-price">¥3,240</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t1200">
+          <span class="ticket-minutes">+1200分</span>
+          <span class="ticket-price">¥9,600</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t1800">
+          <span class="ticket-minutes">+1800分</span>
+          <span class="ticket-price">¥12,600</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t3000">
+          <span class="ticket-minutes">+3000分</span>
+          <span class="ticket-price">¥21,000</span>
+        </button>
+      </div>
+      <div id="ticketModalStatus" class="billing-status"></div>
     </div>
   </dialog>
 

@@ -20,9 +20,29 @@
 | `STRIPE_SECRET_KEY` | Stripe秘密鍵 | Secret Manager |
 | `STRIPE_WEBHOOK_SECRET` | Stripe Webhook署名検証シークレット | Secret Manager |
 | `STRIPE_PRO_PRICE_ID` | Stripe ProプランのPrice ID | Cloud Run環境変数 |
-| `STRIPE_TICKET_30M_PRICE_ID` | Stripe チケット購入（30分=1800秒）のPrice ID | Cloud Run環境変数 |
+| `STRIPE_TICKET_PRICE_MAP_JSON` | チケット購入用価格マップ（JSON形式）※下記参照 | Cloud Run環境変数 or Secret Manager |
 | `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Firebase Admin SDKサービスアカウントJSON（文字列全体） | Secret Manager |
 | `GCS_BUCKET` | Cloud Storageバケット名 | Cloud Run環境変数 |
+
+#### `STRIPE_TICKET_PRICE_MAP_JSON` の形式
+
+チケット購入用の価格マップをJSON形式で設定します。各packIdに対応するStripe Price IDと秒数を定義します。
+
+```json
+{
+  "currency": "JPY",
+  "packs": {
+    "t120": {"priceId": "price_T120_xxx", "seconds": 7200, "minutes": 120, "amount": 1440, "labelJa": "+120分"},
+    "t240": {"priceId": "price_T240_xxx", "seconds": 14400, "minutes": 240, "amount": 2440, "labelJa": "+240分"},
+    "t360": {"priceId": "price_T360_xxx", "seconds": 21600, "minutes": 360, "amount": 3240, "labelJa": "+360分"},
+    "t1200": {"priceId": "price_T1200_xxx", "seconds": 72000, "minutes": 1200, "amount": 9600, "labelJa": "+1200分"},
+    "t1800": {"priceId": "price_T1800_xxx", "seconds": 108000, "minutes": 1800, "amount": 12600, "labelJa": "+1800分"},
+    "t3000": {"priceId": "price_T3000_xxx", "seconds": 180000, "minutes": 3000, "amount": 21000, "labelJa": "+3000分"}
+  }
+}
+```
+
+**重要**: `seconds` 値はWebhook処理時にサーバー側で参照されます。フロントエンドからの値は使用されません（セキュリティ対策）。
 
 ### Development のみ
 
@@ -135,8 +155,8 @@ gcloud run deploy realtime-translator-api-staging \
   --platform managed \
   --region $REGION \
   --allow-unauthenticated \
-  --set-env-vars ENV=staging,GCS_BUCKET=$GCS_BUCKET,STRIPE_PRO_PRICE_ID=price_STAGING_PRO_PRICE_ID,STRIPE_TICKET_30M_PRICE_ID=price_STAGING_TICKET_30M_PRICE_ID \
-  --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,GOOGLE_APPLICATION_CREDENTIALS_JSON=GOOGLE_APPLICATION_CREDENTIALS_JSON:latest \
+  --set-env-vars ENV=staging,GCS_BUCKET=$GCS_BUCKET,STRIPE_PRO_PRICE_ID=price_STAGING_PRO_PRICE_ID \
+  --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,GOOGLE_APPLICATION_CREDENTIALS_JSON=GOOGLE_APPLICATION_CREDENTIALS_JSON:latest,STRIPE_TICKET_PRICE_MAP_JSON=STRIPE_TICKET_PRICE_MAP_JSON:latest \
   --memory 512Mi \
   --cpu 1 \
   --timeout 300 \
@@ -205,8 +225,8 @@ gcloud run deploy realtime-translator-api \
   --platform managed \
   --region $REGION \
   --allow-unauthenticated \
-  --set-env-vars ENV=production,GCS_BUCKET=$GCS_BUCKET,STRIPE_PRO_PRICE_ID=price_LIVE_PRO_PRICE_ID,STRIPE_TICKET_30M_PRICE_ID=price_LIVE_TICKET_30M_PRICE_ID \
-  --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,GOOGLE_APPLICATION_CREDENTIALS_JSON=GOOGLE_APPLICATION_CREDENTIALS_JSON:latest \
+  --set-env-vars ENV=production,GCS_BUCKET=$GCS_BUCKET,STRIPE_PRO_PRICE_ID=price_LIVE_PRO_PRICE_ID \
+  --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,GOOGLE_APPLICATION_CREDENTIALS_JSON=GOOGLE_APPLICATION_CREDENTIALS_JSON:latest,STRIPE_TICKET_PRICE_MAP_JSON=STRIPE_TICKET_PRICE_MAP_JSON:latest \
   --memory 512Mi \
   --cpu 1 \
   --timeout 300 \

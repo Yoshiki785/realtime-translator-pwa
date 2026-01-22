@@ -51,10 +51,13 @@ const STRINGS = {
     billingError: 'エラーが発生しました',
     alreadyPro: 'Proプラン利用中',
     manageSubscription: 'サブスク管理',
-    buyTicket: '追加購入（+30分）',
+    buyTicket: '追加購入',
     purchasing: '購入中...',
     ticketSuccess: 'チケット購入完了！',
     ticketCancelled: '購入キャンセル',
+    ticketSelectTitle: '追加チケットを選択',
+    ticketCheckoutError: '決済を開始できませんでした',
+    proRequired: 'Proプランのみ購入可能',
     billingStatusFree: 'Freeプラン',
     billingStatusPro: 'Proプラン',
     billingStatusCanceling: '解約予定（{date}まで有効）',
@@ -124,10 +127,13 @@ const STRINGS = {
     billingError: 'An error occurred',
     alreadyPro: 'Pro plan active',
     manageSubscription: 'Manage Subscription',
-    buyTicket: 'Buy Extra (+30min)',
+    buyTicket: 'Buy Add-on',
     purchasing: 'Purchasing...',
     ticketSuccess: 'Ticket purchased!',
     ticketCancelled: 'Purchase cancelled',
+    ticketSelectTitle: 'Select ticket pack',
+    ticketCheckoutError: 'Failed to start checkout',
+    proRequired: 'Pro only',
     billingStatusFree: 'Free Plan',
     billingStatusPro: 'Pro Plan',
     billingStatusCanceling: 'Canceling (valid until {date})',
@@ -197,10 +203,13 @@ const STRINGS = {
     billingError: '发生错误',
     alreadyPro: 'Pro计划使用中',
     manageSubscription: '管理订阅',
-    buyTicket: '额外购买（+30分钟）',
+    buyTicket: '追加购买',
     purchasing: '购买中...',
     ticketSuccess: '购买成功！',
     ticketCancelled: '购买已取消',
+    ticketSelectTitle: '选择加购套餐',
+    ticketCheckoutError: '无法开始结算',
+    proRequired: '仅Pro可购买',
     billingStatusFree: '免费版',
     billingStatusPro: 'Pro版',
     billingStatusCanceling: '取消中（{date}前有效）',
@@ -618,6 +627,10 @@ const cacheElements = () => {
     manageBillingBtn: document.getElementById('manageBillingBtn'),
     buyTicketBtn: document.getElementById('buyTicketBtn'),
     billingStatus: document.getElementById('billingStatus'),
+    // Ticket Modal
+    ticketModal: document.getElementById('ticketModal'),
+    ticketModalClose: document.getElementById('ticketModalClose'),
+    ticketModalStatus: document.getElementById('ticketModalStatus'),
     // Company Section
     companySection: document.getElementById('companySection'),
     companyName: document.getElementById('companyName'),
@@ -1140,11 +1153,15 @@ const updateBillingSection = (show) => {
       }
     }
 
-    // Buy ticket button: always visible for logged-in users
+    // Buy ticket button: show only for Pro users
     if (els.buyTicketBtn) {
-      els.buyTicketBtn.style.display = '';
-      els.buyTicketBtn.textContent = t('buyTicket');
-      els.buyTicketBtn.disabled = false;
+      if (isPro) {
+        els.buyTicketBtn.style.display = '';
+        els.buyTicketBtn.textContent = t('buyTicket');
+        els.buyTicketBtn.disabled = false;
+      } else {
+        els.buyTicketBtn.style.display = 'none';
+      }
     }
   }
 
@@ -1344,23 +1361,53 @@ const openManageSubscription = async () => {
   }
 };
 
-// Start ticket purchase checkout (30 minutes = 1800 seconds)
-const startTicketCheckout = async () => {
+// Open ticket selection modal
+const openTicketModal = () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+  if (!els.ticketModal) return;
+
+  // Clear any previous status
+  if (els.ticketModalStatus) {
+    els.ticketModalStatus.textContent = '';
+    els.ticketModalStatus.className = 'billing-status';
+  }
+
+  // Re-enable all pack buttons
+  els.ticketModal.querySelectorAll('.ticket-pack').forEach((btn) => {
+    btn.disabled = false;
+  });
+
+  els.ticketModal.showModal();
+};
+
+// Close ticket modal
+const closeTicketModal = () => {
+  if (els.ticketModal) {
+    els.ticketModal.close();
+  }
+};
+
+// Handle ticket pack selection and checkout
+const selectTicketPack = async (packId) => {
   if (!currentUser) {
     setError(t('errorLoginRequired'));
     return;
   }
 
-  const btn = els.buyTicketBtn;
-  const statusEl = els.billingStatus;
-
-  if (btn) {
-    btn.disabled = true;
-    btn.textContent = t('purchasing');
+  // Disable all pack buttons during checkout
+  if (els.ticketModal) {
+    els.ticketModal.querySelectorAll('.ticket-pack').forEach((btn) => {
+      btn.disabled = true;
+    });
   }
+
+  const statusEl = els.ticketModalStatus;
   if (statusEl) {
-    statusEl.textContent = '';
-    statusEl.className = 'billing-status';
+    statusEl.textContent = t('purchasing');
+    statusEl.className = 'billing-status pending';
   }
 
   try {
@@ -1372,6 +1419,7 @@ const startTicketCheckout = async () => {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        packId,
         successUrl,
         cancelUrl,
       }),
@@ -1379,28 +1427,35 @@ const startTicketCheckout = async () => {
 
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
+      // Handle pro_required error specifically
+      if (data.detail === 'pro_required') {
+        throw new Error(t('proRequired'));
+      }
       throw new Error(data.detail || `Ticket checkout failed (${res.status})`);
     }
 
     const data = await res.json();
-    addDiagLog(`Ticket checkout session created | sessionId=${data.sessionId}`);
+    addDiagLog(`Ticket checkout session created | packId=${packId} sessionId=${data.sessionId}`);
 
-    // Redirect to Stripe Checkout
+    // Close modal and redirect to Stripe Checkout
+    closeTicketModal();
     if (data.url) {
       window.location.href = data.url;
     } else {
       throw new Error('No checkout URL returned');
     }
   } catch (err) {
-    console.error('[startTicketCheckout] Error:', err);
+    console.error('[selectTicketPack] Error:', err);
     addDiagLog(`Ticket checkout error: ${err.message}`);
     if (statusEl) {
-      statusEl.textContent = t('billingError') + ': ' + err.message;
+      statusEl.textContent = t('ticketCheckoutError') + ': ' + err.message;
       statusEl.className = 'billing-status error';
     }
-    if (btn) {
-      btn.disabled = false;
-      btn.textContent = t('buyTicket');
+    // Re-enable pack buttons
+    if (els.ticketModal) {
+      els.ticketModal.querySelectorAll('.ticket-pack').forEach((btn) => {
+        btn.disabled = false;
+      });
     }
   }
 };
@@ -2835,9 +2890,33 @@ document.addEventListener('DOMContentLoaded', () => {
     els.manageBillingBtn.addEventListener('click', openManageSubscription);
   }
 
-  // Buy ticket button click handler
+  // Buy ticket button click handler - opens modal
   if (els.buyTicketBtn) {
-    els.buyTicketBtn.addEventListener('click', startTicketCheckout);
+    els.buyTicketBtn.addEventListener('click', openTicketModal);
+  }
+
+  // Ticket modal close button
+  if (els.ticketModalClose) {
+    els.ticketModalClose.addEventListener('click', closeTicketModal);
+  }
+
+  // Ticket modal backdrop click to close
+  if (els.ticketModal) {
+    els.ticketModal.addEventListener('click', (e) => {
+      if (e.target === els.ticketModal) {
+        closeTicketModal();
+      }
+    });
+
+    // Ticket pack selection handlers
+    els.ticketModal.querySelectorAll('.ticket-pack').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const packId = btn.dataset.packId;
+        if (packId) {
+          selectTicketPack(packId);
+        }
+      });
+    });
   }
 
   // Save company profile button click handler

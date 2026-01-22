@@ -86,6 +86,35 @@ PLANS = {
 
 FINAL_JOB_STATUSES = {"succeeded", "completed", "failed", "stopped_quota", "expired"}
 
+# チケットパック価格マップ（環境変数からロード）
+# デフォルト値は開発用（本番では STRIPE_TICKET_PRICE_MAP_JSON を設定）
+DEFAULT_TICKET_PRICE_MAP = {
+    "currency": "JPY",
+    "packs": {
+        "t120": {"priceId": "price_T120", "seconds": 7200, "minutes": 120, "amount": 1440, "labelJa": "+120分"},
+        "t240": {"priceId": "price_T240", "seconds": 14400, "minutes": 240, "amount": 2440, "labelJa": "+240分"},
+        "t360": {"priceId": "price_T360", "seconds": 21600, "minutes": 360, "amount": 3240, "labelJa": "+360分"},
+        "t1200": {"priceId": "price_T1200", "seconds": 72000, "minutes": 1200, "amount": 9600, "labelJa": "+1200分"},
+        "t1800": {"priceId": "price_T1800", "seconds": 108000, "minutes": 1800, "amount": 12600, "labelJa": "+1800分"},
+        "t3000": {"priceId": "price_T3000", "seconds": 180000, "minutes": 3000, "amount": 21000, "labelJa": "+3000分"},
+    }
+}
+
+def get_ticket_price_map() -> dict:
+    """環境変数からチケット価格マップを取得"""
+    price_map_json = os.getenv("STRIPE_TICKET_PRICE_MAP_JSON")
+    if price_map_json:
+        try:
+            return json.loads(price_map_json)
+        except json.JSONDecodeError as e:
+            logger.warning(f"Failed to parse STRIPE_TICKET_PRICE_MAP_JSON: {e}")
+    return DEFAULT_TICKET_PRICE_MAP
+
+def get_ticket_pack(pack_id: str) -> dict | None:
+    """packIdからパック情報を取得。存在しなければNone"""
+    price_map = get_ticket_price_map()
+    return price_map.get("packs", {}).get(pack_id)
+
 _firestore_client = None
 _storage_client = None
 _mock_db = {}  # In-memory mock database for DEBUG_AUTH_BYPASS mode
@@ -1520,47 +1549,77 @@ async def create_checkout_session(request: Request) -> JSONResponse:
 
 @app.post("/api/v1/billing/stripe/tickets/checkout")
 async def create_ticket_checkout_session(request: Request) -> JSONResponse:
-    """Stripe Checkout Session 作成（チケット購入用、mode=payment）"""
+    """
+    Stripe Checkout Session 作成（チケット購入用、mode=payment）
+    Proプランのみ購入可能
+    """
     uid = get_uid_from_request(request)
     body = await request.json()
+    pack_id = body.get("packId")
     success_url = body.get("successUrl", "https://example.com/success")
     cancel_url = body.get("cancelUrl", "https://example.com/cancel")
 
+    # packId 必須チェック
+    if not pack_id:
+        raise HTTPException(status_code=400, detail="pack_id_required")
+
+    # Stripe設定チェック
     secret_key = os.getenv("STRIPE_SECRET_KEY")
-    price_id = os.getenv("STRIPE_TICKET_30M_PRICE_ID")
     if not secret_key:
         raise HTTPException(status_code=500, detail="stripe_not_configured")
-    if not price_id:
-        raise HTTPException(status_code=500, detail="ticket_price_not_configured")
+
+    # Proプランチェック
+    db = get_firestore_client()
+    user_ref = db.collection("users").document(uid)
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    plan = normalize_plan(user_data.get("plan"))
+    if plan != "pro":
+        logger.warning(f"[stripe_ticket] Non-pro user attempted ticket purchase | {json.dumps({'uid': uid, 'plan': plan, 'packId': pack_id})}")
+        raise HTTPException(status_code=403, detail="pro_required")
+
+    # packIdからパック情報を取得
+    pack_info = get_ticket_pack(pack_id)
+    if not pack_info:
+        logger.warning(f"[stripe_ticket] Invalid pack_id | {json.dumps({'uid': uid, 'packId': pack_id})}")
+        raise HTTPException(status_code=400, detail="invalid_pack")
+
+    price_id = pack_info["priceId"]
+    pack_seconds = pack_info["seconds"]
 
     stripe.api_key = secret_key
 
-    # チケット購入パック設定（30分 = 1800秒）
-    pack_seconds = 1800
+    # 既存のstripeCustomerIdがあれば使用
+    stripe_customer_id = user_data.get("stripeCustomerId")
 
     try:
-        session = stripe.checkout.Session.create(
-            mode="payment",
-            payment_method_types=["card"],
-            line_items=[
+        session_params = {
+            "mode": "payment",
+            "payment_method_types": ["card"],
+            "line_items": [
                 {
                     "price": price_id,
                     "quantity": 1,
                 }
             ],
-            client_reference_id=uid,
-            metadata={
+            "client_reference_id": uid,
+            "metadata": {
                 "uid": uid,
-                "packSeconds": str(pack_seconds),
-                "type": "ticket_purchase",
+                "packId": pack_id,
+                "type": "ticket",
             },
-            success_url=success_url,
-            cancel_url=cancel_url,
-        )
-        logger.info(f"[ticket_checkout] Session created | {json.dumps({'uid': uid, 'sessionId': session.id, 'packSeconds': pack_seconds})}")
+            "success_url": success_url,
+            "cancel_url": cancel_url,
+        }
+        # 既存顧客があれば紐付け
+        if stripe_customer_id:
+            session_params["customer"] = stripe_customer_id
+
+        session = stripe.checkout.Session.create(**session_params)
+        logger.info(f"[stripe_ticket] Session created | {json.dumps({'uid': uid, 'sessionId': session.id, 'packId': pack_id, 'seconds': pack_seconds})}")
         return JSONResponse({"sessionId": session.id, "url": session.url})
     except Exception as e:
-        logger.error(f"[ticket_checkout] Session creation failed | {json.dumps({'uid': uid, 'error': str(e)})}")
+        logger.error(f"[stripe_ticket] Session creation failed | {json.dumps({'uid': uid, 'packId': pack_id, 'error': str(e)})}")
         raise HTTPException(status_code=500, detail=f"ticket_checkout_failed: {str(e)}")
 
 
@@ -1840,17 +1899,30 @@ async def stripe_webhook(request: Request) -> JSONResponse:
         customer_id = session.get("customer")
         subscription_id = session.get("subscription")
 
+        # packId を取得（新方式）またはpackSecondsをフォールバック（旧方式）
+        pack_id = metadata.get("packId")
+
         # 抽出した全フィールドをログ出力（デバッグ用）
-        logger.info(f"[stripe_webhook] checkout.session.completed extracted | {json.dumps({'sessionId': session_id, 'mode': session_mode, 'type': metadata_type, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid, 'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id, 'packSeconds': pack_seconds_str})}")
+        logger.info(f"[stripe_webhook] checkout.session.completed extracted | {json.dumps({'sessionId': session_id, 'mode': session_mode, 'type': metadata_type, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid, 'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id, 'packId': pack_id, 'packSeconds': pack_seconds_str})}")
         print(f"[stripe_webhook] checkout.session.completed extracted | sessionId={session_id} mode={session_mode} type={metadata_type} clientReferenceId={client_ref_id} metadataUid={metadata_uid} uid={uid} customerId={customer_id} subscriptionId={subscription_id}")
 
         if not uid:
             logger.warning(f"[stripe_webhook] checkout.session.completed without uid | {json.dumps({'sessionId': session_id, 'customerId': customer_id, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid})}")
             return JSONResponse({"received": True, "warning": "uid_not_found"})
 
-        # チケット購入の処理（mode=payment かつ type=ticket_purchase）
-        if session_mode == "payment" and metadata_type == "ticket_purchase":
-            pack_seconds = int(pack_seconds_str) if pack_seconds_str else 1800
+        # チケット購入の処理（mode=payment かつ type=ticket or ticket_purchase）
+        if session_mode == "payment" and metadata_type in ("ticket", "ticket_purchase"):
+            # 新方式: packIdから秒数を取得
+            if pack_id:
+                pack_info = get_ticket_pack(pack_id)
+                if pack_info:
+                    pack_seconds = pack_info["seconds"]
+                else:
+                    logger.warning(f"[stripe_ticket] Unknown packId in webhook, using fallback | {json.dumps({'uid': uid, 'packId': pack_id})}")
+                    pack_seconds = int(pack_seconds_str) if pack_seconds_str else 1800
+            # 旧方式: packSecondsから直接取得（後方互換）
+            else:
+                pack_seconds = int(pack_seconds_str) if pack_seconds_str else 1800
 
             # 冪等性: ledger docId = session_id で重複チェック
             ledger_ref = db.collection("credit_ledger").document(uid).collection("entries").document(session_id)
@@ -1860,7 +1932,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                 # 既存のledgerエントリをチェック（二重計上防止）
                 ledger_snap = ledger_ref.get(transaction=transaction)
                 if ledger_snap.exists:
-                    logger.info(f"[stripe_webhook] ticket_purchase already processed (idempotent skip) | {json.dumps({'uid': uid, 'sessionId': session_id})}")
+                    logger.info(f"[stripe_ticket] already processed (idempotent skip) | {json.dumps({'uid': uid, 'sessionId': session_id, 'packId': pack_id})}")
                     return {"skipped": True, "reason": "already_processed"}
 
                 # ユーザードキュメントを取得
@@ -1882,6 +1954,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                     "deltaSeconds": pack_seconds,
                     "balanceAfter": new_balance,
                     "source": "stripe_checkout",
+                    "packId": pack_id,  # packIdも記録（新方式）
                     "stripeSessionId": session_id,
                     "stripeCustomerId": customer_id,
                     "createdAt": firebase_firestore.SERVER_TIMESTAMP,
@@ -1893,12 +1966,12 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                 transaction = db.transaction()
                 result = credit_ticket_transaction(transaction)
                 if result.get("skipped"):
-                    logger.info(f"[stripe_webhook] ticket_purchase idempotent skip | {json.dumps({'uid': uid, 'sessionId': session_id})}")
+                    logger.info(f"[stripe_ticket] idempotent skip | {json.dumps({'uid': uid, 'sessionId': session_id, 'packId': pack_id})}")
                 else:
-                    logger.info(f"[stripe_webhook] ticket_purchase credited | {json.dumps({'uid': uid, 'sessionId': session_id, 'packSeconds': pack_seconds, 'newBalance': result.get('newBalance')})}")
-                    print(f"[stripe_webhook] ticket_purchase credited | uid={uid} sessionId={session_id} packSeconds={pack_seconds} newBalance={result.get('newBalance')}")
+                    logger.info(f"[stripe_ticket] credited | {json.dumps({'uid': uid, 'sessionId': session_id, 'packId': pack_id, 'seconds': pack_seconds, 'newBalance': result.get('newBalance')})}")
+                    print(f"[stripe_ticket] credited | uid={uid} sessionId={session_id} packId={pack_id} seconds={pack_seconds} newBalance={result.get('newBalance')}")
             except Exception as e:
-                logger.exception(f"[stripe_webhook] ticket_purchase transaction FAILED | {json.dumps({'uid': uid, 'sessionId': session_id, 'error': str(e)})}")
+                logger.exception(f"[stripe_ticket] transaction FAILED | {json.dumps({'uid': uid, 'sessionId': session_id, 'packId': pack_id, 'error': str(e)})}")
                 return JSONResponse({"received": True, "error": "ticket_credit_failed"}, status_code=500)
 
             # Store customer ID if available
@@ -1908,7 +1981,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                         "stripeCustomerId": customer_id,
                     }, merge=True)
                 except Exception as e:
-                    logger.warning(f"[stripe_webhook] Failed to update stripeCustomerId after ticket purchase | {json.dumps({'uid': uid, 'error': str(e)})}")
+                    logger.warning(f"[stripe_ticket] Failed to update stripeCustomerId | {json.dumps({'uid': uid, 'error': str(e)})}")
 
             return JSONResponse({"received": True, "ticketCredited": True})
 
