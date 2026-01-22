@@ -20,6 +20,7 @@
 | `STRIPE_SECRET_KEY` | Stripe秘密鍵 | Secret Manager |
 | `STRIPE_WEBHOOK_SECRET` | Stripe Webhook署名検証シークレット | Secret Manager |
 | `STRIPE_PRO_PRICE_ID` | Stripe ProプランのPrice ID | Cloud Run環境変数 |
+| `STRIPE_TICKET_30M_PRICE_ID` | Stripe チケット購入（30分=1800秒）のPrice ID | Cloud Run環境変数 |
 | `GOOGLE_APPLICATION_CREDENTIALS_JSON` | Firebase Admin SDKサービスアカウントJSON（文字列全体） | Secret Manager |
 | `GCS_BUCKET` | Cloud Storageバケット名 | Cloud Run環境変数 |
 
@@ -134,7 +135,7 @@ gcloud run deploy realtime-translator-api-staging \
   --platform managed \
   --region $REGION \
   --allow-unauthenticated \
-  --set-env-vars ENV=staging,GCS_BUCKET=$GCS_BUCKET,STRIPE_PRO_PRICE_ID=price_STAGING_PRO_PRICE_ID \
+  --set-env-vars ENV=staging,GCS_BUCKET=$GCS_BUCKET,STRIPE_PRO_PRICE_ID=price_STAGING_PRO_PRICE_ID,STRIPE_TICKET_30M_PRICE_ID=price_STAGING_TICKET_30M_PRICE_ID \
   --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,GOOGLE_APPLICATION_CREDENTIALS_JSON=GOOGLE_APPLICATION_CREDENTIALS_JSON:latest \
   --memory 512Mi \
   --cpu 1 \
@@ -204,7 +205,7 @@ gcloud run deploy realtime-translator-api \
   --platform managed \
   --region $REGION \
   --allow-unauthenticated \
-  --set-env-vars ENV=production,GCS_BUCKET=$GCS_BUCKET,STRIPE_PRO_PRICE_ID=price_LIVE_PRO_PRICE_ID \
+  --set-env-vars ENV=production,GCS_BUCKET=$GCS_BUCKET,STRIPE_PRO_PRICE_ID=price_LIVE_PRO_PRICE_ID,STRIPE_TICKET_30M_PRICE_ID=price_LIVE_TICKET_30M_PRICE_ID \
   --set-secrets OPENAI_API_KEY=OPENAI_API_KEY:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,GOOGLE_APPLICATION_CREDENTIALS_JSON=GOOGLE_APPLICATION_CREDENTIALS_JSON:latest \
   --memory 512Mi \
   --cpu 1 \
@@ -280,6 +281,7 @@ gcloud scheduler jobs create http cleanup-expired-jobs \
 # Stripe Dashboard (https://dashboard.stripe.com/webhooks) で設定
 # Endpoint URL: https://your-cloud-run-url.run.app/api/v1/billing/stripe/webhook
 # Events to send:
+#   - checkout.session.completed (サブスク契約・チケット購入)
 #   - customer.subscription.created
 #   - customer.subscription.updated
 #   - customer.subscription.deleted

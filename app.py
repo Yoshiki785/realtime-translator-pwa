@@ -489,10 +489,10 @@ def normalize_user_usage_data(
             updates["usedBaseSecondsThisMonth"] = used_base
         state["usedBaseSecondsThisMonth"] = used_base
 
-    ticket_balance = max(0, safe_int(state.get("ticketSecondsBalance"), 0))
-    if state.get("ticketSecondsBalance") != ticket_balance:
-        updates["ticketSecondsBalance"] = ticket_balance
-    state["ticketSecondsBalance"] = ticket_balance
+    ticket_balance = max(0, safe_int(state.get("creditSeconds"), 0))
+    if state.get("creditSeconds") != ticket_balance:
+        updates["creditSeconds"] = ticket_balance
+    state["creditSeconds"] = ticket_balance
 
     if "activeJobId" not in state:
         state["activeJobId"] = None
@@ -565,7 +565,7 @@ def build_quota_snapshot(user_state: dict, plan_config: dict) -> dict:
     base_monthly = plan_config.get("baseMonthlyQuotaSeconds", 0)
     base_used = safe_int(user_state.get("usedBaseSecondsThisMonth"), 0)
     base_remaining = max(0, base_monthly - base_used)
-    ticket_balance = max(0, safe_int(user_state.get("ticketSecondsBalance"), 0))
+    ticket_balance = max(0, safe_int(user_state.get("creditSeconds"), 0))
     total_available = base_remaining + ticket_balance
     daily_cap = plan_config.get("baseDailyQuotaSeconds")
     used_today = safe_int(user_state.get("usedSecondsToday"), 0)
@@ -578,7 +578,7 @@ def build_quota_snapshot(user_state: dict, plan_config: dict) -> dict:
         "baseMonthlyQuotaSeconds": base_monthly,
         "usedBaseSecondsThisMonth": base_used,
         "baseRemainingThisMonth": base_remaining,
-        "ticketSecondsBalance": ticket_balance,
+        "creditSeconds": ticket_balance,
         "totalAvailableThisMonth": total_available,
         "baseDailyQuotaSeconds": daily_cap,
         "usedSecondsToday": used_today,
@@ -607,7 +607,7 @@ def _create_job_core(
         user_ref, user_state, plan, plan_config = read_user_state(db, uid, current_jst, transaction)
         snapshot = build_quota_snapshot(user_state, plan_config)
         base_remaining = snapshot["baseRemainingThisMonth"]
-        ticket_balance = snapshot["ticketSecondsBalance"]
+        ticket_balance = snapshot["creditSeconds"]
         total_available = snapshot["totalAvailableThisMonth"]
 
         if total_available <= 0:
@@ -708,7 +708,7 @@ def _create_job_core(
         "reservedDailyLimitSeconds": daily_cap,
         "totalAvailableSecondsAtStart": total_available,
         "baseRemainingSecondsAtStart": base_remaining,
-        "ticketSecondsBalanceAtStart": ticket_balance,
+        "creditSecondsAtStart": ticket_balance,
         "dailyRemainingSecondsAtStart": daily_remaining,
         "monthKey": user_state.get("monthKey"),
         "dayKey": user_state.get("dayKey"),
@@ -733,7 +733,7 @@ def _create_job_core(
         "reservedBaseSeconds": reserved_base,
         "reservedTicketSeconds": reserved_ticket,
         "baseRemainingThisMonth": base_remaining,
-        "ticketSecondsBalance": ticket_balance,
+        "creditSeconds": ticket_balance,
         "totalAvailableThisMonth": total_available,
         "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
         "baseDailyQuotaSeconds": daily_cap,
@@ -824,7 +824,7 @@ def _complete_job_core(
         db, uid, current_jst, transaction
     )
 
-    ticket_balance_before = safe_int(user_state.get("ticketSecondsBalance"), 0)
+    ticket_balance_before = safe_int(user_state.get("creditSeconds"), 0)
     new_ticket_balance = ticket_balance_before - billed_ticket
     anomaly = False
     if new_ticket_balance < 0:
@@ -837,11 +837,11 @@ def _complete_job_core(
     user_updates = {
         "usedBaseSecondsThisMonth": new_base_used,
         "usedSecondsToday": new_used_today,
-        "ticketSecondsBalance": new_ticket_balance,
+        "creditSeconds": new_ticket_balance,
     }
     user_state["usedBaseSecondsThisMonth"] = new_base_used
     user_state["usedSecondsToday"] = new_used_today
-    user_state["ticketSecondsBalance"] = new_ticket_balance
+    user_state["creditSeconds"] = new_ticket_balance
 
     if user_state.get("activeJobId") == job_id_value:
         user_updates["activeJobId"] = None
@@ -881,7 +881,7 @@ def _complete_job_core(
         "billedBaseSeconds": billed_base,
         "billedTicketSeconds": billed_ticket,
         "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
-        "ticketSecondsBalance": snapshot["ticketSecondsBalance"],
+        "creditSeconds": snapshot["creditSeconds"],
         "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
         "baseDailyQuotaSeconds": snapshot["baseDailyQuotaSeconds"],
         "dailyRemainingSeconds": snapshot["dailyRemainingSeconds"],
@@ -1331,7 +1331,7 @@ async def get_remaining_usage(request: Request) -> JSONResponse:
         "yyyymm": user_state.get("monthKey"),
         "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
         "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
-        "ticketSecondsBalance": snapshot["ticketSecondsBalance"],
+        "creditSeconds": snapshot["creditSeconds"],
         "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
         "baseDailyQuotaSeconds": snapshot["baseDailyQuotaSeconds"],
         "usedSecondsToday": snapshot["usedSecondsToday"],
@@ -1339,7 +1339,7 @@ async def get_remaining_usage(request: Request) -> JSONResponse:
     }
 
     logger.info(
-        f"Usage snapshot | {json.dumps({'uid': uid, 'plan': plan, 'baseRemaining': response['baseRemainingThisMonth'], 'tickets': response['ticketSecondsBalance']})}"
+        f"Usage snapshot | {json.dumps({'uid': uid, 'plan': plan, 'baseRemaining': response['baseRemainingThisMonth'], 'tickets': response['creditSeconds']})}"
     )
 
     return JSONResponse(response)
@@ -1370,7 +1370,7 @@ async def get_me(request: Request) -> JSONResponse:
         "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
         "usedBaseSecondsThisMonth": snapshot["usedBaseSecondsThisMonth"],
         "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
-        "ticketSecondsBalance": snapshot["ticketSecondsBalance"],
+        "creditSeconds": snapshot["creditSeconds"],
         "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
         "maxSessionSeconds": plan_config.get("maxSessionSeconds"),
         "activeJob": bool(user_state.get("activeJobId")),
@@ -1392,7 +1392,7 @@ async def get_me(request: Request) -> JSONResponse:
         )
 
     logger.info(
-        f"Account snapshot | {json.dumps({'uid': uid, 'plan': plan, 'totalAvailable': response['totalAvailableThisMonth'], 'ticketSecondsBalance': response['ticketSecondsBalance']})}"
+        f"Account snapshot | {json.dumps({'uid': uid, 'plan': plan, 'totalAvailable': response['totalAvailableThisMonth'], 'creditSeconds': response['creditSeconds']})}"
     )
 
     return JSONResponse(response)
@@ -1516,6 +1516,52 @@ async def create_checkout_session(request: Request) -> JSONResponse:
     except Exception as e:
         logger.error(f"Stripe checkout session creation failed: {e} | {json.dumps({'uid': uid, 'error': str(e)})}")
         raise HTTPException(status_code=500, detail=f"checkout_failed: {str(e)}")
+
+
+@app.post("/api/v1/billing/stripe/tickets/checkout")
+async def create_ticket_checkout_session(request: Request) -> JSONResponse:
+    """Stripe Checkout Session 作成（チケット購入用、mode=payment）"""
+    uid = get_uid_from_request(request)
+    body = await request.json()
+    success_url = body.get("successUrl", "https://example.com/success")
+    cancel_url = body.get("cancelUrl", "https://example.com/cancel")
+
+    secret_key = os.getenv("STRIPE_SECRET_KEY")
+    price_id = os.getenv("STRIPE_TICKET_30M_PRICE_ID")
+    if not secret_key:
+        raise HTTPException(status_code=500, detail="stripe_not_configured")
+    if not price_id:
+        raise HTTPException(status_code=500, detail="ticket_price_not_configured")
+
+    stripe.api_key = secret_key
+
+    # チケット購入パック設定（30分 = 1800秒）
+    pack_seconds = 1800
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            payment_method_types=["card"],
+            line_items=[
+                {
+                    "price": price_id,
+                    "quantity": 1,
+                }
+            ],
+            client_reference_id=uid,
+            metadata={
+                "uid": uid,
+                "packSeconds": str(pack_seconds),
+                "type": "ticket_purchase",
+            },
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+        logger.info(f"[ticket_checkout] Session created | {json.dumps({'uid': uid, 'sessionId': session.id, 'packSeconds': pack_seconds})}")
+        return JSONResponse({"sessionId": session.id, "url": session.url})
+    except Exception as e:
+        logger.error(f"[ticket_checkout] Session creation failed | {json.dumps({'uid': uid, 'error': str(e)})}")
+        raise HTTPException(status_code=500, detail=f"ticket_checkout_failed: {str(e)}")
 
 
 @app.get("/api/v1/company/profile")
@@ -1784,20 +1830,89 @@ async def stripe_webhook(request: Request) -> JSONResponse:
     if event_type == "checkout.session.completed":
         session = event["data"]["object"]
         session_id = session.get("id")
+        session_mode = session.get("mode")  # "subscription" or "payment"
         client_ref_id = session.get("client_reference_id")
-        metadata_uid = (session.get("metadata") or {}).get("uid")
+        metadata = session.get("metadata") or {}
+        metadata_uid = metadata.get("uid")
+        metadata_type = metadata.get("type")  # "ticket_purchase" for tickets
+        pack_seconds_str = metadata.get("packSeconds")
         uid = client_ref_id or metadata_uid
         customer_id = session.get("customer")
         subscription_id = session.get("subscription")
 
         # 抽出した全フィールドをログ出力（デバッグ用）
-        logger.info(f"[stripe_webhook] checkout.session.completed extracted | {json.dumps({'sessionId': session_id, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid, 'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id})}")
-        print(f"[stripe_webhook] checkout.session.completed extracted | sessionId={session_id} clientReferenceId={client_ref_id} metadataUid={metadata_uid} uid={uid} customerId={customer_id} subscriptionId={subscription_id}")
+        logger.info(f"[stripe_webhook] checkout.session.completed extracted | {json.dumps({'sessionId': session_id, 'mode': session_mode, 'type': metadata_type, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid, 'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id, 'packSeconds': pack_seconds_str})}")
+        print(f"[stripe_webhook] checkout.session.completed extracted | sessionId={session_id} mode={session_mode} type={metadata_type} clientReferenceId={client_ref_id} metadataUid={metadata_uid} uid={uid} customerId={customer_id} subscriptionId={subscription_id}")
 
         if not uid:
             logger.warning(f"[stripe_webhook] checkout.session.completed without uid | {json.dumps({'sessionId': session_id, 'customerId': customer_id, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid})}")
             return JSONResponse({"received": True, "warning": "uid_not_found"})
 
+        # チケット購入の処理（mode=payment かつ type=ticket_purchase）
+        if session_mode == "payment" and metadata_type == "ticket_purchase":
+            pack_seconds = int(pack_seconds_str) if pack_seconds_str else 1800
+
+            # 冪等性: ledger docId = session_id で重複チェック
+            ledger_ref = db.collection("credit_ledger").document(uid).collection("entries").document(session_id)
+
+            @firebase_firestore.transactional
+            def credit_ticket_transaction(transaction):
+                # 既存のledgerエントリをチェック（二重計上防止）
+                ledger_snap = ledger_ref.get(transaction=transaction)
+                if ledger_snap.exists:
+                    logger.info(f"[stripe_webhook] ticket_purchase already processed (idempotent skip) | {json.dumps({'uid': uid, 'sessionId': session_id})}")
+                    return {"skipped": True, "reason": "already_processed"}
+
+                # ユーザードキュメントを取得
+                user_ref = db.collection("users").document(uid)
+                user_snap = user_ref.get(transaction=transaction)
+                user_data = user_snap.to_dict() if user_snap.exists else {}
+                current_balance = max(0, safe_int(user_data.get("creditSeconds"), 0))
+                new_balance = current_balance + pack_seconds
+
+                # ユーザーのcreditSecondsを更新
+                transaction.set(user_ref, {
+                    "creditSeconds": new_balance,
+                    "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+                }, merge=True)
+
+                # Ledgerエントリを作成（監査用）
+                transaction.set(ledger_ref, {
+                    "type": "purchase",
+                    "deltaSeconds": pack_seconds,
+                    "balanceAfter": new_balance,
+                    "source": "stripe_checkout",
+                    "stripeSessionId": session_id,
+                    "stripeCustomerId": customer_id,
+                    "createdAt": firebase_firestore.SERVER_TIMESTAMP,
+                })
+
+                return {"skipped": False, "newBalance": new_balance}
+
+            try:
+                transaction = db.transaction()
+                result = credit_ticket_transaction(transaction)
+                if result.get("skipped"):
+                    logger.info(f"[stripe_webhook] ticket_purchase idempotent skip | {json.dumps({'uid': uid, 'sessionId': session_id})}")
+                else:
+                    logger.info(f"[stripe_webhook] ticket_purchase credited | {json.dumps({'uid': uid, 'sessionId': session_id, 'packSeconds': pack_seconds, 'newBalance': result.get('newBalance')})}")
+                    print(f"[stripe_webhook] ticket_purchase credited | uid={uid} sessionId={session_id} packSeconds={pack_seconds} newBalance={result.get('newBalance')}")
+            except Exception as e:
+                logger.exception(f"[stripe_webhook] ticket_purchase transaction FAILED | {json.dumps({'uid': uid, 'sessionId': session_id, 'error': str(e)})}")
+                return JSONResponse({"received": True, "error": "ticket_credit_failed"}, status_code=500)
+
+            # Store customer ID if available
+            if customer_id:
+                try:
+                    db.collection("users").document(uid).set({
+                        "stripeCustomerId": customer_id,
+                    }, merge=True)
+                except Exception as e:
+                    logger.warning(f"[stripe_webhook] Failed to update stripeCustomerId after ticket purchase | {json.dumps({'uid': uid, 'error': str(e)})}")
+
+            return JSONResponse({"received": True, "ticketCredited": True})
+
+        # サブスクリプション購入の処理（既存ロジック）
         user_updates = {
             "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
         }

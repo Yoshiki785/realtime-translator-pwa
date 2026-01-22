@@ -51,6 +51,10 @@ const STRINGS = {
     billingError: 'エラーが発生しました',
     alreadyPro: 'Proプラン利用中',
     manageSubscription: 'サブスク管理',
+    buyTicket: '追加購入（+30分）',
+    purchasing: '購入中...',
+    ticketSuccess: 'チケット購入完了！',
+    ticketCancelled: '購入キャンセル',
     billingStatusFree: 'Freeプラン',
     billingStatusPro: 'Proプラン',
     billingStatusCanceling: '解約予定（{date}まで有効）',
@@ -120,6 +124,10 @@ const STRINGS = {
     billingError: 'An error occurred',
     alreadyPro: 'Pro plan active',
     manageSubscription: 'Manage Subscription',
+    buyTicket: 'Buy Extra (+30min)',
+    purchasing: 'Purchasing...',
+    ticketSuccess: 'Ticket purchased!',
+    ticketCancelled: 'Purchase cancelled',
     billingStatusFree: 'Free Plan',
     billingStatusPro: 'Pro Plan',
     billingStatusCanceling: 'Canceling (valid until {date})',
@@ -189,6 +197,10 @@ const STRINGS = {
     billingError: '发生错误',
     alreadyPro: 'Pro计划使用中',
     manageSubscription: '管理订阅',
+    buyTicket: '额外购买（+30分钟）',
+    purchasing: '购买中...',
+    ticketSuccess: '购买成功！',
+    ticketCancelled: '购买已取消',
     billingStatusFree: '免费版',
     billingStatusPro: 'Pro版',
     billingStatusCanceling: '取消中（{date}前有效）',
@@ -317,7 +329,7 @@ const createDefaultQuotaState = () => ({
   totalAvailableThisMonth: null,
   baseDailyQuotaSeconds: null,
   dailyRemainingSeconds: null,
-  ticketSecondsBalance: null,
+  creditSeconds: null,
   maxSessionSeconds: null,
   nextResetAt: null,
   blockedReason: null,
@@ -604,6 +616,7 @@ const cacheElements = () => {
     billingSection: document.getElementById('billingSection'),
     upgradeProBtn: document.getElementById('upgradeProBtn'),
     manageBillingBtn: document.getElementById('manageBillingBtn'),
+    buyTicketBtn: document.getElementById('buyTicketBtn'),
     billingStatus: document.getElementById('billingStatus'),
     // Company Section
     companySection: document.getElementById('companySection'),
@@ -1081,7 +1094,7 @@ const updateQuotaBreakdown = () => {
   }
   const planLabel = q.plan === 'pro' ? 'Pro' : 'Free';
   const monthlyMin = formatMinutes(q.baseRemainingThisMonth);
-  const ticketMin = formatMinutes(q.ticketSecondsBalance);
+  const ticketMin = formatMinutes(q.creditSeconds);
   const totalMin = formatMinutes(q.totalAvailableThisMonth);
   const nextReset = formatNextReset(q.nextResetAt);
   els.quotaBreakdown.innerHTML = `
@@ -1125,6 +1138,13 @@ const updateBillingSection = (show) => {
       } else {
         els.manageBillingBtn.style.display = 'none';
       }
+    }
+
+    // Buy ticket button: always visible for logged-in users
+    if (els.buyTicketBtn) {
+      els.buyTicketBtn.style.display = '';
+      els.buyTicketBtn.textContent = t('buyTicket');
+      els.buyTicketBtn.disabled = false;
     }
   }
 
@@ -1324,6 +1344,67 @@ const openManageSubscription = async () => {
   }
 };
 
+// Start ticket purchase checkout (30 minutes = 1800 seconds)
+const startTicketCheckout = async () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  const btn = els.buyTicketBtn;
+  const statusEl = els.billingStatus;
+
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = t('purchasing');
+  }
+  if (statusEl) {
+    statusEl.textContent = '';
+    statusEl.className = 'billing-status';
+  }
+
+  try {
+    const baseUrl = window.location.origin;
+    const successUrl = `${baseUrl}/#/tickets/success`;
+    const cancelUrl = `${baseUrl}/#/tickets/cancel`;
+
+    const res = await authFetch('/api/v1/billing/stripe/tickets/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        successUrl,
+        cancelUrl,
+      }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || `Ticket checkout failed (${res.status})`);
+    }
+
+    const data = await res.json();
+    addDiagLog(`Ticket checkout session created | sessionId=${data.sessionId}`);
+
+    // Redirect to Stripe Checkout
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error('No checkout URL returned');
+    }
+  } catch (err) {
+    console.error('[startTicketCheckout] Error:', err);
+    addDiagLog(`Ticket checkout error: ${err.message}`);
+    if (statusEl) {
+      statusEl.textContent = t('billingError') + ': ' + err.message;
+      statusEl.className = 'billing-status error';
+    }
+    if (btn) {
+      btn.disabled = false;
+      btn.textContent = t('buyTicket');
+    }
+  }
+};
+
 // ========== Company Profile ==========
 const loadCompanyProfile = async () => {
   if (!currentUser) return;
@@ -1471,6 +1552,17 @@ const handleBillingRoute = async () => {
     showBillingBanner('cancelled');
     addDiagLog('Billing: Checkout cancelled');
     history.replaceState(null, '', window.location.pathname);
+  } else if (hash === '#/tickets/success') {
+    // Ticket purchase success - refresh quota to show new balance
+    showBillingBanner('ticket-success');
+    addDiagLog('Tickets: Purchase successful');
+    // Refresh quota to show updated ticket balance
+    refreshQuotaAndPlan();
+    history.replaceState(null, '', window.location.pathname);
+  } else if (hash === '#/tickets/cancel') {
+    showBillingBanner('ticket-cancelled');
+    addDiagLog('Tickets: Purchase cancelled');
+    history.replaceState(null, '', window.location.pathname);
   }
 };
 
@@ -1501,6 +1593,12 @@ const showBillingBanner = (status) => {
     case 'cancelled':
       message = t('billingCancelled');
       break;
+    case 'ticket-success':
+      message = t('ticketSuccess');
+      break;
+    case 'ticket-cancelled':
+      message = t('ticketCancelled');
+      break;
     default:
       message = status;
   }
@@ -1525,7 +1623,7 @@ const applyQuotaFromPayload = (payload = {}) => {
     totalAvailableThisMonth: numberOrNull(payload.totalAvailableThisMonth),
     baseDailyQuotaSeconds: numberOrNull(payload.baseDailyQuotaSeconds),
     dailyRemainingSeconds: numberOrNull(payload.dailyRemainingSeconds),
-    ticketSecondsBalance: numberOrNull(payload.ticketSecondsBalance),
+    creditSeconds: numberOrNull(payload.creditSeconds),
     maxSessionSeconds: numberOrNull(
       payload.maxSessionSeconds != null ? payload.maxSessionSeconds : state.quota.maxSessionSeconds,
     ),
@@ -2735,6 +2833,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Manage subscription button click handler
   if (els.manageBillingBtn) {
     els.manageBillingBtn.addEventListener('click', openManageSubscription);
+  }
+
+  // Buy ticket button click handler
+  if (els.buyTicketBtn) {
+    els.buyTicketBtn.addEventListener('click', startTicketCheckout);
   }
 
   // Save company profile button click handler
