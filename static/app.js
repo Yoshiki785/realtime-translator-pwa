@@ -622,6 +622,10 @@ const cacheElements = () => {
     glossaryTextInput: document.getElementById('glossaryTextInput'),
     summaryPromptInput: document.getElementById('summaryPromptInput'),
     resetUserSettings: document.getElementById('resetUserSettings'),
+    // Dictionary CSV Upload
+    dictionaryCsvInput: document.getElementById('dictionaryCsvInput'),
+    uploadDictionaryCsv: document.getElementById('uploadDictionaryCsv'),
+    dictionaryUploadResult: document.getElementById('dictionaryUploadResult'),
     // Summary Section (after Stop)
     summarySection: document.getElementById('summarySection'),
     runSummary: document.getElementById('runSummary'),
@@ -2396,7 +2400,7 @@ const fetchToken = async () => {
   addDiagLog(`STEP5: before negotiate | offerSdpLen=${offerSdp?.length || 0}`);
 
   // デバッグ: SDP offer の検証
-  console.log('[negotiate] Realtime URL:', REALTIME_URL);
+  console.log('[negotiate] Realtime URL:', REALTIME_CALLS_URL);
   console.log('[negotiate] clientSecret prefix:', clientSecret ? `${clientSecret.substring(0, 10)}...` : 'missing');
   console.log('[negotiate] Offer SDP length:', offerSdp.length);
   if (!offerSdp.includes('v=0')) console.warn('[negotiate] SDP missing v=0');
@@ -2724,6 +2728,61 @@ document.addEventListener('DOMContentLoaded', () => {
       if (els.glossaryTextInput) els.glossaryTextInput.value = '';
       if (els.summaryPromptInput) els.summaryPromptInput.value = '';
       addDiagLog('User settings reset (glossary & summaryPrompt cleared)');
+    });
+  }
+
+  // Dictionary CSV Upload
+  if (els.uploadDictionaryCsv) {
+    els.uploadDictionaryCsv.addEventListener('click', async () => {
+      const fileInput = els.dictionaryCsvInput;
+      const resultDiv = els.dictionaryUploadResult;
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        if (resultDiv) resultDiv.textContent = 'CSVファイルを選択してください';
+        return;
+      }
+      const file = fileInput.files[0];
+      const fd = new FormData();
+      fd.append('file', file);
+
+      els.uploadDictionaryCsv.disabled = true;
+      els.uploadDictionaryCsv.textContent = 'アップロード中...';
+      if (resultDiv) resultDiv.textContent = '';
+
+      try {
+        const res = await authFetch('/api/v1/dictionary/upload', {
+          method: 'POST',
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          let msg = `${data.added || 0}件追加`;
+          if (data.duplicatesSkipped) msg += ` / 重複スキップ: ${data.duplicatesSkipped}件`;
+          if (data.truncatedByLimit) msg += ` / 上限超過: ${data.truncatedByLimit}件`;
+          if (data.warning) msg += `\n${data.warning}`;
+          if (resultDiv) {
+            resultDiv.textContent = msg;
+            resultDiv.className = 'upload-result success';
+          }
+          addDiagLog(`Dictionary CSV upload success: added=${data.added}`);
+        } else {
+          const reason = data.detail?.reason || data.detail || 'アップロード失敗';
+          if (resultDiv) {
+            resultDiv.textContent = `エラー: ${reason}`;
+            resultDiv.className = 'upload-result error';
+          }
+          addDiagLog(`Dictionary CSV upload failed: ${reason}`);
+        }
+      } catch (err) {
+        if (resultDiv) {
+          resultDiv.textContent = `エラー: ${err.message}`;
+          resultDiv.className = 'upload-result error';
+        }
+        addDiagLog(`Dictionary CSV upload error: ${err.message}`);
+      } finally {
+        els.uploadDictionaryCsv.disabled = false;
+        els.uploadDictionaryCsv.textContent = 'アップロード';
+        fileInput.value = '';
+      }
     });
   }
 

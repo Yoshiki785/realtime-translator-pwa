@@ -2400,7 +2400,7 @@ const fetchToken = async () => {
   addDiagLog(`STEP5: before negotiate | offerSdpLen=${offerSdp?.length || 0}`);
 
   // デバッグ: SDP offer の検証
-  console.log('[negotiate] Realtime URL:', REALTIME_URL);
+  console.log('[negotiate] Realtime URL:', REALTIME_CALLS_URL);
   console.log('[negotiate] clientSecret prefix:', clientSecret ? `${clientSecret.substring(0, 10)}...` : 'missing');
   console.log('[negotiate] Offer SDP length:', offerSdp.length);
   if (!offerSdp.includes('v=0')) console.warn('[negotiate] SDP missing v=0');

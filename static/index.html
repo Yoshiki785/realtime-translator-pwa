@@ -6,7 +6,7 @@
   <title>Realtime Translator</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" href="/icon-192.png" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=20260125" />
   <meta name="theme-color" content="#0f172a" />
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
@@ -154,9 +154,16 @@
         </select>
       </label>
       <hr class="settings-divider" />
-      <label data-i18n="glossaryLabel">辞書（要約用）
+      <label data-i18n="glossaryLabel">辞書（用語集）
         <textarea id="glossaryTextInput" class="settings-textarea" rows="4" placeholder="1行1エントリ: source=target 例）半導体=semiconductor"></textarea>
       </label>
+      <div class="dictionary-upload-section">
+        <label>CSVで一括登録
+          <input type="file" id="dictionaryCsvInput" accept=".csv,text/csv" class="settings-file-input" />
+        </label>
+        <button type="button" id="uploadDictionaryCsv" class="secondary small">アップロード</button>
+        <div id="dictionaryUploadResult" class="upload-result"></div>
+      </div>
       <label data-i18n="summaryPromptLabel">要約カスタムプロンプト
         <textarea id="summaryPromptInput" class="settings-textarea" rows="3" placeholder="要約の指示を自由に書けます（例：決裁用に3行で、リスクと次アクション必須）"></textarea>
       </label>
