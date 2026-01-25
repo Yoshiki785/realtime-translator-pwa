@@ -407,9 +407,12 @@ const logErrorDetails = (label, err) => {
   const name = err?.name || 'Error';
   const message = err?.message || String(err);
   const stack = err?.stack || 'no_stack';
-  addDiagLog(`${label} error | name=${name} message=${message}`);
+  const context = err?._context || label;
+  const sessionId = state.sessionId || 'no_session';
+  const buildVer = state.buildVersion || 'unknown';
+  addDiagLog(`${label} error | ctx=${context} sid=${sessionId} build=${buildVer} name=${name} message=${message}`);
   addDiagLog(`${label} error stack | ${stack}`);
-  console.error(label, err);
+  console.error(`[${label}] ctx=${context} sid=${sessionId} build=${buildVer}`, err);
 };
 
 const addRawRealtimeEvent = (raw) => {
@@ -660,13 +663,12 @@ const cacheElements = () => {
     companyTaxIdValue: document.getElementById('companyTaxIdValue'),
     saveCompanyBtn: document.getElementById('saveCompanyBtn'),
     companyStatus: document.getElementById('companyStatus'),
-    // Dictionary View (separate page via hash route)
+    // Dictionary UI
+    dictionaryCountDisplay: document.getElementById('dictionaryCountDisplay'),
     dictionaryView: document.getElementById('dictionaryView'),
     dictionaryBackBtn: document.getElementById('dictionaryBackBtn'),
     openDictionaryBtn: document.getElementById('openDictionaryBtn'),
     appShell: document.querySelector('.app-shell'),
-    // Dictionary UI
-    dictionaryCountDisplay: document.getElementById('dictionaryCountDisplay'),
     downloadDictionaryTemplate: document.getElementById('downloadDictionaryTemplate'),
     dictAddSource: document.getElementById('dictAddSource'),
     dictAddTarget: document.getElementById('dictAddTarget'),
@@ -679,6 +681,10 @@ const cacheElements = () => {
     dictTableBody: document.getElementById('dictTableBody'),
     dictLoadMore: document.getElementById('dictLoadMore'),
     dictListCount: document.getElementById('dictListCount'),
+    // SW Update UI
+    swUpdateBanner: document.getElementById('swUpdateBanner'),
+    swUpdateBtn: document.getElementById('swUpdateBtn'),
+    buildShaDisplay: document.getElementById('buildShaDisplay'),
   };
 };
 
@@ -717,6 +723,9 @@ const state = {
   summaryPrompt: localStorage.getItem('rt_summary_prompt') || '',
   // Realtime event queue (for session.update before dataChannel is open)
   realtimeEventQueue: [],
+  // Diagnostics: session tracking
+  sessionId: null, // Generated per connection attempt
+  buildVersion: null, // Fetched from /build.txt
 };
 
 // ========== Glossary Storage Adapter ==========
@@ -856,38 +865,35 @@ const flushRealtimeEventQueue = () => {
   }
 };
 
-// Send session.update with glossary instructions
+// Send session.update with audio input settings
+// OpenAI Realtime Calls API format (avoid deprecated/invalid parameters)
 const sendSessionUpdate = () => {
   const transcriptionLanguage = state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined;
   const silenceDurationMs = Number(state.vadSilence) || 500;
 
+  // Realtime Calls API session.update format
+  // Ref: https://platform.openai.com/docs/api-reference/realtime
   const payload = {
     type: 'session.update',
     session: {
-      type: 'realtime',
-      audio: {
-        input: {
-          transcription: {
-            model: 'gpt-4o-mini-transcribe',
-            ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
-          },
-          turn_detection: {
-            type: 'server_vad',
-            silence_duration_ms: silenceDurationMs,
-            prefix_padding_ms: 300,
-            threshold: 0.5,
-            create_response: false,
-          },
-          noise_reduction: { type: 'near_field' },
-        },
+      input_audio_transcription: {
+        model: 'whisper-1',
+        ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
+      },
+      turn_detection: {
+        type: 'server_vad',
+        silence_duration_ms: silenceDurationMs,
+        prefix_padding_ms: 300,
+        threshold: 0.5,
+        create_response: false,
       },
     },
   };
 
   try {
-    addDiagLog(`STEP_SESSION_UPDATE: sending ${JSON.stringify(payload.session)}`);
+    addDiagLog(`STEP_SESSION_UPDATE: sid=${state.sessionId || 'no_sid'} payload=${JSON.stringify(payload.session)}`);
     const sent = sendRealtimeEvent(payload);
-    addDiagLog(`session.update sent (audio.input) | queued=${!sent}`);
+    addDiagLog(`session.update sent | queued=${!sent} sid=${state.sessionId || 'no_sid'}`);
   } catch (err) {
     logErrorDetails('sendSessionUpdate', err);
     throw err;
@@ -1645,6 +1651,19 @@ const closeCompanyEditModal = () => {
 };
 
 // ========== Dictionary UI ==========
+const DICTIONARY_LIMIT_FREE = 10;
+const DICTIONARY_LIMIT_PRO = 1000;
+
+const getDictionaryLimit = () => (state.quota?.plan === 'pro' ? DICTIONARY_LIMIT_PRO : DICTIONARY_LIMIT_FREE);
+
+const updateDictionarySummary = () => {
+  if (!els.dictionaryCountDisplay) return;
+  const limit = getDictionaryLimit();
+  const count = dictItems.length;
+  const moreSuffix = dictNextCursor ? '+' : '';
+  els.dictionaryCountDisplay.textContent = `辞書: ${count}${moreSuffix}/${limit}`;
+};
+
 let dictNextCursor = null;
 let dictItems = [];
 
@@ -1684,6 +1703,7 @@ const loadDictionaryList = async (append = false) => {
       dictItems = items;
     }
 
+    updateDictionarySummary();
     renderDictionaryTable();
     addDiagLog(`Dictionary loaded: ${dictItems.length} items`);
   } catch (err) {
@@ -1964,7 +1984,6 @@ const handleHashRoute = async () => {
     hideDictionaryView();
   }
 
-  // Billing routes
   if (hash === '#/billing/success') {
     // Show success banner with polling
     showBillingBanner('pending');
@@ -2652,19 +2671,29 @@ const handleDataMessage = (event) => {
   try {
     const msg = JSON.parse(event.data);
     const type = msg.type || msg.event || '';
-    if (msg?.type === 'error') {
+
+    // Detailed error logging with session context
+    if (msg?.type === 'error' || msg?.error) {
+      const errInfo = msg.error || msg;
+      const errType = errInfo.type || 'unknown_type';
+      const errCode = errInfo.code || 'unknown_code';
+      const errParam = errInfo.param || '';
+      const errMessage = errInfo.message || msg.message || 'No message';
       console.error('[realtime:error]', msg);
+      addDiagLog(`REALTIME_ERROR | sid=${state.sessionId || 'no_sid'} type=${errType} code=${errCode} param=${errParam} msg=${errMessage}`);
       addDiagLog(`REALTIME_ERROR_JSON: ${JSON.stringify(msg)}`);
+      setError(errMessage);
+      return;
     }
+
     if (type === 'conversation.item.input_audio_transcription.delta') {
       handleDelta(msg);
     } else if (type === 'conversation.item.input_audio_transcription.completed') {
       handleCompleted(msg);
-    } else if (type === 'error' || msg.error) {
-      setError(msg.error?.message || msg.message || 'Realtime error');
     }
   } catch (err) {
-    console.error('message parse', err);
+    console.error('[realtime] message parse error', err);
+    addDiagLog(`REALTIME_PARSE_ERROR | sid=${state.sessionId || 'no_sid'} error=${err.message}`);
   }
 };
 
@@ -2708,6 +2737,10 @@ const fetchToken = async () => {
 };
 
   const negotiate = async (clientSecret) => {
+  // Generate session ID for diagnostics
+  state.sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  addDiagLog(`Session started: sid=${state.sessionId} build=${state.buildVersion || 'unknown'}`);
+
   const pc = new RTCPeerConnection();
   state.pc = pc;
   state.dataChannel = pc.createDataChannel('oai-events');
@@ -3001,28 +3034,343 @@ const applyAuthUiState = (user) => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  addDiagLog('DOM ready');
-  cacheElements();
-  scrubDebugArtifacts();
-  setupDevPanel();
-  updateDevStatusSummary();
-  updateQuotaInfo();
+  // ============================================================
+  // APP INITIALIZATION - Structured for Resilience
+  // ============================================================
+  // initCritical(): Core functionality - login, main UI, auth
+  //   - Failures are logged but should not crash the app
+  // initNonCritical(): Optional features - SW, BUILD display, diagnostics
+  //   - Failures are silently caught and do not affect core functionality
+  // ============================================================
 
-  if (els.maxChars) els.maxChars.value = state.maxChars;
-  if (els.gapMs) els.gapMs.value = state.gapMs;
-  if (els.vadSilence) els.vadSilence.value = state.vadSilence;
-  if (els.uiLang) els.uiLang.value = state.uiLang;
-  if (els.inputLang) els.inputLang.value = state.inputLang;
-  if (els.outputLang) els.outputLang.value = state.outputLang;
-  // Glossary & Summary Settings
-  if (els.glossaryTextInput) els.glossaryTextInput.value = state.glossaryText;
-  if (els.summaryPromptInput) els.summaryPromptInput.value = state.summaryPrompt;
+  // ============================================================
+  // HOISTED FUNCTION DECLARATIONS (TDZ-safe)
+  // These MUST use `function` keyword (not const/let) to ensure hoisting.
+  // See docs/dev-guardrails.md for the full policy.
+  // ============================================================
 
-  // Apply i18n on load
-  applyI18n();
+  // SW Update Notification: Show banner and register update button
+  function showUpdateBanner(worker) {
+    if (!els.swUpdateBanner || !els.swUpdateBtn) return;
 
-  if (els.start) els.start.addEventListener('click', start);
-  if (els.stop) els.stop.addEventListener('click', stop);
+    els.swUpdateBanner.style.display = 'flex';
+
+    // Remove previous listeners to avoid duplicates
+    const newBtn = els.swUpdateBtn.cloneNode(true);
+    els.swUpdateBtn.replaceWith(newBtn);
+    els.swUpdateBtn = newBtn;
+
+    els.swUpdateBtn.addEventListener('click', () => {
+      console.log('[SW] User clicked update, sending SKIP_WAITING');
+      worker.postMessage({ type: 'SKIP_WAITING' });
+      els.swUpdateBanner.style.display = 'none';
+    });
+  }
+
+  // Fetch and display BUILD_SHA from /build.txt
+  async function fetchBuildSha() {
+    try {
+      const response = await fetch('/build.txt', { cache: 'no-cache' });
+      if (!response.ok) throw new Error('build.txt not found');
+      const text = await response.text();
+      const shaMatch = text.match(/BUILD_SHA=([^\s]+)/);
+      const timeMatch = text.match(/BUILD_TIME_UTC=([^\s]+)/);
+      const sha = shaMatch ? shaMatch[1] : 'unknown';
+      const time = timeMatch ? timeMatch[1] : '';
+      // Store in state for diagnostics
+      state.buildVersion = sha;
+      if (els.buildShaDisplay) {
+        els.buildShaDisplay.textContent = `BUILD_SHA: ${sha}${time ? ' (' + time + ')' : ''}`;
+      }
+    } catch (err) {
+      console.warn('[BUILD] Failed to fetch build.txt:', err);
+      state.buildVersion = 'fetch_failed';
+      if (els.buildShaDisplay) {
+        els.buildShaDisplay.textContent = 'BUILD_SHA: 取得失敗';
+      }
+    }
+  }
+
+  // ============================================================
+  // CRITICAL PATH - Core initialization
+  // Failures here are logged and shown, but we try to continue
+  // ============================================================
+  function initCritical() {
+    addDiagLog('DOM ready');
+    cacheElements();
+    scrubDebugArtifacts();
+
+    // Initialize form values from state
+    if (els.maxChars) els.maxChars.value = state.maxChars;
+    if (els.gapMs) els.gapMs.value = state.gapMs;
+    if (els.vadSilence) els.vadSilence.value = state.vadSilence;
+    if (els.uiLang) els.uiLang.value = state.uiLang;
+    if (els.inputLang) els.inputLang.value = state.inputLang;
+    if (els.outputLang) els.outputLang.value = state.outputLang;
+    if (els.glossaryTextInput) els.glossaryTextInput.value = state.glossaryText;
+    if (els.summaryPromptInput) els.summaryPromptInput.value = state.summaryPrompt;
+
+    applyI18n();
+
+    // ---- CRITICAL EVENT HANDLERS (login, main buttons) ----
+    if (els.start) els.start.addEventListener('click', start);
+    if (els.stop) els.stop.addEventListener('click', stop);
+
+    // Firebase initialization and auth
+    initFirebase();
+    applyAuthUiState(null);
+    addDiagLog(`Auth init: currentUser=${currentUser?.uid || 'null'}`);
+
+    // Login button - CRITICAL
+    if (els.loginBtn) {
+      els.loginBtn.addEventListener('click', async () => {
+        addDiagLog('Login requested');
+        if (!auth) {
+          setError('Firebase初期化に失敗しました。設定を確認してください。');
+          return;
+        }
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          await auth.signInWithPopup(provider);
+          addDiagLog('Login popup completed');
+        } catch (err) {
+          setError('ログインに失敗しました: ' + err.message);
+          addDiagLog(`Login failed: ${err.message}`);
+        }
+      });
+    }
+
+    // Logout button - CRITICAL
+    if (els.logoutBtn) {
+      els.logoutBtn.addEventListener('click', async () => {
+        addDiagLog('Logout requested');
+        if (!auth) {
+          setError('Firebase初期化に失敗しました。設定を確認してください。');
+          return;
+        }
+        try {
+          await auth.signOut();
+          setStatus('Standby');
+          addDiagLog('Logout completed');
+        } catch (err) {
+          setError('ログアウトに失敗しました: ' + err.message);
+          addDiagLog(`Logout failed: ${err.message}`);
+        }
+      });
+    }
+
+    // Auth state observer - CRITICAL
+    if (auth) {
+      auth.onAuthStateChanged((user) => {
+        currentUser = user;
+        applyAuthUiState(user);
+        addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
+        if (user) {
+          refreshQuotaStatus();
+          handleHashRoute();
+          loadCompanyProfile();
+          refreshBillingStatus();
+        } else {
+          resetQuotaState();
+        }
+      });
+    }
+
+    // Live text display
+    updateLiveText();
+  }
+
+  // ============================================================
+  // NON-CRITICAL PATH - Optional features
+  // Each block is wrapped in try/catch; failures do not stop the app
+  // ============================================================
+  function initNonCritical() {
+    // Dev panel & diagnostics
+    try {
+      setupDevPanel();
+      updateDevStatusSummary();
+      updateQuotaInfo();
+    } catch (err) {
+      console.warn('[INIT:non-critical] Dev panel setup failed:', err);
+    }
+
+    // BUILD_SHA display
+    try {
+      fetchBuildSha();
+    } catch (err) {
+      console.warn('[INIT:non-critical] fetchBuildSha failed:', err);
+    }
+
+    // Service Worker registration
+    try {
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async () => {
+          if (isDebugMode()) {
+            console.log('[SW] Debug mode: skipping SW registration');
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const reg of registrations) {
+              await reg.unregister();
+              console.log('[SW] Unregistered:', reg.scope);
+            }
+            const cacheNames = await caches.keys();
+            for (const name of cacheNames) {
+              await caches.delete(name);
+              console.log('[SW] Cache deleted:', name);
+            }
+            console.log('[SW] Debug mode: SW disabled, caches cleared');
+            return;
+          }
+          try {
+            const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+            console.log('[SW] Registered:', registration.scope);
+
+            let refreshing = false;
+            let newWorker = null;
+
+            registration.addEventListener('updatefound', () => {
+              newWorker = registration.installing;
+              console.log('[SW] Update found, new worker installing');
+
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('[SW] New worker installed, showing update banner');
+                  showUpdateBanner(newWorker);
+                }
+              });
+            });
+
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+              if (refreshing) return;
+              refreshing = true;
+              console.log('[SW] Controller changed, reloading page');
+              window.location.reload();
+            });
+
+            if (registration.waiting) {
+              console.log('[SW] Worker already waiting, showing update banner');
+              showUpdateBanner(registration.waiting);
+            }
+          } catch (err) {
+            console.error('[SW] Registration failed:', err);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('[INIT:non-critical] SW setup failed:', err);
+    }
+
+    // A2HS prompt
+    try {
+      let deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        if (state.hasShownA2HS) return;
+        if (!els.a2hs) return;
+        e.preventDefault();
+        deferredPrompt = e;
+        state.hasShownA2HS = true;
+        localStorage.setItem('a2hsShown', '1');
+        els.a2hs.classList.add('show');
+        setTimeout(async () => {
+          if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt = null;
+          }
+        }, 1500);
+      });
+    } catch (err) {
+      console.warn('[INIT:non-critical] A2HS setup failed:', err);
+    }
+  }
+
+  // ============================================================
+  // MAIN INITIALIZATION ENTRY POINT
+  // ============================================================
+  try {
+    initCritical();
+  } catch (err) {
+    console.error('[INIT:critical] CRITICAL initialization failed:', err);
+    // Even if critical init fails, we try to show an error
+    try {
+      setError('アプリの初期化に失敗しました。ページを再読み込みしてください。');
+    } catch (_) {
+      // Last resort
+      alert('アプリの初期化に失敗しました。');
+    }
+  }
+
+  try {
+    initNonCritical();
+  } catch (err) {
+    console.warn('[INIT:non-critical] Non-critical initialization failed:', err);
+    // Non-critical failures are silently logged - app continues
+  }
+
+  // ============================================================
+  // ADDITIONAL UI EVENT HANDLERS
+  // These are registered after core init to ensure login works first
+  // ============================================================
+
+  if (els.settingsBtn && els.settingsModal) {
+    els.settingsBtn.addEventListener('click', () => {
+      els.settingsModal.showModal();
+      if (currentUser) {
+        loadDictionaryList();
+      }
+      try {
+        fetchBuildSha();
+      } catch (err) {
+        console.warn('[SETTINGS] fetchBuildSha failed:', err);
+      }
+    });
+  }
+  if (els.saveSettings) {
+    els.saveSettings.addEventListener('click', (e) => {
+      e.preventDefault();
+      state.maxChars = Number(els.maxChars?.value) || 300;
+      state.gapMs = Number(els.gapMs?.value) || 1000;
+      state.vadSilence = Number(els.vadSilence?.value) || 400;
+      state.uiLang = els.uiLang?.value || 'ja';
+      state.inputLang = els.inputLang?.value || 'auto';
+      state.outputLang = els.outputLang?.value || 'ja';
+      localStorage.setItem('maxChars', state.maxChars);
+      localStorage.setItem('gapMs', state.gapMs);
+      localStorage.setItem('vadSilence', state.vadSilence);
+      localStorage.setItem('uiLang', state.uiLang);
+      localStorage.setItem('inputLang', state.inputLang);
+      localStorage.setItem('outputLang', state.outputLang);
+      const glossaryTextValue = els.glossaryTextInput?.value || '';
+      glossaryStorage.set(glossaryTextValue);
+      const glossaryEntries = parseGlossary(glossaryTextValue);
+      const summaryPromptValue = els.summaryPromptInput?.value || '';
+      summaryPromptStorage.set(summaryPromptValue);
+      applyI18n();
+      els.settingsModal?.close();
+      addDiagLog(
+        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang} glossary_entries=${glossaryEntries.length} summaryPrompt_len=${state.summaryPrompt.length}`
+      );
+      updateDevStatusSummary();
+    });
+  }
+
+  if (els.presetFast) {
+    els.presetFast.addEventListener('click', () => applyPreset('fast'));
+  }
+  if (els.presetBalanced) {
+    els.presetBalanced.addEventListener('click', () => applyPreset('balanced'));
+  }
+  if (els.presetStable) {
+    els.presetStable.addEventListener('click', () => applyPreset('stable'));
+  }
+
+  if (els.resetUserSettings) {
+    els.resetUserSettings.addEventListener('click', () => {
+      glossaryStorage.clear();
+      summaryPromptStorage.clear();
+      if (els.glossaryTextInput) els.glossaryTextInput.value = '';
+      if (els.summaryPromptInput) els.summaryPromptInput.value = '';
+      addDiagLog('User settings reset (glossary & summaryPrompt cleared)');
+    });
+  }
 
   if (els.settingsBtn && els.settingsModal) {
     els.settingsBtn.addEventListener('click', () => {
@@ -3030,6 +3378,12 @@ document.addEventListener('DOMContentLoaded', () => {
       // Load dictionary list when settings modal opens
       if (currentUser) {
         loadDictionaryList();
+      }
+      // Fetch latest BUILD_SHA when settings modal opens (non-critical)
+      try {
+        fetchBuildSha();
+      } catch (err) {
+        console.warn('[SETTINGS] fetchBuildSha failed:', err);
       }
     });
   }
@@ -3219,107 +3573,6 @@ document.addEventListener('DOMContentLoaded', () => {
     stopMedia();
     closeRtc();
   });
-
-  // Service Worker 登録（debug=1 時は無効化）
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', async () => {
-      if (isDebugMode()) {
-        // debug=1: SW を無効化し、既存の登録を解除
-        console.log('[SW] Debug mode: skipping SW registration');
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const reg of registrations) {
-          await reg.unregister();
-          console.log('[SW] Unregistered:', reg.scope);
-        }
-        // キャッシュもクリア
-        const cacheNames = await caches.keys();
-        for (const name of cacheNames) {
-          await caches.delete(name);
-          console.log('[SW] Cache deleted:', name);
-        }
-        console.log('[SW] Debug mode: SW disabled, caches cleared');
-        return;
-      }
-      // 通常モード: SW を登録
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
-    });
-  }
-
-  let deferredPrompt = null;
-  window.addEventListener('beforeinstallprompt', (e) => {
-    if (state.hasShownA2HS) return;
-    if (!els.a2hs) return;
-    e.preventDefault();
-    deferredPrompt = e;
-    state.hasShownA2HS = true;
-    localStorage.setItem('a2hsShown', '1');
-    els.a2hs.classList.add('show');
-    setTimeout(async () => {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        deferredPrompt = null;
-      }
-    }, 1500);
-  });
-
-  initFirebase();
-  applyAuthUiState(null);
-  addDiagLog(`Auth init: currentUser=${currentUser?.uid || 'null'}`);
-
-  if (els.loginBtn) {
-    els.loginBtn.addEventListener('click', async () => {
-      addDiagLog('Login requested');
-      if (!auth) {
-        setError('Firebase初期化に失敗しました。設定を確認してください。');
-        return;
-      }
-      try {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        await auth.signInWithPopup(provider);
-        addDiagLog('Login popup completed');
-      } catch (err) {
-        setError('ログインに失敗しました: ' + err.message);
-        addDiagLog(`Login failed: ${err.message}`);
-      }
-    });
-  }
-
-  if (els.logoutBtn) {
-    els.logoutBtn.addEventListener('click', async () => {
-      addDiagLog('Logout requested');
-      if (!auth) {
-        setError('Firebase初期化に失敗しました。設定を確認してください。');
-        return;
-      }
-      try {
-        await auth.signOut();
-        setStatus('Standby');
-        addDiagLog('Logout completed');
-      } catch (err) {
-        setError('ログアウトに失敗しました: ' + err.message);
-        addDiagLog(`Logout failed: ${err.message}`);
-      }
-    });
-  }
-
-  if (auth) {
-    auth.onAuthStateChanged((user) => {
-      currentUser = user;
-      applyAuthUiState(user);
-      addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
-      if (user) {
-        refreshQuotaStatus();
-        // Handle billing route after auth is ready
-        handleBillingRoute();
-        // Load company profile for logged-in users
-        loadCompanyProfile();
-        // Refresh billing status
-        refreshBillingStatus();
-      } else {
-        resetQuotaState();
-      }
-    });
-  }
 
   // Upgrade Pro button click handler
   if (els.upgradeProBtn) {

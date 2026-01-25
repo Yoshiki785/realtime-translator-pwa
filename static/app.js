@@ -407,9 +407,12 @@ const logErrorDetails = (label, err) => {
   const name = err?.name || 'Error';
   const message = err?.message || String(err);
   const stack = err?.stack || 'no_stack';
-  addDiagLog(`${label} error | name=${name} message=${message}`);
+  const context = err?._context || label;
+  const sessionId = state.sessionId || 'no_session';
+  const buildVer = state.buildVersion || 'unknown';
+  addDiagLog(`${label} error | ctx=${context} sid=${sessionId} build=${buildVer} name=${name} message=${message}`);
   addDiagLog(`${label} error stack | ${stack}`);
-  console.error(label, err);
+  console.error(`[${label}] ctx=${context} sid=${sessionId} build=${buildVer}`, err);
 };
 
 const addRawRealtimeEvent = (raw) => {
@@ -720,6 +723,9 @@ const state = {
   summaryPrompt: localStorage.getItem('rt_summary_prompt') || '',
   // Realtime event queue (for session.update before dataChannel is open)
   realtimeEventQueue: [],
+  // Diagnostics: session tracking
+  sessionId: null, // Generated per connection attempt
+  buildVersion: null, // Fetched from /build.txt
 };
 
 // ========== Glossary Storage Adapter ==========
@@ -859,38 +865,35 @@ const flushRealtimeEventQueue = () => {
   }
 };
 
-// Send session.update with glossary instructions
+// Send session.update with audio input settings
+// OpenAI Realtime Calls API format (avoid deprecated/invalid parameters)
 const sendSessionUpdate = () => {
   const transcriptionLanguage = state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined;
   const silenceDurationMs = Number(state.vadSilence) || 500;
 
+  // Realtime Calls API session.update format
+  // Ref: https://platform.openai.com/docs/api-reference/realtime
   const payload = {
     type: 'session.update',
     session: {
-      type: 'realtime',
-      audio: {
-        input: {
-          transcription: {
-            model: 'gpt-4o-mini-transcribe',
-            ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
-          },
-          turn_detection: {
-            type: 'server_vad',
-            silence_duration_ms: silenceDurationMs,
-            prefix_padding_ms: 300,
-            threshold: 0.5,
-            create_response: false,
-          },
-          noise_reduction: { type: 'near_field' },
-        },
+      input_audio_transcription: {
+        model: 'whisper-1',
+        ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
+      },
+      turn_detection: {
+        type: 'server_vad',
+        silence_duration_ms: silenceDurationMs,
+        prefix_padding_ms: 300,
+        threshold: 0.5,
+        create_response: false,
       },
     },
   };
 
   try {
-    addDiagLog(`STEP_SESSION_UPDATE: sending ${JSON.stringify(payload.session)}`);
+    addDiagLog(`STEP_SESSION_UPDATE: sid=${state.sessionId || 'no_sid'} payload=${JSON.stringify(payload.session)}`);
     const sent = sendRealtimeEvent(payload);
-    addDiagLog(`session.update sent (audio.input) | queued=${!sent}`);
+    addDiagLog(`session.update sent | queued=${!sent} sid=${state.sessionId || 'no_sid'}`);
   } catch (err) {
     logErrorDetails('sendSessionUpdate', err);
     throw err;
@@ -2668,19 +2671,29 @@ const handleDataMessage = (event) => {
   try {
     const msg = JSON.parse(event.data);
     const type = msg.type || msg.event || '';
-    if (msg?.type === 'error') {
+
+    // Detailed error logging with session context
+    if (msg?.type === 'error' || msg?.error) {
+      const errInfo = msg.error || msg;
+      const errType = errInfo.type || 'unknown_type';
+      const errCode = errInfo.code || 'unknown_code';
+      const errParam = errInfo.param || '';
+      const errMessage = errInfo.message || msg.message || 'No message';
       console.error('[realtime:error]', msg);
+      addDiagLog(`REALTIME_ERROR | sid=${state.sessionId || 'no_sid'} type=${errType} code=${errCode} param=${errParam} msg=${errMessage}`);
       addDiagLog(`REALTIME_ERROR_JSON: ${JSON.stringify(msg)}`);
+      setError(errMessage);
+      return;
     }
+
     if (type === 'conversation.item.input_audio_transcription.delta') {
       handleDelta(msg);
     } else if (type === 'conversation.item.input_audio_transcription.completed') {
       handleCompleted(msg);
-    } else if (type === 'error' || msg.error) {
-      setError(msg.error?.message || msg.message || 'Realtime error');
     }
   } catch (err) {
-    console.error('message parse', err);
+    console.error('[realtime] message parse error', err);
+    addDiagLog(`REALTIME_PARSE_ERROR | sid=${state.sessionId || 'no_sid'} error=${err.message}`);
   }
 };
 
@@ -2724,6 +2737,10 @@ const fetchToken = async () => {
 };
 
   const negotiate = async (clientSecret) => {
+  // Generate session ID for diagnostics
+  state.sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  addDiagLog(`Session started: sid=${state.sessionId} build=${state.buildVersion || 'unknown'}`);
+
   const pc = new RTCPeerConnection();
   state.pc = pc;
   state.dataChannel = pc.createDataChannel('oai-events');
@@ -3052,7 +3069,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Fetch and display BUILD_SHA from /build.txt
   async function fetchBuildSha() {
-    if (!els.buildShaDisplay) return;
     try {
       const response = await fetch('/build.txt', { cache: 'no-cache' });
       if (!response.ok) throw new Error('build.txt not found');
@@ -3061,10 +3077,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const timeMatch = text.match(/BUILD_TIME_UTC=([^\s]+)/);
       const sha = shaMatch ? shaMatch[1] : 'unknown';
       const time = timeMatch ? timeMatch[1] : '';
-      els.buildShaDisplay.textContent = `BUILD_SHA: ${sha}${time ? ' (' + time + ')' : ''}`;
+      // Store in state for diagnostics
+      state.buildVersion = sha;
+      if (els.buildShaDisplay) {
+        els.buildShaDisplay.textContent = `BUILD_SHA: ${sha}${time ? ' (' + time + ')' : ''}`;
+      }
     } catch (err) {
       console.warn('[BUILD] Failed to fetch build.txt:', err);
-      els.buildShaDisplay.textContent = 'BUILD_SHA: 取得失敗';
+      state.buildVersion = 'fetch_failed';
+      if (els.buildShaDisplay) {
+        els.buildShaDisplay.textContent = 'BUILD_SHA: 取得失敗';
+      }
     }
   }
 
