@@ -3037,8 +3037,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Apply i18n on load
   applyI18n();
 
-  // Fetch and display BUILD_SHA
-  fetchBuildSha();
+  // Fetch and display BUILD_SHA (non-critical, wrapped in try/catch)
+  try {
+    fetchBuildSha();
+  } catch (err) {
+    console.warn('[INIT] fetchBuildSha failed, continuing:', err);
+  }
 
   if (els.start) els.start.addEventListener('click', start);
   if (els.stop) els.stop.addEventListener('click', stop);
@@ -3050,8 +3054,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if (currentUser) {
         loadDictionaryList();
       }
-      // Fetch latest BUILD_SHA when settings modal opens
-      fetchBuildSha();
+      // Fetch latest BUILD_SHA when settings modal opens (non-critical)
+      try {
+        fetchBuildSha();
+      } catch (err) {
+        console.warn('[SETTINGS] fetchBuildSha failed:', err);
+      }
     });
   }
   if (els.saveSettings) {
@@ -3241,8 +3249,14 @@ document.addEventListener('DOMContentLoaded', () => {
     closeRtc();
   });
 
+  // ============================================================
+  // IMPORTANT: These functions use `function` declarations (not const/let)
+  // to ensure hoisting and prevent TDZ (Temporal Dead Zone) errors.
+  // They can be called anywhere in DOMContentLoaded without initialization order issues.
+  // ============================================================
+
   // SW Update Notification: Show banner and register update button
-  const showUpdateBanner = (worker) => {
+  function showUpdateBanner(worker) {
     if (!els.swUpdateBanner || !els.swUpdateBtn) return;
 
     els.swUpdateBanner.style.display = 'flex';
@@ -3257,10 +3271,10 @@ document.addEventListener('DOMContentLoaded', () => {
       worker.postMessage({ type: 'SKIP_WAITING' });
       els.swUpdateBanner.style.display = 'none';
     });
-  };
+  }
 
   // Fetch and display BUILD_SHA from /build.txt
-  const fetchBuildSha = async () => {
+  async function fetchBuildSha() {
     if (!els.buildShaDisplay) return;
     try {
       const response = await fetch('/build.txt', { cache: 'no-cache' });
@@ -3275,7 +3289,7 @@ document.addEventListener('DOMContentLoaded', () => {
       console.warn('[BUILD] Failed to fetch build.txt:', err);
       els.buildShaDisplay.textContent = 'BUILD_SHA: 取得失敗';
     }
-  };
+  }
 
   // Service Worker 登録（debug=1 時は無効化）
   if ('serviceWorker' in navigator) {
