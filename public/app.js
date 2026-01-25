@@ -76,6 +76,7 @@ const STRINGS = {
     taxIdLabel: '税ID種別',
     taxIdValue: '税ID値',
     saveCompany: '保存',
+    editCompany: '会社情報を編集',
     companySaved: '保存しました',
     companySavedWithStripe: '保存しました（Stripe同期完了）',
     companySavedStripeSkipped: '保存しました（Stripe未同期）',
@@ -154,6 +155,7 @@ const STRINGS = {
     taxIdLabel: 'Tax ID Type',
     taxIdValue: 'Tax ID',
     saveCompany: 'Save',
+    editCompany: 'Edit Company Info',
     companySaved: 'Saved',
     companySavedWithStripe: 'Saved (Stripe synced)',
     companySavedStripeSkipped: 'Saved (Stripe not synced)',
@@ -232,6 +234,7 @@ const STRINGS = {
     taxIdLabel: '税号类型',
     taxIdValue: '税号',
     saveCompany: '保存',
+    editCompany: '编辑公司信息',
     companySaved: '已保存',
     companySavedWithStripe: '已保存（Stripe已同步）',
     companySavedStripeSkipped: '已保存（Stripe未同步）',
@@ -641,8 +644,13 @@ const cacheElements = () => {
     ticketModal: document.getElementById('ticketModal'),
     ticketModalClose: document.getElementById('ticketModalClose'),
     ticketModalStatus: document.getElementById('ticketModalStatus'),
-    // Company Section
+    // Company Section (in settings)
     companySection: document.getElementById('companySection'),
+    editCompanyBtn: document.getElementById('editCompanyBtn'),
+    // Company View (separate page via hash route)
+    companyView: document.getElementById('companyView'),
+    companyBackBtn: document.getElementById('companyBackBtn'),
+    appShell: document.querySelector('.app-shell'),
     companyName: document.getElementById('companyName'),
     companyDepartment: document.getElementById('companyDepartment'),
     companyPosition: document.getElementById('companyPosition'),
@@ -653,6 +661,20 @@ const cacheElements = () => {
     companyTaxIdValue: document.getElementById('companyTaxIdValue'),
     saveCompanyBtn: document.getElementById('saveCompanyBtn'),
     companyStatus: document.getElementById('companyStatus'),
+    // Dictionary UI
+    dictionaryCountDisplay: document.getElementById('dictionaryCountDisplay'),
+    downloadDictionaryTemplate: document.getElementById('downloadDictionaryTemplate'),
+    dictAddSource: document.getElementById('dictAddSource'),
+    dictAddTarget: document.getElementById('dictAddTarget'),
+    dictAddNote: document.getElementById('dictAddNote'),
+    dictAddBtn: document.getElementById('dictAddBtn'),
+    dictAddResult: document.getElementById('dictAddResult'),
+    dictListLoading: document.getElementById('dictListLoading'),
+    dictListEmpty: document.getElementById('dictListEmpty'),
+    dictTable: document.getElementById('dictTable'),
+    dictTableBody: document.getElementById('dictTableBody'),
+    dictLoadMore: document.getElementById('dictLoadMore'),
+    dictListCount: document.getElementById('dictListCount'),
   };
 };
 
@@ -1604,6 +1626,290 @@ const saveCompanyProfile = async () => {
   }
 };
 
+// ========== Company View (Hash Route #/company) ==========
+const showCompanyView = () => {
+  if (els.companyView && els.appShell) {
+    els.appShell.style.display = 'none';
+    els.companyView.style.display = 'block';
+    loadCompanyProfile();
+  }
+};
+
+const hideCompanyView = () => {
+  if (els.companyView && els.appShell) {
+    els.companyView.style.display = 'none';
+    els.appShell.style.display = 'block';
+  }
+};
+
+// Navigate to company view via hash
+const navigateToCompany = () => {
+  // Close settings modal first if open
+  if (els.settingsModal?.open) {
+    els.settingsModal.close();
+  }
+  window.location.hash = '#/company';
+};
+
+// Navigate back from company view
+const navigateBack = () => {
+  window.history.back();
+};
+
+// ========== Dictionary UI ==========
+let dictNextCursor = null;
+let dictItems = [];
+
+const loadDictionaryList = async (append = false) => {
+  if (!currentUser) return;
+
+  if (!append) {
+    dictItems = [];
+    dictNextCursor = null;
+    if (els.dictTableBody) els.dictTableBody.innerHTML = '';
+  }
+
+  if (els.dictListLoading) els.dictListLoading.style.display = 'block';
+  if (els.dictListEmpty) els.dictListEmpty.style.display = 'none';
+  if (els.dictTable) els.dictTable.style.display = 'none';
+  if (els.dictLoadMore) els.dictLoadMore.style.display = 'none';
+
+  try {
+    let url = '/api/v1/dictionary?limit=100';
+    if (append && dictNextCursor) {
+      url += `&cursor=${encodeURIComponent(dictNextCursor)}`;
+    }
+
+    const res = await authFetch(url);
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.detail?.message || 'Failed to load dictionary');
+    }
+
+    const items = data.items || [];
+    dictNextCursor = data.nextCursor || null;
+
+    if (append) {
+      dictItems = [...dictItems, ...items];
+    } else {
+      dictItems = items;
+    }
+
+    renderDictionaryTable();
+    addDiagLog(`Dictionary loaded: ${dictItems.length} items`);
+  } catch (err) {
+    console.error('[loadDictionaryList] Error:', err);
+    addDiagLog(`Dictionary load error: ${err.message}`);
+  } finally {
+    if (els.dictListLoading) els.dictListLoading.style.display = 'none';
+  }
+};
+
+const renderDictionaryTable = () => {
+  if (!els.dictTableBody) return;
+
+  if (dictItems.length === 0) {
+    if (els.dictListEmpty) els.dictListEmpty.style.display = 'block';
+    if (els.dictTable) els.dictTable.style.display = 'none';
+    if (els.dictLoadMore) els.dictLoadMore.style.display = 'none';
+    if (els.dictListCount) els.dictListCount.textContent = '';
+    return;
+  }
+
+  if (els.dictListEmpty) els.dictListEmpty.style.display = 'none';
+  if (els.dictTable) els.dictTable.style.display = 'table';
+  if (els.dictListCount) els.dictListCount.textContent = `(${dictItems.length}件)`;
+
+  els.dictTableBody.innerHTML = '';
+  for (const item of dictItems) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = item.id;
+
+    tr.innerHTML = `
+      <td class="dict-cell-source">${escapeHtml(item.source)}</td>
+      <td class="dict-cell-target">${escapeHtml(item.target)}</td>
+      <td class="dict-cell-note">${escapeHtml(item.note || '')}</td>
+      <td class="dict-cell-actions">
+        <button class="dict-edit-btn secondary small" data-id="${item.id}">編集</button>
+        <button class="dict-delete-btn secondary small danger" data-id="${item.id}">削除</button>
+      </td>
+    `;
+    els.dictTableBody.appendChild(tr);
+  }
+
+  // Show/hide load more button
+  if (els.dictLoadMore) {
+    els.dictLoadMore.style.display = dictNextCursor ? 'block' : 'none';
+  }
+};
+
+const escapeHtml = (str) => {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
+const addDictionaryEntry = async () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  const source = els.dictAddSource?.value?.trim() || '';
+  const target = els.dictAddTarget?.value?.trim() || '';
+  const note = els.dictAddNote?.value?.trim() || '';
+
+  if (!source || !target) {
+    if (els.dictAddResult) {
+      els.dictAddResult.textContent = 'source と target は必須です';
+      els.dictAddResult.className = 'upload-result error';
+    }
+    return;
+  }
+
+  if (els.dictAddBtn) els.dictAddBtn.disabled = true;
+  if (els.dictAddResult) els.dictAddResult.textContent = '';
+
+  try {
+    const res = await authFetch('/api/v1/dictionary/entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, target, note }),
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      if (els.dictAddResult) {
+        els.dictAddResult.textContent = `追加しました (${data.count}/${data.limit})`;
+        els.dictAddResult.className = 'upload-result success';
+      }
+      // Clear inputs
+      if (els.dictAddSource) els.dictAddSource.value = '';
+      if (els.dictAddTarget) els.dictAddTarget.value = '';
+      if (els.dictAddNote) els.dictAddNote.value = '';
+      // Reload list
+      loadDictionaryList();
+      addDiagLog(`Dictionary entry added: ${source}`);
+    } else {
+      const reason = data.detail?.reason || data.detail?.message || 'エラー';
+      if (els.dictAddResult) {
+        els.dictAddResult.textContent = `エラー: ${reason}`;
+        els.dictAddResult.className = 'upload-result error';
+      }
+      addDiagLog(`Dictionary add failed: ${reason}`);
+    }
+  } catch (err) {
+    if (els.dictAddResult) {
+      els.dictAddResult.textContent = `エラー: ${err.message}`;
+      els.dictAddResult.className = 'upload-result error';
+    }
+    addDiagLog(`Dictionary add error: ${err.message}`);
+  } finally {
+    if (els.dictAddBtn) els.dictAddBtn.disabled = false;
+  }
+};
+
+const editDictionaryEntry = async (id) => {
+  const item = dictItems.find(i => i.id === id);
+  if (!item) return;
+
+  const newSource = prompt('source:', item.source);
+  if (newSource === null) return;
+  const newTarget = prompt('target:', item.target);
+  if (newTarget === null) return;
+  const newNote = prompt('note:', item.note || '');
+  if (newNote === null) return;
+
+  if (!newSource.trim() || !newTarget.trim()) {
+    alert('source と target は必須です');
+    return;
+  }
+
+  try {
+    const res = await authFetch(`/api/v1/dictionary/entry/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: newSource.trim(),
+        target: newTarget.trim(),
+        note: newNote.trim(),
+      }),
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      loadDictionaryList();
+      addDiagLog(`Dictionary entry updated: ${id}`);
+    } else {
+      const reason = data.detail?.reason || data.detail?.message || 'エラー';
+      alert(`エラー: ${reason}`);
+      addDiagLog(`Dictionary update failed: ${reason}`);
+    }
+  } catch (err) {
+    alert(`エラー: ${err.message}`);
+    addDiagLog(`Dictionary update error: ${err.message}`);
+  }
+};
+
+const deleteDictionaryEntry = async (id) => {
+  if (!confirm('この単語を削除しますか？')) return;
+
+  try {
+    const res = await authFetch(`/api/v1/dictionary/entry/${id}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      loadDictionaryList();
+      addDiagLog(`Dictionary entry deleted: ${id}`);
+    } else {
+      const reason = data.detail?.reason || data.detail?.message || 'エラー';
+      alert(`エラー: ${reason}`);
+      addDiagLog(`Dictionary delete failed: ${reason}`);
+    }
+  } catch (err) {
+    alert(`エラー: ${err.message}`);
+    addDiagLog(`Dictionary delete error: ${err.message}`);
+  }
+};
+
+const downloadDictionaryTemplate = async () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  try {
+    const res = await authFetch('/api/v1/dictionary/template.csv');
+
+    if (!res.ok) {
+      throw new Error('Failed to download template');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'dictionary_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    addDiagLog('Dictionary template downloaded');
+  } catch (err) {
+    console.error('[downloadDictionaryTemplate] Error:', err);
+    alert(`ダウンロードエラー: ${err.message}`);
+    addDiagLog(`Dictionary template download error: ${err.message}`);
+  }
+};
+
 // Poll for plan update after successful checkout
 const pollForPlanUpdate = async (maxAttempts = 12, intervalMs = 5000) => {
   for (let i = 0; i < maxAttempts; i++) {
@@ -1616,10 +1922,20 @@ const pollForPlanUpdate = async (maxAttempts = 12, intervalMs = 5000) => {
   return false;
 };
 
-// Handle billing result from hash routes
-const handleBillingRoute = async () => {
+// Handle hash routes (#/billing/*, #/tickets/*, #/company)
+const handleHashRoute = async () => {
   const hash = window.location.hash;
 
+  // Company view route
+  if (hash === '#/company') {
+    showCompanyView();
+    return;
+  } else {
+    // Any other route: hide company view
+    hideCompanyView();
+  }
+
+  // Billing routes
   if (hash === '#/billing/success') {
     // Show success banner with polling
     showBillingBanner('pending');
@@ -1650,6 +1966,9 @@ const handleBillingRoute = async () => {
     history.replaceState(null, '', window.location.pathname);
   }
 };
+
+// Keep backward compatibility alias
+const handleBillingRoute = handleHashRoute;
 
 const showBillingBanner = (status) => {
   // Remove existing banner
@@ -2677,7 +2996,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (els.stop) els.stop.addEventListener('click', stop);
 
   if (els.settingsBtn && els.settingsModal) {
-    els.settingsBtn.addEventListener('click', () => els.settingsModal.showModal());
+    els.settingsBtn.addEventListener('click', () => {
+      els.settingsModal.showModal();
+      // Load dictionary list when settings modal opens
+      if (currentUser) {
+        loadDictionaryList();
+      }
+    });
   }
   if (els.saveSettings) {
     els.saveSettings.addEventListener('click', (e) => {
@@ -2764,6 +3089,8 @@ document.addEventListener('DOMContentLoaded', () => {
             resultDiv.className = 'upload-result success';
           }
           addDiagLog(`Dictionary CSV upload success: added=${data.added}`);
+          // Reload dictionary list
+          loadDictionaryList();
         } else {
           const reason = data.detail?.reason || data.detail || 'アップロード失敗';
           if (resultDiv) {
@@ -2953,8 +3280,8 @@ document.addEventListener('DOMContentLoaded', () => {
       addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
       if (user) {
         refreshQuotaStatus();
-        // Handle billing route after auth is ready
-        handleBillingRoute();
+        // Handle hash route after auth is ready (billing, company, etc.)
+        handleHashRoute();
         // Load company profile for logged-in users
         loadCompanyProfile();
         // Refresh billing status
@@ -3007,6 +3334,48 @@ document.addEventListener('DOMContentLoaded', () => {
   // Save company profile button click handler
   if (els.saveCompanyBtn) {
     els.saveCompanyBtn.addEventListener('click', saveCompanyProfile);
+  }
+
+  // Edit company button -> navigate to #/company
+  if (els.editCompanyBtn) {
+    els.editCompanyBtn.addEventListener('click', navigateToCompany);
+  }
+
+  // Company view back button
+  if (els.companyBackBtn) {
+    els.companyBackBtn.addEventListener('click', navigateBack);
+  }
+
+  // Hash change listener for SPA routing
+  window.addEventListener('hashchange', handleHashRoute);
+
+  // Dictionary UI event handlers
+  if (els.downloadDictionaryTemplate) {
+    els.downloadDictionaryTemplate.addEventListener('click', downloadDictionaryTemplate);
+  }
+
+  if (els.dictAddBtn) {
+    els.dictAddBtn.addEventListener('click', addDictionaryEntry);
+  }
+
+  if (els.dictLoadMore) {
+    els.dictLoadMore.addEventListener('click', () => loadDictionaryList(true));
+  }
+
+  // Dictionary table edit/delete buttons (event delegation)
+  if (els.dictTableBody) {
+    els.dictTableBody.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      if (!id) return;
+
+      if (btn.classList.contains('dict-edit-btn')) {
+        editDictionaryEntry(id);
+      } else if (btn.classList.contains('dict-delete-btn')) {
+        deleteDictionaryEntry(id);
+      }
+    });
   }
 
   // Refresh billing status when returning from Customer Portal
