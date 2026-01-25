@@ -25,3 +25,7 @@ ops/logs/*.out.*
 
 # Runbooks (managed in separate branch)
 runbooks/
+.DS_Store
+.firebase/hosting*.cache
+ops/logs/*
+!ops/logs/.gitkeep
