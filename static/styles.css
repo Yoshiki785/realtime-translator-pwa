@@ -14,13 +14,18 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
   background: radial-gradient(circle at 20% 20%, rgba(56, 189, 248, 0.08), transparent 40%),
     radial-gradient(circle at 80% 10%, rgba(168, 85, 247, 0.08), transparent 35%),
     var(--bg);
   color: var(--fg);
-  min-height: 100vh;
+  min-height: 100%;
   display: flex;
   justify-content: center;
   align-items: stretch;
@@ -29,8 +34,10 @@ body {
 
 .app-shell {
   width: min(720px, 100%);
-  display: grid;
-  grid-template-rows: auto 1fr auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  flex: 1;
   gap: 12px;
   padding: 16px;
 }
@@ -90,6 +97,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
   min-height: 0;
 }
 
@@ -147,8 +155,7 @@ body {
 .log-scroll {
   flex: 1;
   overflow-y: auto;
-  min-height: 120px;
-  max-height: 35vh;
+  min-height: 0;
 }
 
 .log-entry {
@@ -336,10 +343,6 @@ button.small:active {
 }
 
 @media (orientation: landscape) and (max-width: 900px) {
-  .app-shell {
-    grid-template-rows: auto auto auto;
-  }
-
   .live-text {
     min-height: 160px;
   }
@@ -453,6 +456,281 @@ button.small:active {
   display: flex;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+/* Dictionary CSV Upload */
+.dictionary-upload-section {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.dictionary-upload-section label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.settings-file-input {
+  display: block;
+  margin: 8px 0;
+  font-size: 0.9em;
+}
+
+.upload-result {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+}
+
+.upload-result.success {
+  background: rgba(76, 175, 80, 0.2);
+  color: #81c784;
+}
+
+.upload-result.error {
+  background: rgba(244, 67, 54, 0.2);
+  color: #e57373;
+}
+
+/* Dictionary Section */
+.dictionary-section {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 10px;
+}
+
+.dictionary-actions-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.dictionary-count {
+  font-size: 0.85em;
+  color: var(--muted);
+}
+
+.dictionary-manual-add {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 8px;
+}
+
+.dictionary-manual-add h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.dictionary-add-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.dictionary-add-form input {
+  flex: 1;
+  min-width: 100px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text);
+  font-size: 0.9em;
+}
+
+.dictionary-list {
+  margin-top: 12px;
+}
+
+.dictionary-list h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.dict-loading,
+.dict-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9em;
+}
+
+.dict-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85em;
+}
+
+.dict-table th,
+.dict-table td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dict-table th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.dict-cell-source {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dict-cell-target {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dict-cell-note {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+}
+
+.dict-cell-actions {
+  white-space: nowrap;
+}
+
+.dict-cell-actions button {
+  margin-left: 4px;
+  padding: 4px 8px;
+  font-size: 0.8em;
+}
+
+.dict-edit-btn {
+  /* default secondary style */
+}
+
+.dict-delete-btn.danger {
+  background: rgba(244, 67, 54, 0.2) !important;
+  color: #e57373 !important;
+}
+
+#dictLoadMore {
+  margin-top: 12px;
+  width: 100%;
+}
+
+/* CSV format hint */
+.csv-format-hint {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.csv-format-hint small {
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.csv-format-hint code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 11px;
+}
+
+/* Dictionary View (separate page via hash route #/dictionary) */
+.dictionary-view {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg);
+  z-index: 1000;
+  overflow-y: auto;
+  padding: 20px;
+}
+
+.dictionary-view-container {
+  max-width: 700px;
+  margin: 0 auto;
+  background: var(--card);
+  border-radius: 16px;
+  padding: 24px;
+}
+
+.dictionary-view-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.dictionary-view-header h2 {
+  margin: 0;
+  flex: 1;
+}
+
+.dictionary-view .dictionary-actions-row {
+  margin-bottom: 16px;
+}
+
+.dictionary-view .dictionary-upload-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.dictionary-view .dictionary-manual-add {
+  margin-bottom: 16px;
+}
+
+.dictionary-view .dictionary-add-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.dictionary-view .dictionary-add-form input {
+  flex: 1;
+  min-width: 100px;
+}
+
+/* Horizontal scrollable table wrapper for mobile */
+.dict-table-wrapper {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Dictionary summary in settings modal */
+.dictionary-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  margin-bottom: 12px;
+}
+
+.dictionary-summary .dictionary-count {
+  flex: 1;
+  color: var(--muted);
 }
 
 /* Summary section */
@@ -763,4 +1041,59 @@ button.disabled {
   .ticket-modal {
     width: 95vw;
   }
+}
+
+/* SW Update Banner */
+.sw-update-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  padding: 12px 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.sw-update-btn {
+  background: white;
+  color: #667eea;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.sw-update-btn:hover {
+  background: #f0f0f0;
+  transform: scale(1.05);
+}
+
+.sw-update-btn:active {
+  transform: scale(0.95);
+}
+
+/* Build info in settings */
+.build-info {
+  margin-top: 8px;
+  padding: 8px;
+  background: var(--card);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.build-sha {
+  color: var(--muted);
+  font-family: 'Courier New', monospace;
+  font-size: 11px;
 }
