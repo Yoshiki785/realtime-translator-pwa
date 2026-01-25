@@ -14,8 +14,8 @@ echo "=========================================="
 echo "Checking static/ <-> public/ sync"
 echo "=========================================="
 
-# Files to check
-FILES=("app.js" "index.html")
+# Files to check (build.txt is excluded as it's generated during sync)
+FILES=("app.js" "index.html" "styles.css" "sw.js" "manifest.json")
 
 drift_found=0
 
@@ -40,6 +40,13 @@ done
 echo "=========================================="
 
 if [[ $drift_found -eq 1 ]]; then
+  echo ""
+  echo "DRIFT SUMMARY: The following files in public/ do not match static/:"
+  for f in "${FILES[@]}"; do
+    if ! diff -q "static/$f" "public/$f" > /dev/null 2>&1; then
+      echo "  - $f"
+    fi
+  done
   echo ""
   echo "FIX: Run './scripts/sync_public.sh' to sync files"
   echo "RULE: Never edit public/ directly. Edit static/ only."

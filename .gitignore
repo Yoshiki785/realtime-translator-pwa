@@ -29,3 +29,4 @@ runbooks/
 .firebase/hosting*.cache
 ops/logs/*
 !ops/logs/.gitkeep
+public/build.txt
