@@ -19,7 +19,7 @@ import httpx
 import stripe
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from firebase_admin import auth as firebase_auth
 from firebase_admin import firestore as firebase_firestore
@@ -409,6 +409,19 @@ class MockOrderByQuery:
         self.data = data
         self.field = field
         self.direction = direction
+        self._limit = None
+        self._start_after_id = None
+
+    def limit(self, count):
+        """Set limit on query results"""
+        self._limit = count
+        return self
+
+    def start_after(self, doc_snapshot):
+        """Set cursor for pagination"""
+        if doc_snapshot and hasattr(doc_snapshot, 'id'):
+            self._start_after_id = doc_snapshot.id
+        return self
 
     def stream(self):
         results = [MockDocumentSnapshot(doc_data, doc_id, self.data)
@@ -419,6 +432,22 @@ class MockOrderByQuery:
             key=lambda s: s.to_dict().get(self.field) or datetime.min,
             reverse=reverse
         )
+
+        # Apply start_after cursor
+        if self._start_after_id:
+            found = False
+            filtered = []
+            for r in results:
+                if found:
+                    filtered.append(r)
+                elif r.id == self._start_after_id:
+                    found = True
+            results = filtered
+
+        # Apply limit
+        if self._limit:
+            results = results[:self._limit]
+
         return results
 
 
@@ -2544,250 +2573,6 @@ def upload_dictionary_chunk_txn(
     return _transactional_upload(transaction, chunk)
 
 
-class DictionaryEntryRequest(BaseModel):
-    """Request body for adding dictionary entry"""
-    source: str = Field(..., min_length=1, max_length=200, description="Source term (required)")
-    target: str = Field(..., min_length=1, max_length=500, description="Target translation (required)")
-    note: Optional[str] = Field(None, max_length=500, description="Optional note")
-
-    @field_validator('source', 'target')
-    @classmethod
-    def strip_whitespace(cls, v: str) -> str:
-        return v.strip() if v else v
-
-    @field_validator('note')
-    @classmethod
-    def strip_note_whitespace(cls, v: Optional[str]) -> Optional[str]:
-        return v.strip() if v else None
-
-
-@app.get("/api/v1/dictionary")
-async def get_dictionary(request: Request) -> JSONResponse:
-    """Get user's dictionary entries"""
-    uid = get_uid_from_request(request)
-    db = get_firestore_client()
-
-    # Ensure dictionaryCount is accurate (backward compatibility repair)
-    accurate_count, was_repaired = ensure_dictionary_metadata(db, uid)
-
-    # Get user data for plan
-    user_ref = db.collection("users").document(uid)
-    user_snap = user_ref.get()
-    user_data = user_snap.to_dict() if user_snap.exists else {}
-    plan = normalize_plan(user_data.get("plan"))
-    limit = get_dictionary_limit(plan)
-
-    # Fetch entries with stable order_by (using Query.DESCENDING explicitly)
-    # Note: order_by with direction= kwarg can be unstable in some firebase_admin versions
-    entries_ref = db.collection("users").document(uid).collection("dictionary")
-    try:
-        # Try standard approach first - Query.DESCENDING is imported from firestore_v1
-        from google.cloud.firestore_v1 import Query
-        docs = entries_ref.order_by("createdAt", direction=Query.DESCENDING).stream()
-    except Exception:
-        # Fallback: fetch all and sort in Python (less efficient but reliable)
-        docs = list(entries_ref.stream())
-        docs.sort(key=lambda d: d.to_dict().get("createdAt") or datetime.min, reverse=True)
-
-    entries = []
-    for doc in docs:
-        data = doc.to_dict()
-        entry = {
-            "id": doc.id,
-            "source": data.get("source", ""),
-            "target": data.get("target", ""),
-            "note": data.get("note", ""),
-        }
-        # Convert timestamps to ISO strings if present
-        if data.get("createdAt"):
-            try:
-                entry["createdAt"] = data["createdAt"].isoformat() if hasattr(data["createdAt"], "isoformat") else str(data["createdAt"])
-            except Exception:
-                pass
-        entries.append(entry)
-
-    # Use accurate_count from ensure_dictionary_metadata
-    # If repair happened, accurate_count reflects actual entries
-    # Otherwise, use len(entries) as final verification
-    count = accurate_count if accurate_count > 0 else len(entries)
-
-    logger.info(f"[dictionary] GET | {json.dumps({'uid': uid, 'count': count, 'plan': plan, 'repaired': was_repaired})}")
-    return JSONResponse({
-        "entries": entries,
-        "count": count,
-        "limit": limit,
-        "plan": plan,
-    })
-
-
-@app.post("/api/v1/dictionary")
-async def add_dictionary_entry(request: Request) -> JSONResponse:
-    """Add a single dictionary entry with transaction for count update"""
-    uid = get_uid_from_request(request)
-    db = get_firestore_client()
-
-    # Parse and validate request body using Pydantic
-    try:
-        body = await request.json()
-        entry_req = DictionaryEntryRequest(**body)
-    except Exception as e:
-        # Handle Pydantic validation errors
-        error_msg = str(e)
-        if "source" in error_msg.lower() and ("required" in error_msg.lower() or "min_length" in error_msg.lower()):
-            raise HTTPException(status_code=400, detail={"reason": "source_required", "message": "Source term is required"})
-        if "target" in error_msg.lower() and ("required" in error_msg.lower() or "min_length" in error_msg.lower()):
-            raise HTTPException(status_code=400, detail={"reason": "target_required", "message": "Target term is required"})
-        if "source" in error_msg.lower() and "max_length" in error_msg.lower():
-            raise HTTPException(status_code=400, detail={"reason": "source_too_long", "message": "Source term must be 200 characters or less"})
-        if "target" in error_msg.lower() and "max_length" in error_msg.lower():
-            raise HTTPException(status_code=400, detail={"reason": "target_too_long", "message": "Target term must be 500 characters or less"})
-        if "note" in error_msg.lower() and "max_length" in error_msg.lower():
-            raise HTTPException(status_code=400, detail={"reason": "note_too_long", "message": "Note must be 500 characters or less"})
-        raise HTTPException(status_code=400, detail={"reason": "invalid_request", "message": str(e)})
-
-    source = entry_req.source
-    target = entry_req.target
-    note = entry_req.note or ""
-    source_lower = source.lower()
-
-    user_ref = db.collection("users").document(uid)
-    entries_ref = db.collection("users").document(uid).collection("dictionary")
-
-    # Ensure dictionaryCount is accurate (backward compatibility)
-    current_count, _ = ensure_dictionary_metadata(db, uid)
-
-    # Get plan limit
-    user_snap = user_ref.get()
-    user_data = user_snap.to_dict() if user_snap.exists else {}
-    plan = normalize_plan(user_data.get("plan"))
-    limit = get_dictionary_limit(plan)
-
-    if current_count >= limit:
-        raise HTTPException(status_code=400, detail={
-            "reason": "limit_exceeded",
-            "message": f"Dictionary limit reached ({limit} entries for {plan} plan)",
-            "limit": limit,
-            "current": current_count,
-        })
-
-    # Check for duplicate with fallback for legacy docs
-    if check_duplicate_source(entries_ref, source):
-        raise HTTPException(status_code=400, detail={
-            "reason": "duplicate_source",
-            "message": f"Entry with source '{source}' already exists",
-        })
-
-    # Use transaction to add entry and increment count atomically
-    @firebase_firestore.transactional
-    def add_entry_transaction(transaction):
-        # Re-check count in transaction
-        user_snap_tx = user_ref.get(transaction=transaction)
-        user_data_tx = user_snap_tx.to_dict() if user_snap_tx.exists else {}
-        count_tx = get_dictionary_count_from_user(user_data_tx)
-
-        if count_tx >= limit:
-            raise HTTPException(status_code=400, detail={
-                "reason": "limit_exceeded",
-                "message": f"Dictionary limit reached ({limit} entries for {plan} plan)",
-                "limit": limit,
-                "current": count_tx,
-            })
-
-        # Create new entry
-        new_doc_ref = entries_ref.document()
-        entry_data = {
-            "source": source,
-            "target": target,
-            "note": note,
-            "sourceLower": source_lower,
-            "createdAt": firebase_firestore.SERVER_TIMESTAMP,
-            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
-        }
-        transaction.set(new_doc_ref, entry_data)
-
-        # Increment dictionaryCount
-        transaction.update(user_ref, {
-            "dictionaryCount": count_tx + 1,
-            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
-        })
-
-        return new_doc_ref.id, count_tx + 1
-
-    try:
-        transaction = db.transaction()
-        entry_id, new_count = add_entry_transaction(transaction)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"[dictionary] POST transaction failed: {e}")
-        raise HTTPException(status_code=500, detail={"reason": "transaction_failed", "message": "Failed to add entry"})
-
-    logger.info(f"[dictionary] POST | {json.dumps({'uid': uid, 'entryId': entry_id, 'source': source})}")
-    return JSONResponse({
-        "id": entry_id,
-        "source": source,
-        "target": target,
-        "note": note,
-        "count": new_count,
-        "limit": limit,
-    })
-
-
-@app.delete("/api/v1/dictionary/{entry_id}")
-async def delete_dictionary_entry(request: Request, entry_id: str) -> JSONResponse:
-    """Delete a single dictionary entry with transaction for count update"""
-    uid = get_uid_from_request(request)
-    db = get_firestore_client()
-
-    if not entry_id or len(entry_id) > 100:
-        raise HTTPException(status_code=400, detail={"reason": "invalid_entry_id", "message": "Invalid entry ID"})
-
-    # Ensure dictionaryCount is accurate before delete (backward compatibility)
-    ensure_dictionary_metadata(db, uid)
-
-    user_ref = db.collection("users").document(uid)
-    entry_ref = db.collection("users").document(uid).collection("dictionary").document(entry_id)
-
-    # Verify entry exists
-    entry_snap = entry_ref.get()
-    if not entry_snap.exists:
-        raise HTTPException(status_code=404, detail={"reason": "not_found", "message": "Entry not found"})
-
-    # Use transaction to delete entry and decrement count atomically
-    @firebase_firestore.transactional
-    def delete_entry_transaction(transaction):
-        # Get current count
-        user_snap_tx = user_ref.get(transaction=transaction)
-        user_data_tx = user_snap_tx.to_dict() if user_snap_tx.exists else {}
-        count_tx = get_dictionary_count_from_user(user_data_tx)
-
-        # Delete entry
-        transaction.delete(entry_ref)
-
-        # Decrement count (minimum 0)
-        new_count = max(0, count_tx - 1)
-        transaction.update(user_ref, {
-            "dictionaryCount": new_count,
-            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
-        })
-
-        return new_count
-
-    try:
-        transaction = db.transaction()
-        new_count = delete_entry_transaction(transaction)
-    except Exception as e:
-        logger.error(f"[dictionary] DELETE transaction failed: {e}")
-        raise HTTPException(status_code=500, detail={"reason": "transaction_failed", "message": "Failed to delete entry"})
-
-    logger.info(f"[dictionary] DELETE | {json.dumps({'uid': uid, 'entryId': entry_id})}")
-    return JSONResponse({
-        "deleted": True,
-        "id": entry_id,
-        "count": new_count,
-    })
-
-
 @app.post("/api/v1/dictionary/upload")
 async def upload_dictionary_csv(request: Request, file: UploadFile = File(...)) -> JSONResponse:
     """Upload dictionary entries via CSV file with optimized duplicate detection"""
@@ -3018,6 +2803,294 @@ async def upload_dictionary_csv(request: Request, file: UploadFile = File(...)) 
         response["warning"] = "; ".join(warnings)
 
     return JSONResponse(response)
+
+
+# ========== Dictionary CRUD APIs ==========
+
+@app.get("/api/v1/dictionary")
+async def list_dictionary_entries(
+    request: Request,
+    limit: int = Query(default=100, ge=1, le=500),
+    cursor: Optional[str] = Query(default=None),
+) -> JSONResponse:
+    """List dictionary entries with pagination.
+
+    Args:
+        limit: Max entries to return (1-500, default 100)
+        cursor: Pagination cursor (doc ID to start after)
+
+    Returns:
+        items: List of dictionary entries
+        nextCursor: Cursor for next page (if more entries exist)
+    """
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    entries_ref = db.collection("users").document(uid).collection("dictionary")
+
+    # Build query with ordering (using Query.DESCENDING for stability)
+    from google.cloud.firestore_v1 import Query
+    query = entries_ref.order_by("createdAt", direction=Query.DESCENDING)
+
+    # Apply cursor if provided
+    if cursor:
+        cursor_doc = entries_ref.document(cursor).get()
+        if cursor_doc.exists:
+            query = query.start_after(cursor_doc)
+
+    # Fetch limit + 1 to determine if there are more
+    docs = list(query.limit(limit + 1).stream())
+
+    has_more = len(docs) > limit
+    if has_more:
+        docs = docs[:limit]
+
+    items = []
+    for doc in docs:
+        data = doc.to_dict()
+        items.append({
+            "id": doc.id,
+            "source": data.get("source", ""),
+            "target": data.get("target", ""),
+            "note": data.get("note", ""),
+            "createdAt": data.get("createdAt").isoformat() if data.get("createdAt") else None,
+        })
+
+    response = {"items": items}
+    if has_more and docs:
+        response["nextCursor"] = docs[-1].id
+
+    return JSONResponse(response)
+
+
+class DictionaryEntryRequest(BaseModel):
+    """Request body for creating/updating dictionary entry."""
+    source: str = Field(..., min_length=1, max_length=200)
+    target: str = Field(..., min_length=1, max_length=500)
+    note: Optional[str] = Field(default="", max_length=500)
+
+    @field_validator("source", "target")
+    @classmethod
+    def strip_and_validate(cls, v: str) -> str:
+        stripped = v.strip()
+        if not stripped:
+            raise ValueError("must not be empty or whitespace-only")
+        return stripped
+
+
+@app.post("/api/v1/dictionary/entry")
+async def create_dictionary_entry(request: Request, body: DictionaryEntryRequest) -> JSONResponse:
+    """Create a single dictionary entry.
+
+    Validates:
+    - source/target are non-empty
+    - No duplicate sourceLower exists
+    - Plan limit not exceeded
+    """
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    source = body.source
+    target = body.target
+    note = body.note or ""
+    source_lower = source.lower()
+
+    # Get user info and check plan limit
+    user_ref = db.collection("users").document(uid)
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    plan = normalize_plan(user_data.get("plan"))
+    limit = get_dictionary_limit(plan)
+
+    current_count, _ = ensure_dictionary_metadata(db, uid)
+
+    if current_count >= limit:
+        raise HTTPException(status_code=400, detail={
+            "reason": "limit_reached",
+            "message": f"Dictionary limit reached ({limit} entries for {plan} plan)",
+            "limit": limit,
+            "count": current_count,
+        })
+
+    # Check for duplicate
+    entries_ref = db.collection("users").document(uid).collection("dictionary")
+    if check_duplicate_source(entries_ref, source):
+        raise HTTPException(status_code=400, detail={
+            "reason": "duplicate",
+            "message": f"Entry with source '{source}' already exists",
+        })
+
+    # Create entry
+    now = datetime.now(timezone.utc)
+    entry_data = {
+        "source": source,
+        "target": target,
+        "note": note,
+        "sourceLower": source_lower,
+        "createdAt": now,
+        "updatedAt": now,
+    }
+
+    doc_ref = entries_ref.document()
+    doc_ref.set(entry_data)
+
+    # Update count
+    new_count = current_count + 1
+    user_ref.update({"dictionaryCount": new_count, "updatedAt": now})
+
+    logger.info(f"[dictionary] CREATE | uid={uid} source={source[:50]} count={new_count}")
+
+    return JSONResponse({
+        "id": doc_ref.id,
+        "source": source,
+        "target": target,
+        "note": note,
+        "count": new_count,
+        "limit": limit,
+    })
+
+
+@app.put("/api/v1/dictionary/entry/{entry_id}")
+async def update_dictionary_entry(
+    request: Request,
+    entry_id: str,
+    body: DictionaryEntryRequest
+) -> JSONResponse:
+    """Update an existing dictionary entry.
+
+    If source is changed, validates no duplicate exists.
+    """
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    source = body.source
+    target = body.target
+    note = body.note or ""
+    source_lower = source.lower()
+
+    entries_ref = db.collection("users").document(uid).collection("dictionary")
+    doc_ref = entries_ref.document(entry_id)
+    doc_snap = doc_ref.get()
+
+    if not doc_snap.exists:
+        raise HTTPException(status_code=404, detail={
+            "reason": "not_found",
+            "message": "Dictionary entry not found",
+        })
+
+    old_data = doc_snap.to_dict()
+    old_source_lower = old_data.get("sourceLower", old_data.get("source", "").lower())
+
+    # If source changed, check for duplicate
+    if source_lower != old_source_lower:
+        if check_duplicate_source(entries_ref, source):
+            raise HTTPException(status_code=400, detail={
+                "reason": "duplicate",
+                "message": f"Entry with source '{source}' already exists",
+            })
+
+    # Update entry
+    now = datetime.now(timezone.utc)
+    doc_ref.update({
+        "source": source,
+        "target": target,
+        "note": note,
+        "sourceLower": source_lower,
+        "updatedAt": now,
+    })
+
+    logger.info(f"[dictionary] UPDATE | uid={uid} id={entry_id} source={source[:50]}")
+
+    return JSONResponse({
+        "id": entry_id,
+        "source": source,
+        "target": target,
+        "note": note,
+    })
+
+
+@app.delete("/api/v1/dictionary/entry/{entry_id}")
+async def delete_dictionary_entry(request: Request, entry_id: str) -> JSONResponse:
+    """Delete a dictionary entry."""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    entries_ref = db.collection("users").document(uid).collection("dictionary")
+    doc_ref = entries_ref.document(entry_id)
+    doc_snap = doc_ref.get()
+
+    if not doc_snap.exists:
+        raise HTTPException(status_code=404, detail={
+            "reason": "not_found",
+            "message": "Dictionary entry not found",
+        })
+
+    # Delete entry
+    doc_ref.delete()
+
+    # Update count
+    user_ref = db.collection("users").document(uid)
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    current_count = max(0, int(user_data.get("dictionaryCount", 0)) - 1)
+
+    now = datetime.now(timezone.utc)
+    user_ref.update({"dictionaryCount": current_count, "updatedAt": now})
+
+    logger.info(f"[dictionary] DELETE | uid={uid} id={entry_id} count={current_count}")
+
+    return JSONResponse({"ok": True, "count": current_count})
+
+
+@app.get("/api/v1/dictionary/template.csv")
+async def download_dictionary_template(request: Request) -> Response:
+    """Download dictionary as CSV template.
+
+    Returns CSV with header row and all existing entries.
+    If no entries, returns header only (empty template).
+    Uses UTF-8 with BOM for Excel compatibility.
+    """
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    entries_ref = db.collection("users").document(uid).collection("dictionary")
+
+    # Fetch all entries (up to reasonable limit for export)
+    from google.cloud.firestore_v1 import Query
+    docs = list(entries_ref.order_by("createdAt", direction=Query.DESCENDING).limit(1000).stream())
+
+    # Build CSV content
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header
+    writer.writerow(["source", "target", "note"])
+
+    # Data rows
+    for doc in docs:
+        data = doc.to_dict()
+        writer.writerow([
+            data.get("source", ""),
+            data.get("target", ""),
+            data.get("note", ""),
+        ])
+
+    csv_content = output.getvalue()
+
+    # Add UTF-8 BOM for Excel compatibility
+    # Excel needs BOM to correctly detect UTF-8 encoding
+    bom = "\ufeff"
+    csv_bytes = (bom + csv_content).encode("utf-8")
+
+    logger.info(f"[dictionary] TEMPLATE | uid={uid} entries={len(docs)}")
+
+    return Response(
+        content=csv_bytes,
+        media_type="text/csv; charset=utf-8",
+        headers={
+            "Content-Disposition": 'attachment; filename="dictionary_template.csv"',
+        },
+    )
 
 
 # Language code to display name mapping for translation prompts
