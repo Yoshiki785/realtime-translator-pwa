@@ -55,4 +55,48 @@ if [[ $drift_found -eq 1 ]]; then
 fi
 
 echo "All files in sync."
+
+# Additional quality checks (non-blocking by default, set STRICT_CHECKS=1 to enforce)
+echo ""
+echo "=========================================="
+echo "Running additional quality checks..."
+echo "=========================================="
+
+QUALITY_FAILURES=0
+
+# TDZ check
+if [[ -x "$SCRIPT_DIR/verify_no_tdz.sh" ]]; then
+  echo ""
+  if "$SCRIPT_DIR/verify_no_tdz.sh"; then
+    echo ""
+  else
+    QUALITY_FAILURES=$((QUALITY_FAILURES + 1))
+  fi
+fi
+
+# Smoke test
+if [[ -x "$SCRIPT_DIR/smoke_dom_init.sh" ]]; then
+  echo ""
+  if "$SCRIPT_DIR/smoke_dom_init.sh"; then
+    echo ""
+  else
+    QUALITY_FAILURES=$((QUALITY_FAILURES + 1))
+  fi
+fi
+
+if [[ $QUALITY_FAILURES -gt 0 ]]; then
+  echo "=========================================="
+  echo "Quality checks: $QUALITY_FAILURES issue(s) found"
+  echo "=========================================="
+  if [[ "${STRICT_CHECKS:-0}" == "1" ]]; then
+    echo "STRICT_CHECKS=1: Failing due to quality issues"
+    exit 1
+  else
+    echo "WARNING: Quality issues found but STRICT_CHECKS not enabled"
+    echo "Set STRICT_CHECKS=1 to enforce these checks"
+  fi
+fi
+
+echo "=========================================="
+echo "All checks passed."
 exit 0
