@@ -455,6 +455,45 @@ button.small:active {
   margin-bottom: 12px;
 }
 
+/* Dictionary CSV Upload */
+.dictionary-upload-section {
+  margin: 12px 0;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+}
+
+.dictionary-upload-section label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 0.9em;
+  color: var(--muted);
+}
+
+.settings-file-input {
+  display: block;
+  margin: 8px 0;
+  font-size: 0.9em;
+}
+
+.upload-result {
+  margin-top: 8px;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 0.85em;
+  white-space: pre-wrap;
+}
+
+.upload-result.success {
+  background: rgba(76, 175, 80, 0.2);
+  color: #81c784;
+}
+
+.upload-result.error {
+  background: rgba(244, 67, 54, 0.2);
+  color: #e57373;
+}
+
 /* Summary section */
 .summary-section {
   margin-top: 8px;
