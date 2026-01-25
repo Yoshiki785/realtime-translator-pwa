@@ -1,19 +1,23 @@
 import asyncio
 import base64
+import csv
+import io
 import json
 import logging
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
+from pydantic import BaseModel, Field, field_validator
 
 import firebase_admin
 import httpx
 import stripe
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -51,9 +55,14 @@ SERVICE_NAME = os.getenv("SERVICE_NAME", "realtime-translator-api")
 APP_VERSION = os.getenv("APP_VERSION") or os.getenv("COMMIT_SHA") or "local"
 
 def get_openai_api_key() -> str:
+    """Get OpenAI API key from environment. Raises HTTPException if missing."""
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
-        raise RuntimeError("OPENAI_API_KEY environment variable must be set")
+        logger.error("OPENAI_API_KEY is not set - /token will fail")
+        raise HTTPException(
+            status_code=503,
+            detail="openai_key_missing",
+        )
     return api_key
 
 BASE_DIR = Path(__file__).parent
@@ -85,6 +94,11 @@ PLANS = {
 }
 
 FINAL_JOB_STATUSES = {"succeeded", "completed", "failed", "stopped_quota", "expired"}
+
+# Dictionary limits per plan
+DICTIONARY_LIMIT_FREE = 10
+DICTIONARY_LIMIT_PRO = 1000
+DICTIONARY_MAX_INJECT = 200  # Maximum entries to inject into translation prompt
 
 # チケットパック価格マップ（環境変数からロード）
 # デフォルト値は開発用（本番では STRIPE_TICKET_PRICE_MAP_JSON を設定）
@@ -254,11 +268,24 @@ class MockCollection:
     def __init__(self, data):
         self.data = data
 
-    def document(self, doc_id):
+    def document(self, doc_id=None):
+        if doc_id is None:
+            # Auto-generate doc ID for new documents
+            import uuid
+            doc_id = str(uuid.uuid4())
         return MockDocument(self.data, doc_id)
 
     def where(self, field, op, value):
         return MockQuery(self.data, field, op, value)
+
+    def stream(self):
+        """Stream all documents in the collection"""
+        return [MockDocumentSnapshot(doc_data, doc_id, self.data)
+                for doc_id, doc_data in self.data.items()]
+
+    def order_by(self, field, direction=None):
+        """Return a query that orders by field (for mock, returns self as no-op)"""
+        return MockOrderByQuery(self.data, field, direction)
 
 
 class MockDocument:
@@ -267,6 +294,19 @@ class MockDocument:
         self.doc_id = doc_id
         self.id = doc_id
         self.reference = self
+        self._subcollections = {}
+
+    def collection(self, name):
+        """Get a subcollection by name"""
+        if name not in self._subcollections:
+            self._subcollections[name] = {}
+        # Store subcollection reference in data for persistence
+        subcoll_key = f"__subcoll_{self.doc_id}_{name}__"
+        if subcoll_key not in self.data:
+            self.data[subcoll_key] = self._subcollections[name]
+        else:
+            self._subcollections[name] = self.data[subcoll_key]
+        return MockCollection(self._subcollections[name])
 
     def get(self, transaction=None):
         return MockSnapshot(self.data.get(self.doc_id), self.doc_id)
@@ -335,15 +375,17 @@ class MockQuery:
     def _matches(self, doc_data):
         field_value = doc_data.get(self.field)
         if self.op == "<":
-            return field_value < self.value
+            return field_value is not None and field_value < self.value
         elif self.op == "<=":
-            return field_value <= self.value
+            return field_value is not None and field_value <= self.value
         elif self.op == "==":
             return field_value == self.value
         elif self.op == ">":
-            return field_value > self.value
+            return field_value is not None and field_value > self.value
         elif self.op == ">=":
-            return field_value >= self.value
+            return field_value is not None and field_value >= self.value
+        elif self.op == "in":
+            return field_value in self.value if isinstance(self.value, (list, set, tuple)) else False
         return False
 
 
@@ -351,10 +393,31 @@ class MockDocumentSnapshot:
     def __init__(self, data, doc_id, collection_data):
         self.data = data
         self.doc_id = doc_id
+        self.id = doc_id
+        self.exists = data is not None
         self.reference = MockDocument(collection_data, doc_id)
 
     def to_dict(self):
         return self.data.copy() if self.data else None
+
+
+class MockOrderByQuery:
+    """Mock query with ordering support"""
+    def __init__(self, data, field, direction):
+        self.data = data
+        self.field = field
+        self.direction = direction
+
+    def stream(self):
+        results = [MockDocumentSnapshot(doc_data, doc_id, self.data)
+                   for doc_id, doc_data in self.data.items()]
+        # Sort by field (descending if direction indicates)
+        reverse = self.direction is not None and str(self.direction).upper() == "DESCENDING"
+        results.sort(
+            key=lambda s: s.to_dict().get(self.field) or datetime.min,
+            reverse=reverse
+        )
+        return results
 
 
 class MockTransaction:
@@ -2176,6 +2239,763 @@ async def stripe_webhook(request: Request) -> JSONResponse:
     return JSONResponse({"received": True})
 
 
+# ========== Dictionary API ==========
+# Optimized for Pro plan (1000 entries) performance:
+# - Uses dictionaryCount field on user doc instead of full collection scan
+# - Uses sourceLower field for efficient duplicate detection with "in" queries
+# - order_by uses explicit Query.DESCENDING for cross-environment compatibility
+# - Backward compatible: handles legacy docs without sourceLower/dictionaryCount
+
+
+def get_dictionary_limit(plan: str) -> int:
+    """Get dictionary entry limit based on plan"""
+    if plan == "pro":
+        return DICTIONARY_LIMIT_PRO
+    return DICTIONARY_LIMIT_FREE
+
+
+def get_dictionary_count_from_user(user_data: dict) -> int:
+    """Get dictionary count from user document's dictionaryCount field.
+    Returns 0 if field doesn't exist (new user or pre-migration)."""
+    return int(user_data.get("dictionaryCount", 0))
+
+
+def count_dictionary_entries(entries_ref) -> int:
+    """Count actual dictionary entries in subcollection.
+    Uses stream() since count aggregation may not be available in all environments."""
+    try:
+        return sum(1 for _ in entries_ref.stream())
+    except Exception:
+        return 0
+
+
+def ensure_dictionary_metadata(db, uid: str) -> tuple[int, bool]:
+    """Ensure dictionaryCount field is accurate for backward compatibility.
+
+    For users migrated from pre-dictionaryCount era:
+    - If dictionaryCount is 0 but actual entries exist, recalculate and update
+    - Returns (accurate_count, was_repaired)
+
+    This prevents:
+    - Legacy users bypassing limit checks (stored count=0, actual entries=10)
+    - Incorrect count display in UI
+    """
+    user_ref = db.collection("users").document(uid)
+    entries_ref = db.collection("users").document(uid).collection("dictionary")
+
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    stored_count = get_dictionary_count_from_user(user_data)
+
+    # If stored count is 0, verify against actual entries
+    # (Non-zero stored count is trusted as it's updated transactionally)
+    if stored_count == 0:
+        actual_count = count_dictionary_entries(entries_ref)
+        if actual_count > 0:
+            # Repair: update dictionaryCount to match reality
+            try:
+                user_ref.update({
+                    "dictionaryCount": actual_count,
+                    "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+                })
+                logger.info(f"[dictionary] Repaired dictionaryCount | uid={uid} from=0 to={actual_count}")
+                return actual_count, True
+            except Exception as e:
+                logger.warning(f"[dictionary] Failed to repair dictionaryCount | uid={uid} error={e}")
+                # Return actual count even if update failed
+                return actual_count, False
+        return 0, False
+
+    return stored_count, False
+
+
+# Firestore "in" query chunk size (Firestore limit is 30 for "in" queries)
+FIRESTORE_IN_QUERY_LIMIT = 30
+# Chunk size for CSV upload transactions (to avoid request size limits)
+UPLOAD_CHUNK_SIZE = 200
+
+
+class LimitReached(Exception):
+    """Raised when dictionary limit is reached during chunk upload."""
+    pass
+
+
+def query_existing_source_lowers(entries_ref, source_lowers: list[str]) -> set[str]:
+    """Query existing sourceLower values using chunked "in" queries.
+    Returns set of existing sourceLower values."""
+    existing = set()
+    # Process in chunks of FIRESTORE_IN_QUERY_LIMIT
+    for i in range(0, len(source_lowers), FIRESTORE_IN_QUERY_LIMIT):
+        chunk = source_lowers[i:i + FIRESTORE_IN_QUERY_LIMIT]
+        if not chunk:
+            continue
+        docs = entries_ref.where("sourceLower", "in", chunk).stream()
+        for doc in docs:
+            data = doc.to_dict()
+            if data.get("sourceLower"):
+                existing.add(data["sourceLower"])
+    return existing
+
+
+def query_existing_sources_with_fallback(entries_ref, sources: list[str]) -> set[str]:
+    """Query existing sources with fallback for legacy docs without sourceLower.
+
+    Returns set of lowercase source values that exist in the dictionary.
+    Handles both new docs (with sourceLower) and legacy docs (source only).
+    """
+    source_lowers = [s.lower() for s in sources]
+    existing_lowers = set()
+
+    # First, query by sourceLower (new format)
+    for i in range(0, len(source_lowers), FIRESTORE_IN_QUERY_LIMIT):
+        chunk = source_lowers[i:i + FIRESTORE_IN_QUERY_LIMIT]
+        if not chunk:
+            continue
+        try:
+            docs = entries_ref.where("sourceLower", "in", chunk).stream()
+            for doc in docs:
+                data = doc.to_dict()
+                sl = data.get("sourceLower")
+                if sl:
+                    existing_lowers.add(sl)
+        except Exception:
+            pass
+
+    # Fallback: query by exact source match for legacy docs
+    # This catches docs that have source but no sourceLower field
+    for i in range(0, len(sources), FIRESTORE_IN_QUERY_LIMIT):
+        chunk = sources[i:i + FIRESTORE_IN_QUERY_LIMIT]
+        if not chunk:
+            continue
+        try:
+            docs = entries_ref.where("source", "in", chunk).stream()
+            for doc in docs:
+                data = doc.to_dict()
+                src = data.get("source", "")
+                if src:
+                    existing_lowers.add(src.lower())
+        except Exception:
+            pass
+
+    return existing_lowers
+
+
+def check_duplicate_source(entries_ref, source: str) -> bool:
+    """Check if source already exists (with fallback for legacy docs).
+
+    Checks both sourceLower field (new docs) and source field (legacy docs).
+    Returns True if duplicate exists.
+    """
+    source_lower = source.lower()
+
+    # Check by sourceLower first (preferred, indexed)
+    try:
+        existing = entries_ref.where("sourceLower", "==", source_lower).limit(1).stream()
+        if any(True for _ in existing):
+            return True
+    except Exception:
+        pass
+
+    # Fallback: check by exact source match (for legacy docs without sourceLower)
+    try:
+        existing = entries_ref.where("source", "==", source).limit(1).stream()
+        if any(True for _ in existing):
+            return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _upload_dictionary_chunk_simple(
+    user_ref,
+    entries_ref,
+    limit: int,
+    chunk: list[dict],
+) -> tuple[int, int]:
+    """Simplified chunk upload for DEBUG_AUTH_BYPASS mode (no real transactions)."""
+    # Get current count
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    count = get_dictionary_count_from_user(user_data)
+
+    # Calculate how many we can add
+    can_add = max(0, limit - count)
+    if can_add == 0:
+        raise LimitReached()
+
+    # Trim chunk if exceeds available slots
+    entries_to_add = chunk[:can_add] if len(chunk) > can_add else chunk
+
+    # Add entries
+    for entry in entries_to_add:
+        doc_ref = entries_ref.document()
+        doc_ref.set({
+            "source": entry["source"],
+            "target": entry["target"],
+            "note": entry["note"],
+            "sourceLower": entry["sourceLower"],
+            "createdAt": datetime.now(timezone.utc),
+            "updatedAt": datetime.now(timezone.utc),
+        })
+
+    # Update count
+    added_count = len(entries_to_add)
+    new_count = count + added_count
+    user_ref.update({
+        "dictionaryCount": new_count,
+        "updatedAt": datetime.now(timezone.utc),
+    })
+
+    return added_count, new_count
+
+
+def upload_dictionary_chunk_txn(
+    db,
+    user_ref,
+    entries_ref,
+    limit: int,
+    chunk: list[dict],
+) -> tuple[int, int]:
+    """Upload a chunk of dictionary entries in a single transaction.
+
+    Args:
+        db: Firestore client
+        user_ref: Reference to user document
+        entries_ref: Reference to dictionary subcollection
+        limit: Maximum allowed dictionary entries
+        chunk: List of entry dicts to upload
+
+    Returns:
+        (added_count, new_total_count) tuple
+
+    Raises:
+        LimitReached: When dictionary limit is fully reached (can_add=0)
+    """
+    # 【セキュリティガード】本番環境では simplified transaction を使わない
+    use_simple = False
+    if not IS_PRODUCTION:
+        use_simple = os.getenv("DEBUG_AUTH_BYPASS") == "1"
+
+    if use_simple:
+        return _upload_dictionary_chunk_simple(user_ref, entries_ref, limit, chunk)
+
+    @firebase_firestore.transactional
+    def _transactional_upload(transaction, entries_to_add):
+        # Get current count within transaction
+        user_snap_tx = user_ref.get(transaction=transaction)
+        user_data_tx = user_snap_tx.to_dict() if user_snap_tx.exists else {}
+        count_tx = get_dictionary_count_from_user(user_data_tx)
+
+        # Calculate how many we can add
+        can_add = max(0, limit - count_tx)
+        if can_add == 0:
+            raise LimitReached()
+
+        # Trim chunk if exceeds available slots
+        if len(entries_to_add) > can_add:
+            entries_to_add = entries_to_add[:can_add]
+
+        # Add entries
+        for entry in entries_to_add:
+            doc_ref = entries_ref.document()
+            transaction.set(doc_ref, {
+                "source": entry["source"],
+                "target": entry["target"],
+                "note": entry["note"],
+                "sourceLower": entry["sourceLower"],
+                "createdAt": firebase_firestore.SERVER_TIMESTAMP,
+                "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+            })
+
+        # Update count
+        added_count = len(entries_to_add)
+        new_count = count_tx + added_count
+        transaction.update(user_ref, {
+            "dictionaryCount": new_count,
+            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+        })
+
+        return added_count, new_count
+
+    transaction = db.transaction()
+    return _transactional_upload(transaction, chunk)
+
+
+class DictionaryEntryRequest(BaseModel):
+    """Request body for adding dictionary entry"""
+    source: str = Field(..., min_length=1, max_length=200, description="Source term (required)")
+    target: str = Field(..., min_length=1, max_length=500, description="Target translation (required)")
+    note: Optional[str] = Field(None, max_length=500, description="Optional note")
+
+    @field_validator('source', 'target')
+    @classmethod
+    def strip_whitespace(cls, v: str) -> str:
+        return v.strip() if v else v
+
+    @field_validator('note')
+    @classmethod
+    def strip_note_whitespace(cls, v: Optional[str]) -> Optional[str]:
+        return v.strip() if v else None
+
+
+@app.get("/api/v1/dictionary")
+async def get_dictionary(request: Request) -> JSONResponse:
+    """Get user's dictionary entries"""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    # Ensure dictionaryCount is accurate (backward compatibility repair)
+    accurate_count, was_repaired = ensure_dictionary_metadata(db, uid)
+
+    # Get user data for plan
+    user_ref = db.collection("users").document(uid)
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    plan = normalize_plan(user_data.get("plan"))
+    limit = get_dictionary_limit(plan)
+
+    # Fetch entries with stable order_by (using Query.DESCENDING explicitly)
+    # Note: order_by with direction= kwarg can be unstable in some firebase_admin versions
+    entries_ref = db.collection("users").document(uid).collection("dictionary")
+    try:
+        # Try standard approach first - Query.DESCENDING is imported from firestore_v1
+        from google.cloud.firestore_v1 import Query
+        docs = entries_ref.order_by("createdAt", direction=Query.DESCENDING).stream()
+    except Exception:
+        # Fallback: fetch all and sort in Python (less efficient but reliable)
+        docs = list(entries_ref.stream())
+        docs.sort(key=lambda d: d.to_dict().get("createdAt") or datetime.min, reverse=True)
+
+    entries = []
+    for doc in docs:
+        data = doc.to_dict()
+        entry = {
+            "id": doc.id,
+            "source": data.get("source", ""),
+            "target": data.get("target", ""),
+            "note": data.get("note", ""),
+        }
+        # Convert timestamps to ISO strings if present
+        if data.get("createdAt"):
+            try:
+                entry["createdAt"] = data["createdAt"].isoformat() if hasattr(data["createdAt"], "isoformat") else str(data["createdAt"])
+            except Exception:
+                pass
+        entries.append(entry)
+
+    # Use accurate_count from ensure_dictionary_metadata
+    # If repair happened, accurate_count reflects actual entries
+    # Otherwise, use len(entries) as final verification
+    count = accurate_count if accurate_count > 0 else len(entries)
+
+    logger.info(f"[dictionary] GET | {json.dumps({'uid': uid, 'count': count, 'plan': plan, 'repaired': was_repaired})}")
+    return JSONResponse({
+        "entries": entries,
+        "count": count,
+        "limit": limit,
+        "plan": plan,
+    })
+
+
+@app.post("/api/v1/dictionary")
+async def add_dictionary_entry(request: Request) -> JSONResponse:
+    """Add a single dictionary entry with transaction for count update"""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    # Parse and validate request body using Pydantic
+    try:
+        body = await request.json()
+        entry_req = DictionaryEntryRequest(**body)
+    except Exception as e:
+        # Handle Pydantic validation errors
+        error_msg = str(e)
+        if "source" in error_msg.lower() and ("required" in error_msg.lower() or "min_length" in error_msg.lower()):
+            raise HTTPException(status_code=400, detail={"reason": "source_required", "message": "Source term is required"})
+        if "target" in error_msg.lower() and ("required" in error_msg.lower() or "min_length" in error_msg.lower()):
+            raise HTTPException(status_code=400, detail={"reason": "target_required", "message": "Target term is required"})
+        if "source" in error_msg.lower() and "max_length" in error_msg.lower():
+            raise HTTPException(status_code=400, detail={"reason": "source_too_long", "message": "Source term must be 200 characters or less"})
+        if "target" in error_msg.lower() and "max_length" in error_msg.lower():
+            raise HTTPException(status_code=400, detail={"reason": "target_too_long", "message": "Target term must be 500 characters or less"})
+        if "note" in error_msg.lower() and "max_length" in error_msg.lower():
+            raise HTTPException(status_code=400, detail={"reason": "note_too_long", "message": "Note must be 500 characters or less"})
+        raise HTTPException(status_code=400, detail={"reason": "invalid_request", "message": str(e)})
+
+    source = entry_req.source
+    target = entry_req.target
+    note = entry_req.note or ""
+    source_lower = source.lower()
+
+    user_ref = db.collection("users").document(uid)
+    entries_ref = db.collection("users").document(uid).collection("dictionary")
+
+    # Ensure dictionaryCount is accurate (backward compatibility)
+    current_count, _ = ensure_dictionary_metadata(db, uid)
+
+    # Get plan limit
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    plan = normalize_plan(user_data.get("plan"))
+    limit = get_dictionary_limit(plan)
+
+    if current_count >= limit:
+        raise HTTPException(status_code=400, detail={
+            "reason": "limit_exceeded",
+            "message": f"Dictionary limit reached ({limit} entries for {plan} plan)",
+            "limit": limit,
+            "current": current_count,
+        })
+
+    # Check for duplicate with fallback for legacy docs
+    if check_duplicate_source(entries_ref, source):
+        raise HTTPException(status_code=400, detail={
+            "reason": "duplicate_source",
+            "message": f"Entry with source '{source}' already exists",
+        })
+
+    # Use transaction to add entry and increment count atomically
+    @firebase_firestore.transactional
+    def add_entry_transaction(transaction):
+        # Re-check count in transaction
+        user_snap_tx = user_ref.get(transaction=transaction)
+        user_data_tx = user_snap_tx.to_dict() if user_snap_tx.exists else {}
+        count_tx = get_dictionary_count_from_user(user_data_tx)
+
+        if count_tx >= limit:
+            raise HTTPException(status_code=400, detail={
+                "reason": "limit_exceeded",
+                "message": f"Dictionary limit reached ({limit} entries for {plan} plan)",
+                "limit": limit,
+                "current": count_tx,
+            })
+
+        # Create new entry
+        new_doc_ref = entries_ref.document()
+        entry_data = {
+            "source": source,
+            "target": target,
+            "note": note,
+            "sourceLower": source_lower,
+            "createdAt": firebase_firestore.SERVER_TIMESTAMP,
+            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+        }
+        transaction.set(new_doc_ref, entry_data)
+
+        # Increment dictionaryCount
+        transaction.update(user_ref, {
+            "dictionaryCount": count_tx + 1,
+            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+        })
+
+        return new_doc_ref.id, count_tx + 1
+
+    try:
+        transaction = db.transaction()
+        entry_id, new_count = add_entry_transaction(transaction)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[dictionary] POST transaction failed: {e}")
+        raise HTTPException(status_code=500, detail={"reason": "transaction_failed", "message": "Failed to add entry"})
+
+    logger.info(f"[dictionary] POST | {json.dumps({'uid': uid, 'entryId': entry_id, 'source': source})}")
+    return JSONResponse({
+        "id": entry_id,
+        "source": source,
+        "target": target,
+        "note": note,
+        "count": new_count,
+        "limit": limit,
+    })
+
+
+@app.delete("/api/v1/dictionary/{entry_id}")
+async def delete_dictionary_entry(request: Request, entry_id: str) -> JSONResponse:
+    """Delete a single dictionary entry with transaction for count update"""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    if not entry_id or len(entry_id) > 100:
+        raise HTTPException(status_code=400, detail={"reason": "invalid_entry_id", "message": "Invalid entry ID"})
+
+    # Ensure dictionaryCount is accurate before delete (backward compatibility)
+    ensure_dictionary_metadata(db, uid)
+
+    user_ref = db.collection("users").document(uid)
+    entry_ref = db.collection("users").document(uid).collection("dictionary").document(entry_id)
+
+    # Verify entry exists
+    entry_snap = entry_ref.get()
+    if not entry_snap.exists:
+        raise HTTPException(status_code=404, detail={"reason": "not_found", "message": "Entry not found"})
+
+    # Use transaction to delete entry and decrement count atomically
+    @firebase_firestore.transactional
+    def delete_entry_transaction(transaction):
+        # Get current count
+        user_snap_tx = user_ref.get(transaction=transaction)
+        user_data_tx = user_snap_tx.to_dict() if user_snap_tx.exists else {}
+        count_tx = get_dictionary_count_from_user(user_data_tx)
+
+        # Delete entry
+        transaction.delete(entry_ref)
+
+        # Decrement count (minimum 0)
+        new_count = max(0, count_tx - 1)
+        transaction.update(user_ref, {
+            "dictionaryCount": new_count,
+            "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+        })
+
+        return new_count
+
+    try:
+        transaction = db.transaction()
+        new_count = delete_entry_transaction(transaction)
+    except Exception as e:
+        logger.error(f"[dictionary] DELETE transaction failed: {e}")
+        raise HTTPException(status_code=500, detail={"reason": "transaction_failed", "message": "Failed to delete entry"})
+
+    logger.info(f"[dictionary] DELETE | {json.dumps({'uid': uid, 'entryId': entry_id})}")
+    return JSONResponse({
+        "deleted": True,
+        "id": entry_id,
+        "count": new_count,
+    })
+
+
+@app.post("/api/v1/dictionary/upload")
+async def upload_dictionary_csv(request: Request, file: UploadFile = File(...)) -> JSONResponse:
+    """Upload dictionary entries via CSV file with optimized duplicate detection"""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    # Validate file
+    if not file.filename:
+        raise HTTPException(status_code=400, detail={"reason": "no_file", "message": "No file provided"})
+
+    if not file.filename.lower().endswith('.csv'):
+        raise HTTPException(status_code=400, detail={"reason": "invalid_file_type", "message": "Only CSV files are allowed"})
+
+    # Read file content
+    content = await file.read()
+
+    # Try to decode as UTF-8 (with BOM support)
+    try:
+        text = content.decode('utf-8-sig')  # Handles BOM
+    except UnicodeDecodeError:
+        try:
+            text = content.decode('utf-8')
+        except UnicodeDecodeError:
+            raise HTTPException(status_code=400, detail={"reason": "invalid_encoding", "message": "File must be UTF-8 encoded"})
+
+    # Parse CSV
+    lines = text.strip().split('\n')
+    if not lines:
+        raise HTTPException(status_code=400, detail={"reason": "empty_file", "message": "CSV file is empty"})
+
+    # Auto-detect header
+    first_line = lines[0].lower().strip()
+    has_header = 'source' in first_line and 'target' in first_line
+    start_idx = 1 if has_header else 0
+
+    # Parse entries
+    reader = csv.reader(io.StringIO('\n'.join(lines[start_idx:])))
+    new_entries = []
+    errors = []
+
+    for row_num, row in enumerate(reader, start=start_idx + 1):
+        if not row or not any(cell.strip() for cell in row):
+            continue  # Skip empty rows
+
+        if len(row) < 2:
+            errors.append(f"Row {row_num}: insufficient columns (need source,target)")
+            continue
+
+        source = row[0].strip()
+        target = row[1].strip()
+        note = row[2].strip() if len(row) > 2 else ""
+
+        if not source:
+            errors.append(f"Row {row_num}: source is empty")
+            continue
+        if not target:
+            errors.append(f"Row {row_num}: target is empty")
+            continue
+        if len(source) > 200:
+            errors.append(f"Row {row_num}: source too long (max 200)")
+            continue
+        if len(target) > 500:
+            errors.append(f"Row {row_num}: target too long (max 500)")
+            continue
+
+        new_entries.append({
+            "source": source,
+            "target": target,
+            "note": note[:500],
+            "sourceLower": source.lower(),
+        })
+
+    if not new_entries:
+        raise HTTPException(status_code=400, detail={
+            "reason": "no_valid_entries",
+            "message": "No valid entries found in CSV",
+            "errors": errors[:10],
+        })
+
+    # Ensure dictionaryCount is accurate (backward compatibility repair)
+    current_count, _ = ensure_dictionary_metadata(db, uid)
+
+    # Check plan limit
+    user_ref = db.collection("users").document(uid)
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    plan = normalize_plan(user_data.get("plan"))
+    limit = get_dictionary_limit(plan)
+    available_slots = limit - current_count
+
+    # Check for duplicates using chunked "in" queries with fallback for legacy docs
+    entries_ref = db.collection("users").document(uid).collection("dictionary")
+    upload_sources = [e["source"] for e in new_entries]
+    existing_source_lowers = query_existing_sources_with_fallback(entries_ref, upload_sources)
+
+    # Filter out duplicates (existing in DB or within upload)
+    # Note: duplicate_sources collects BOTH DB-existing AND CSV-internal duplicates
+    #       for unified reporting in response.duplicatesSkipped
+    seen_sources = set()
+    unique_entries = []
+    duplicate_sources = []
+
+    for entry in new_entries:
+        source_lower = entry["sourceLower"]
+        if source_lower in existing_source_lowers:
+            duplicate_sources.append(entry["source"])
+        elif source_lower in seen_sources:
+            duplicate_sources.append(entry["source"])
+        else:
+            seen_sources.add(source_lower)
+            unique_entries.append(entry)
+
+    # Track for response
+    available_slots_at_start = available_slots
+    requested_unique = len(unique_entries)
+    truncated_by_limit = 0
+
+    # Handle case: all duplicates after filtering (check BEFORE slots check)
+    # This ensures 400 all_duplicates even when available_slots <= 0
+    if not unique_entries:
+        raise HTTPException(status_code=400, detail={
+            "reason": "all_duplicates",
+            "message": "All entries already exist in dictionary",
+            "duplicates": duplicate_sources[:10],
+        })
+
+    # Handle case: no available slots (after confirming we have unique entries)
+    if available_slots <= 0:
+        logger.info(f"[dictionary] UPLOAD no slots | {json.dumps({'uid': uid, 'availableSlots': available_slots, 'requestedUnique': requested_unique, 'duplicatesSkipped': len(duplicate_sources)})}")
+        response = {
+            "success": True,
+            "added": 0,
+            "count": current_count,
+            "limit": limit,
+            "partialSuccess": True,
+            "availableSlotsAtStart": available_slots_at_start,
+            "requestedUnique": requested_unique,
+            "warning": f"No available slots. Dictionary is at limit ({limit} entries).",
+        }
+        if duplicate_sources:
+            response["duplicatesSkipped"] = len(duplicate_sources)
+            response["duplicateExamples"] = duplicate_sources[:5]
+        if errors:
+            response["parseErrors"] = errors[:5]
+        return JSONResponse(response)
+
+    # Trim unique_entries to available_slots if needed (partial success)
+    if requested_unique > available_slots:
+        truncated_by_limit = requested_unique - available_slots
+        unique_entries = unique_entries[:available_slots]
+
+    # Chunked upload: split into UPLOAD_CHUNK_SIZE (200) entries per transaction
+    # This avoids Firestore request size limits and allows partial success
+    chunks = [unique_entries[i:i + UPLOAD_CHUNK_SIZE] for i in range(0, len(unique_entries), UPLOAD_CHUNK_SIZE)]
+
+    total_added = 0
+    failed_chunks = []
+    final_count = current_count
+
+    for chunk_idx, chunk in enumerate(chunks):
+        try:
+            added_in_chunk, final_count = upload_dictionary_chunk_txn(
+                db, user_ref, entries_ref, limit, chunk
+            )
+            total_added += added_in_chunk
+            # If we hit the limit, stop processing more chunks
+            if final_count >= limit:
+                logger.info(f"[dictionary] UPLOAD hit limit at chunk {chunk_idx + 1}/{len(chunks)}")
+                break
+        except LimitReached:
+            logger.info(f"[dictionary] UPLOAD limit reached at chunk {chunk_idx + 1}/{len(chunks)}")
+            break
+        except Exception as e:
+            failed_chunks.append({"chunk": chunk_idx + 1, "error": str(e)})
+            logger.warning(f"[dictionary] UPLOAD chunk {chunk_idx + 1} failed: {e}")
+            # Continue with next chunk (partial success is OK)
+
+    # If nothing was added and we had failures, report error (500 regardless of truncation)
+    if total_added == 0 and failed_chunks:
+        logger.error(f"[dictionary] UPLOAD all chunks failed | {json.dumps({'uid': uid, 'failures': failed_chunks})}")
+        raise HTTPException(status_code=500, detail={
+            "reason": "transaction_failed",
+            "message": "Failed to upload entries",
+            "failedChunks": len(failed_chunks),
+        })
+
+    # Determine if this is a partial success (compare against requested_unique, not trimmed unique_entries)
+    is_partial = (truncated_by_limit > 0) or (len(failed_chunks) > 0) or (total_added < requested_unique)
+
+    logger.info(f"[dictionary] UPLOAD | {json.dumps({'uid': uid, 'added': total_added, 'duplicatesSkipped': len(duplicate_sources), 'finalCount': final_count, 'chunks': len(chunks), 'failedChunks': len(failed_chunks), 'truncatedByLimit': truncated_by_limit, 'requestedUnique': requested_unique})}")
+
+    # Build response
+    response = {
+        "success": True,
+        "added": total_added,
+        "count": final_count,
+        "limit": limit,
+    }
+
+    if duplicate_sources:
+        response["duplicatesSkipped"] = len(duplicate_sources)
+        response["duplicateExamples"] = duplicate_sources[:5]
+
+    if errors:
+        response["parseErrors"] = errors[:5]
+
+    if is_partial:
+        response["partialSuccess"] = True
+
+    if truncated_by_limit > 0:
+        response["truncatedByLimit"] = truncated_by_limit
+        response["requestedUnique"] = requested_unique
+        response["availableSlotsAtStart"] = available_slots_at_start
+
+    if failed_chunks:
+        response["failedChunks"] = len(failed_chunks)
+
+    # Build warning message
+    warnings = []
+    if truncated_by_limit > 0:
+        warnings.append(f"Truncated {truncated_by_limit} entries due to plan limit ({limit})")
+    if failed_chunks:
+        warnings.append(f"{len(failed_chunks)} chunk(s) failed")
+    if total_added < requested_unique and not truncated_by_limit and not failed_chunks:
+        warnings.append(f"Only {total_added} of {requested_unique} entries were added")
+
+    if warnings:
+        response["warning"] = "; ".join(warnings)
+
+    return JSONResponse(response)
 
 
 # Language code to display name mapping for translation prompts
@@ -2356,15 +3176,21 @@ async def convert_audio(request: Request, file: UploadFile = File(...)) -> JSONR
 # NOTE: Cloud Run reserves paths ending with 'z' (e.g., /healthz).
 # Using /health instead to avoid 404 from Cloud Run infrastructure.
 @app.get("/health")
-async def healthcheck() -> JSONResponse:
-    return JSONResponse(
-        {
-            "ok": True,
-            "service": SERVICE_NAME,
-            "version": APP_VERSION,
-            "time": datetime.now(timezone.utc).isoformat(),
+async def healthcheck(request: Request, debug: str | None = Query(None)) -> JSONResponse:
+    response = {
+        "ok": True,
+        "service": SERVICE_NAME,
+        "version": APP_VERSION,
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
+    # debug=1 のときのみ設定状況を返す（機密値は返さない）
+    if debug == "1":
+        response["config"] = {
+            "openaiConfigured": bool(os.getenv("OPENAI_API_KEY")),
+            "stripeConfigured": bool(os.getenv("STRIPE_SECRET_KEY")),
+            "firebaseConfigured": bool(os.getenv("FIREBASE_PROJECT_ID")),
         }
-    )
+    return JSONResponse(response)
 
 
 @app.exception_handler(httpx.HTTPStatusError)

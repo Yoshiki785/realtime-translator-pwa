@@ -90,6 +90,24 @@ server = subprocess.Popen(['uvicorn', 'app:app', '--host', '0.0.0.0', '--port', 
 ```
 表示された URL（例: https://xxxx.ngrok.io）にスマホからアクセスして PWA をインストールできます。
 
+## テスト実行
+
+辞書CSVアップロード機能の回帰テストを実行できます。
+
+```bash
+# テスト依存のインストール
+pip install pytest
+
+# テスト実行（Firestoreエミュレータ不要・MockFirestoreClientを使用）
+DEBUG_AUTH_BYPASS=1 ENV=development pytest tests/ -v
+```
+
+テストケース:
+- **Case 1**: Freeプラン(limit=10)、CSV 20行 → 10件追加、truncated警告
+- **Case 2**: スロット枯渇時 → 0件追加、"No available slots"警告
+- **Case 3**: 全重複 → HTTP 400、reason="all_duplicates"
+- **Case 4**: トランザクション全失敗 → HTTP 500、reason="transaction_failed"
+
 ## よくあるエラーと対処
 - **token取得に失敗**: OPENAI_API_KEY が設定されているか確認。サーバログに OpenAI API のレスポンスが出ます。
 - **client secret missing**: /token のレスポンスに client_secret が含まれていない場合に表示されます。OPENAI_API_KEY が無効/期限切れでないか、組織のポリシーで Realtime が許可されているか確認してください。
