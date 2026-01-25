@@ -23,6 +23,8 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from firebase_admin import auth as firebase_auth
 from firebase_admin import firestore as firebase_firestore
+from google.auth.credentials import AnonymousCredentials
+from google.cloud import firestore as gcloud_firestore
 from google.cloud import storage as gcs_storage
 
 # ログ設定（構造化ログ）
@@ -454,8 +456,18 @@ def get_firestore_client():
 
     # 【セキュリティガード】本番環境ではMockFirestoreを強制無効化
     use_mock = False
+    use_emulator = False
+    emulator_host = None
+
     if not IS_PRODUCTION:
-        use_mock = os.getenv("DEBUG_AUTH_BYPASS") == "1"
+        # FIRESTORE_EMULATOR_HOST が設定されている場合は実Firestoreクライアントを使用
+        # （エミュレータに接続するため、MockFirestoreClientは使わない）
+        emulator_host = os.getenv("FIRESTORE_EMULATOR_HOST")
+        if emulator_host:
+            use_emulator = True
+            use_mock = False
+        else:
+            use_mock = os.getenv("DEBUG_AUTH_BYPASS") == "1"
 
     if use_mock:
         if _firestore_client is None:
@@ -464,6 +476,16 @@ def get_firestore_client():
         return _firestore_client
 
     if _firestore_client is not None:
+        return _firestore_client
+
+    # エミュレータ利用時: AnonymousCredentials で ADC 探索を回避
+    if use_emulator:
+        project = os.getenv("GCLOUD_PROJECT") or os.getenv("GOOGLE_CLOUD_PROJECT") or "demo-test"
+        logger.info(f"Using Firestore Emulator at {emulator_host} with project={project}")
+        _firestore_client = gcloud_firestore.Client(
+            project=project,
+            credentials=AnonymousCredentials()
+        )
         return _firestore_client
 
     # 本番環境ではGOOGLE_APPLICATION_CREDENTIALS_JSONから認証情報を読み込む
