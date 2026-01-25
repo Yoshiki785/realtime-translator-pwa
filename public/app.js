@@ -647,10 +647,9 @@ const cacheElements = () => {
     // Company Section (in settings)
     companySection: document.getElementById('companySection'),
     editCompanyBtn: document.getElementById('editCompanyBtn'),
-    // Company View (separate page via hash route)
-    companyView: document.getElementById('companyView'),
-    companyBackBtn: document.getElementById('companyBackBtn'),
-    appShell: document.querySelector('.app-shell'),
+    // Company Edit Modal
+    companyEditModal: document.getElementById('companyEditModal'),
+    companyEditClose: document.getElementById('companyEditClose'),
     companyName: document.getElementById('companyName'),
     companyDepartment: document.getElementById('companyDepartment'),
     companyPosition: document.getElementById('companyPosition'),
@@ -661,6 +660,11 @@ const cacheElements = () => {
     companyTaxIdValue: document.getElementById('companyTaxIdValue'),
     saveCompanyBtn: document.getElementById('saveCompanyBtn'),
     companyStatus: document.getElementById('companyStatus'),
+    // Dictionary View (separate page via hash route)
+    dictionaryView: document.getElementById('dictionaryView'),
+    dictionaryBackBtn: document.getElementById('dictionaryBackBtn'),
+    openDictionaryBtn: document.getElementById('openDictionaryBtn'),
+    appShell: document.querySelector('.app-shell'),
     // Dictionary UI
     dictionaryCountDisplay: document.getElementById('dictionaryCountDisplay'),
     downloadDictionaryTemplate: document.getElementById('downloadDictionaryTemplate'),
@@ -1626,34 +1630,18 @@ const saveCompanyProfile = async () => {
   }
 };
 
-// ========== Company View (Hash Route #/company) ==========
-const showCompanyView = () => {
-  if (els.companyView && els.appShell) {
-    els.appShell.style.display = 'none';
-    els.companyView.style.display = 'block';
+// ========== Company Edit Modal ==========
+const openCompanyEditModal = () => {
+  if (els.companyEditModal) {
+    els.companyEditModal.showModal();
     loadCompanyProfile();
   }
 };
 
-const hideCompanyView = () => {
-  if (els.companyView && els.appShell) {
-    els.companyView.style.display = 'none';
-    els.appShell.style.display = 'block';
+const closeCompanyEditModal = () => {
+  if (els.companyEditModal) {
+    els.companyEditModal.close();
   }
-};
-
-// Navigate to company view via hash
-const navigateToCompany = () => {
-  // Close settings modal first if open
-  if (els.settingsModal?.open) {
-    els.settingsModal.close();
-  }
-  window.location.hash = '#/company';
-};
-
-// Navigate back from company view
-const navigateBack = () => {
-  window.history.back();
 };
 
 // ========== Dictionary UI ==========
@@ -1922,17 +1910,58 @@ const pollForPlanUpdate = async (maxAttempts = 12, intervalMs = 5000) => {
   return false;
 };
 
-// Handle hash routes (#/billing/*, #/tickets/*, #/company)
+// ========== Dictionary View (Hash Route #/dictionary) ==========
+const showDictionaryView = () => {
+  if (els.dictionaryView && els.appShell) {
+    els.appShell.style.display = 'none';
+    els.dictionaryView.style.display = 'block';
+    // Load dictionary list when showing view (with fallback to prevent crash)
+    if (typeof loadDictionaryPage === 'function') {
+      loadDictionaryPage(true);
+    } else if (typeof loadDictionaryList === 'function') {
+      loadDictionaryList();
+    } else {
+      console.warn('[showDictionaryView] No dictionary load function available');
+    }
+  }
+};
+
+const hideDictionaryView = () => {
+  if (els.dictionaryView && els.appShell) {
+    els.dictionaryView.style.display = 'none';
+    els.appShell.style.display = 'block';
+  }
+};
+
+const navigateToDictionary = () => {
+  // Close settings modal first if open
+  if (els.settingsModal?.open) {
+    els.settingsModal.close();
+  }
+  window.location.hash = '#/dictionary';
+};
+
+const navigateBackFromDictionary = () => {
+  // Try history.back(), fallback to clearing hash if no history
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.hash = '';
+    hideDictionaryView();
+  }
+};
+
+// Handle hash routes (#/dictionary, #/billing/*, #/tickets/*)
 const handleHashRoute = async () => {
   const hash = window.location.hash;
 
-  // Company view route
-  if (hash === '#/company') {
-    showCompanyView();
+  // Dictionary view route (priority)
+  if (hash === '#/dictionary') {
+    showDictionaryView();
     return;
   } else {
-    // Any other route: hide company view
-    hideCompanyView();
+    // Any other route: hide dictionary view
+    hideDictionaryView();
   }
 
   // Billing routes
@@ -1967,7 +1996,7 @@ const handleHashRoute = async () => {
   }
 };
 
-// Keep backward compatibility alias
+// Backward compatibility alias
 const handleBillingRoute = handleHashRoute;
 
 const showBillingBanner = (status) => {
@@ -3280,8 +3309,8 @@ document.addEventListener('DOMContentLoaded', () => {
       addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
       if (user) {
         refreshQuotaStatus();
-        // Handle hash route after auth is ready (billing, company, etc.)
-        handleHashRoute();
+        // Handle billing route after auth is ready
+        handleBillingRoute();
         // Load company profile for logged-in users
         loadCompanyProfile();
         // Refresh billing status
@@ -3336,14 +3365,29 @@ document.addEventListener('DOMContentLoaded', () => {
     els.saveCompanyBtn.addEventListener('click', saveCompanyProfile);
   }
 
-  // Edit company button -> navigate to #/company
+  // Edit company button -> open modal
   if (els.editCompanyBtn) {
-    els.editCompanyBtn.addEventListener('click', navigateToCompany);
+    els.editCompanyBtn.addEventListener('click', openCompanyEditModal);
   }
 
-  // Company view back button
-  if (els.companyBackBtn) {
-    els.companyBackBtn.addEventListener('click', navigateBack);
+  // Company edit modal close
+  if (els.companyEditClose) {
+    els.companyEditClose.addEventListener('click', closeCompanyEditModal);
+  }
+  if (els.companyEditModal) {
+    els.companyEditModal.addEventListener('click', (e) => {
+      if (e.target === els.companyEditModal) {
+        closeCompanyEditModal();
+      }
+    });
+  }
+
+  // Dictionary View navigation
+  if (els.openDictionaryBtn) {
+    els.openDictionaryBtn.addEventListener('click', navigateToDictionary);
+  }
+  if (els.dictionaryBackBtn) {
+    els.dictionaryBackBtn.addEventListener('click', navigateBackFromDictionary);
   }
 
   // Hash change listener for SPA routing

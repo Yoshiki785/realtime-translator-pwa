@@ -128,51 +128,9 @@
       <label data-i18n="glossaryLabel">辞書（用語集）
         <textarea id="glossaryTextInput" class="settings-textarea" rows="4" placeholder="1行1エントリ: source=target 例）半導体=semiconductor"></textarea>
       </label>
-      <div class="dictionary-section">
-        <div class="csv-format-hint">
-          <small>
-            CSVフォーマット: <code>source,target,note</code> (UTF-8、カンマ区切り)<br>
-            例: <code>半導体,semiconductor,電子部品</code>
-          </small>
-        </div>
-        <div class="dictionary-actions-row">
-          <button type="button" id="downloadDictionaryTemplate" class="secondary small">CSVエクスポート/テンプレDL</button>
-          <span class="dictionary-count" id="dictionaryCountDisplay"></span>
-        </div>
-        <div class="dictionary-upload-section">
-          <label>CSVで一括登録 (source,target,note)
-            <input type="file" id="dictionaryCsvInput" accept=".csv,text/csv" class="settings-file-input" />
-          </label>
-          <button type="button" id="uploadDictionaryCsv" class="secondary small">アップロード</button>
-          <div id="dictionaryUploadResult" class="upload-result"></div>
-        </div>
-        <div class="dictionary-manual-add">
-          <h4>手動登録</h4>
-          <div class="dictionary-add-form">
-            <input type="text" id="dictAddSource" placeholder="source（元語）" maxlength="200" />
-            <input type="text" id="dictAddTarget" placeholder="target（訳語）" maxlength="500" />
-            <input type="text" id="dictAddNote" placeholder="note（メモ）" maxlength="500" />
-            <button type="button" id="dictAddBtn" class="cta small">追加</button>
-          </div>
-          <div id="dictAddResult" class="upload-result"></div>
-        </div>
-        <div class="dictionary-list">
-          <h4>登録済み一覧 <span id="dictListCount"></span></h4>
-          <div id="dictListLoading" class="dict-loading">読み込み中...</div>
-          <div id="dictListEmpty" class="dict-empty" style="display:none;">登録済みの単語はありません</div>
-          <table id="dictTable" class="dict-table" style="display:none;">
-            <thead>
-              <tr>
-                <th>source</th>
-                <th>target</th>
-                <th>note</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody id="dictTableBody"></tbody>
-          </table>
-          <button type="button" id="dictLoadMore" class="secondary small" style="display:none;">もっと見る</button>
-        </div>
+      <div class="dictionary-summary">
+        <span class="dictionary-count" id="dictionaryCountDisplay">辞書: 0/10</span>
+        <button type="button" id="openDictionaryBtn" class="cta small secondary">辞書を開く</button>
       </div>
       <label data-i18n="summaryPromptLabel">要約カスタムプロンプト
         <textarea id="summaryPromptInput" class="settings-textarea" rows="3" placeholder="要約の指示を自由に書けます（例：決裁用に3行で、リスクと次アクション必須）"></textarea>
@@ -262,12 +220,12 @@
     </div>
   </dialog>
 
-  <!-- Company View (separate page via hash route #/company) -->
-  <section id="companyView" class="company-view" style="display:none;">
-    <div class="company-view-container">
-      <header class="company-view-header">
-        <button id="companyBackBtn" class="secondary small" data-i18n="back">← 戻る</button>
+  <!-- Company Edit Page -->
+  <dialog id="companyEditModal">
+    <div class="modal company-edit-modal">
+      <header>
         <h2 data-i18n="companyInfo">会社情報</h2>
+        <button id="companyEditClose" class="modal-close-btn" aria-label="Close">✕</button>
       </header>
       <p class="company-note" data-i18n="companyNote">※ Stripeの請求先情報・解約は「サブスク管理」から行えます</p>
       <div class="company-form">
@@ -301,6 +259,61 @@
           <button id="saveCompanyBtn" class="cta small" data-i18n="saveCompany">保存</button>
           <span id="companyStatus" class="company-status"></span>
         </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Dictionary View (separate page via hash route #/dictionary) -->
+  <section id="dictionaryView" class="dictionary-view" style="display:none;">
+    <div class="dictionary-view-container">
+      <header class="dictionary-view-header">
+        <button id="dictionaryBackBtn" class="secondary small">← 戻る</button>
+        <h2>辞書（用語集）</h2>
+      </header>
+      <div class="csv-format-hint">
+        <small>
+          CSVフォーマット: <code>source,target,note</code> (UTF-8、カンマ区切り、noteは任意)<br>
+          例: <code>半導体,semiconductor,電子部品</code>
+        </small>
+      </div>
+      <div class="dictionary-actions-row">
+        <button type="button" id="downloadDictionaryTemplate" class="secondary small">CSVエクスポート/テンプレDL</button>
+      </div>
+      <div class="dictionary-upload-section">
+        <label>CSVで一括登録
+          <input type="file" id="dictionaryCsvInput" accept=".csv,text/csv" class="settings-file-input" />
+        </label>
+        <button type="button" id="uploadDictionaryCsv" class="secondary small">アップロード</button>
+        <div id="dictionaryUploadResult" class="upload-result"></div>
+      </div>
+      <div class="dictionary-manual-add">
+        <h4>手動登録</h4>
+        <div class="dictionary-add-form">
+          <input type="text" id="dictAddSource" placeholder="source（元語）" maxlength="200" />
+          <input type="text" id="dictAddTarget" placeholder="target（訳語）" maxlength="500" />
+          <input type="text" id="dictAddNote" placeholder="note（メモ）" maxlength="500" />
+          <button type="button" id="dictAddBtn" class="cta small">追加</button>
+        </div>
+        <div id="dictAddResult" class="upload-result"></div>
+      </div>
+      <div class="dictionary-list">
+        <h4>登録済み一覧 <span id="dictListCount"></span></h4>
+        <div id="dictListLoading" class="dict-loading">読み込み中...</div>
+        <div id="dictListEmpty" class="dict-empty" style="display:none;">登録済みの単語はありません</div>
+        <div class="dict-table-wrapper">
+          <table id="dictTable" class="dict-table" style="display:none;">
+            <thead>
+              <tr>
+                <th>source</th>
+                <th>target</th>
+                <th>note</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="dictTableBody"></tbody>
+          </table>
+        </div>
+        <button type="button" id="dictLoadMore" class="secondary small" style="display:none;">もっと見る</button>
       </div>
     </div>
   </section>
