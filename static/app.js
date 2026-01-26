@@ -747,6 +747,8 @@ const state = {
   currentJob: null,
   jobStartedAt: null,
   jobActive: false, // ジョブが有効（予約済み〜完了前）かどうか
+  startInFlight: false, // Start処理がin-flight中かどうか（二重発火防止）
+  uiBound: false, // UIイベントハンドラが登録済みか（二重登録防止）
   // スロットル/クールダウン管理
   lastJobCreateAt: 0, // 最後にjobs/createを呼んだ時刻（Date.now()）
   cooldownUntil: 0, // クールダウン終了時刻（Date.now()）
@@ -3592,49 +3594,57 @@ const startConnectionAttempt = async () => {
 
 const start = async () => {
   addDiagLog('STEP1: start() entered');
-  addDiagLog('Start requested');
 
-  // Hide previous result card when starting new session
-  hideResultCard();
-
-  if (!firebaseState.initialized) {
-    setError('Firebase初期化に失敗しました。設定を確認してください。');
-    addDiagLog('Start blocked: Firebase not ready');
+  // ========== 二重発火防止: in-flight ガード ==========
+  if (state.startInFlight) {
+    addDiagLog('Start blocked: already in-flight (double-fire prevention)');
     return;
   }
-  if (!currentUser) {
-    setError('ログインが必要です');
-    addDiagLog('Start blocked: user not authenticated');
-    return;
-  }
+  state.startInFlight = true;
+  addDiagLog('Start requested | startInFlight=true');
 
-  // クールダウン中かチェック
-  if (getCooldownRemainingSeconds() > 0) {
-    addDiagLog('Start blocked: cooldown active');
-    return; // クールダウンタイマーがUIを更新中なのでここでは何もしない
-  }
+  try {
+    // Hide previous result card when starting new session
+    hideResultCard();
 
-  // クライアント側スロットルチェック（12秒に1回）
-  const throttle = checkClientThrottle();
-  if (!throttle.allowed) {
-    const waitSec = Math.ceil(throttle.waitMs / 1000);
-    addDiagLog(`Start throttled (client) | waitMs=${throttle.waitMs}`);
-    startCooldown(throttle.waitMs, 'client_throttle');
-    return;
-  }
+    if (!firebaseState.initialized) {
+      setError('Firebase初期化に失敗しました。設定を確認してください。');
+      addDiagLog('Start blocked: Firebase not ready');
+      return;
+    }
+    if (!currentUser) {
+      setError('ログインが必要です');
+      addDiagLog('Start blocked: user not authenticated');
+      return;
+    }
 
-  if (!state.quota.loaded) {
-    await refreshQuotaStatus();
-  }
-  if (!hasQuotaForStart()) {
-    els.start.disabled = false;
-    els.stop.disabled = true;
-    return;
-  }
+    // クールダウン中かチェック
+    if (getCooldownRemainingSeconds() > 0) {
+      addDiagLog('Start blocked: cooldown active');
+      return; // クールダウンタイマーがUIを更新中なのでここでは何もしない
+    }
 
-  // Update UI state
-  els.start.disabled = true;
-  els.stop.disabled = false;
+    // クライアント側スロットルチェック（12秒に1回）
+    const throttle = checkClientThrottle();
+    if (!throttle.allowed) {
+      const waitSec = Math.ceil(throttle.waitMs / 1000);
+      addDiagLog(`Start throttled (client) | waitMs=${throttle.waitMs}`);
+      startCooldown(throttle.waitMs, 'client_throttle');
+      return;
+    }
+
+    if (!state.quota.loaded) {
+      await refreshQuotaStatus();
+    }
+    if (!hasQuotaForStart()) {
+      els.start.disabled = false;
+      els.stop.disabled = true;
+      return;
+    }
+
+    // Update UI state
+    els.start.disabled = true;
+    els.stop.disabled = false;
   clearGapTimer();
   resetDownloads();
   clearLogs();
@@ -3661,7 +3671,7 @@ const start = async () => {
       }
 
       await startConnectionAttempt();
-      return; // Success - exit the retry loop
+      return; // Success - exit the retry loop (finally will reset startInFlight)
 
     } catch (err) {
       logErrorDetails('start', err);
@@ -3727,6 +3737,11 @@ const start = async () => {
   if (state.jobActive) {
     addDiagLog(`COMPLETE because start failed: ${finalClassified.category}`);
     await completeCurrentJob(0);
+  }
+  } finally {
+    // ========== in-flight ガード解除 ==========
+    state.startInFlight = false;
+    addDiagLog('start() exiting | startInFlight=false');
   }
 };
 
@@ -3896,8 +3911,15 @@ document.addEventListener('DOMContentLoaded', () => {
     applyI18n();
 
     // ---- CRITICAL EVENT HANDLERS (login, main buttons) ----
-    if (els.start) els.start.addEventListener('click', start);
-    if (els.stop) els.stop.addEventListener('click', stop);
+    // 二重登録防止: state.uiBound でガード
+    if (!state.uiBound) {
+      if (els.start) els.start.addEventListener('click', start);
+      if (els.stop) els.stop.addEventListener('click', stop);
+      state.uiBound = true;
+      addDiagLog('UI event handlers bound (start/stop)');
+    } else {
+      addDiagLog('UI event handlers already bound, skipping');
+    }
 
     // Firebase initialization and auth
     initFirebase();
