@@ -19,7 +19,8 @@ const ASSETS = [
 self.addEventListener('install', (event) => {
   console.log('[SW] Installing v6');
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
+    caches.open(CACHE).then((cache) => cache.addAll(ASSETS))
+    // skipWaiting() は message イベント経由で呼ばれる（ユーザー操作による更新）
   );
 });
 
@@ -58,5 +59,13 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       caches.match(request).then((cached) => cached || fetch(request).catch(() => cached))
     );
+  }
+});
+
+// Message イベント: UI からの SKIP_WAITING を処理
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW] SKIP_WAITING received, activating new SW');
+    self.skipWaiting();
   }
 });

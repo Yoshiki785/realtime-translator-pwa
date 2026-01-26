@@ -101,3 +101,29 @@ def setup_existing_entries(mock_db):
                 "sourceLower": entry["source"].lower(),
             })
     return _setup
+
+
+@pytest.fixture
+def seed_dictionary_entries(mock_db):
+    """Factory fixture to seed dictionary entries with timestamps."""
+    from datetime import datetime, timezone
+
+    def _seed(uid: str, entries: list[dict]):
+        """
+        Args:
+            uid: User ID
+            entries: List of dicts with 'source', 'target', 'note' keys
+        """
+        entries_coll = mock_db.collection("users").document(uid).collection("dictionary")
+        now = datetime.now(timezone.utc)
+        for entry in entries:
+            doc_ref = entries_coll.document()
+            doc_ref.set({
+                "source": entry["source"],
+                "target": entry["target"],
+                "note": entry.get("note", ""),
+                "sourceLower": entry["source"].lower(),
+                "createdAt": now,
+                "updatedAt": now,
+            })
+    return _seed

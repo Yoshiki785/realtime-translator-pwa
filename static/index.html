@@ -57,6 +57,21 @@
       <button id="startBtn" class="cta">Start</button>
       <button id="stopBtn" class="cta secondary" disabled>Stop</button>
       <div class="error" id="error"></div>
+      <!-- Result Card (shown after Stop) -->
+      <div id="resultCard" class="result-card" style="display:none;">
+        <div class="result-card-header">
+          <h3 id="resultCardTitle">セッション結果</h3>
+          <span id="resultCardTimestamp" class="result-card-timestamp"></span>
+        </div>
+        <div class="result-card-files" id="resultCardFiles"></div>
+        <div class="result-card-summary" id="resultCardSummary">
+          <div class="summary-actions">
+            <button id="runSummaryCard" class="secondary small" data-i18n="generateSummary">要約を生成</button>
+            <button id="copySummaryCard" class="secondary small" style="display:none;">コピー</button>
+          </div>
+          <pre id="summaryOutputCard" class="summary-output"></pre>
+        </div>
+      </div>
       <div class="downloads" id="downloads"></div>
       <div class="summary-section" id="summarySection" style="display:none;">
         <div class="summary-actions">
@@ -64,6 +79,9 @@
           <button id="copySummary" class="secondary small" data-i18n="copy" style="display:none;">コピー</button>
         </div>
         <pre id="summaryOutput" class="summary-output"></pre>
+      </div>
+      <div class="footer-nav">
+        <button id="openHistoryBtn" class="secondary small">📋 履歴</button>
       </div>
       <div class="a2hs" id="a2hs">ホーム画面に追加してオフラインでも使えます</div>
     </footer>
@@ -272,6 +290,30 @@
       </div>
     </div>
   </dialog>
+
+  <!-- History View (separate page via hash route #/history) -->
+  <section id="historyView" class="history-view" style="display:none;">
+    <div class="history-view-container">
+      <header class="history-view-header">
+        <button id="historyBackBtn" class="secondary small">← 戻る</button>
+        <h2>履歴</h2>
+      </header>
+      <div id="historyListLoading" class="hist-loading">読み込み中...</div>
+      <div id="historyListEmpty" class="hist-empty" style="display:none;">履歴はありません</div>
+      <div class="history-list" id="historyList" style="display:none;"></div>
+    </div>
+  </section>
+
+  <!-- History Detail View (separate page via hash route #/history/:id) -->
+  <section id="historyDetailView" class="history-detail-view" style="display:none;">
+    <div class="history-detail-container">
+      <header class="history-detail-header">
+        <button id="historyDetailBackBtn" class="secondary small">← 履歴へ</button>
+        <h2 id="historyDetailTitle">セッション詳細</h2>
+      </header>
+      <div id="historyDetailContent" class="history-detail-content"></div>
+    </div>
+  </section>
 
   <!-- Dictionary View (separate page via hash route #/dictionary) -->
   <section id="dictionaryView" class="dictionary-view" style="display:none;">

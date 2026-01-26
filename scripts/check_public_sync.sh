@@ -84,6 +84,19 @@ if [[ -x "$SCRIPT_DIR/smoke_dom_init.sh" ]]; then
   fi
 fi
 
+# Sprint 2 Stop-flow smoke test (only when STRICT_CHECKS=1)
+if [[ "${STRICT_CHECKS:-0}" == "1" ]] && [[ -x "$SCRIPT_DIR/smoke_stopflow.sh" ]]; then
+  echo ""
+  if "$SCRIPT_DIR/smoke_stopflow.sh"; then
+    echo ""
+  else
+    QUALITY_FAILURES=$((QUALITY_FAILURES + 1))
+  fi
+elif [[ -x "$SCRIPT_DIR/smoke_stopflow.sh" ]]; then
+  echo ""
+  echo "Skipping smoke_stopflow.sh (set STRICT_CHECKS=1 to enable)"
+fi
+
 if [[ $QUALITY_FAILURES -gt 0 ]]; then
   echo "=========================================="
   echo "Quality checks: $QUALITY_FAILURES issue(s) found"
