@@ -42,6 +42,7 @@
 - **POST /token**: OpenAI Realtime の client secret を代理発行。`vad_silence` を turn_detection.silence_duration_ms に反映。レスポンス形式は `{ "value": "..." }`（フラットな文字列のみ返却）。
 - **POST /translate**: Responses API で日本語訳のみ返却。
 - **POST /summarize**: Responses API で Markdown 要約を返却。
+- **POST /generate_title**: 先頭500文字のみを入力として短いタイトルを生成（長さ超過の 413 は返さない）。
 - **POST /audio_m4a**: webm を受け取り ffmpeg で m4a へ変換し、`/downloads/...` の URL を返却。
 - **POST /api/v1/jobs/create**: 認証済みユーザーの残量判定を行い、ジョブを作成。
 - **POST /api/v1/jobs/complete**: 確定秒数を月次集計し、ジョブを succeeded に更新。

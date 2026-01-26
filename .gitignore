@@ -30,3 +30,6 @@ runbooks/
 ops/logs/*
 !ops/logs/.gitkeep
 public/build.txt
+
+# Local logs
+ops/logs/

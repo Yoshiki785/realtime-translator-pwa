@@ -3173,6 +3173,60 @@ def build_glossary_instructions_for_summary(glossary_text: str | None) -> str:
 
 SUMMARY_PROMPT_MAX_LENGTH = 2000
 
+# --- Input validation config (matches frontend PROMPT_INJECTION_CONFIG) ---
+INPUT_VALIDATION_CONFIG = {
+    "max_text_length": 100000,
+    "max_glossary_length": 10000,
+    "max_prompt_length": 2000,
+    "dangerous_patterns": [
+        re.compile(r"^system\s*:", re.IGNORECASE | re.MULTILINE),
+        re.compile(r"^developer\s*:", re.IGNORECASE | re.MULTILINE),
+        re.compile(r"ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?)", re.IGNORECASE),
+        re.compile(r"override\s+(system|instructions?|prompts?)", re.IGNORECASE),
+        re.compile(r"you\s+are\s+now\s+(in\s+)?(a\s+)?", re.IGNORECASE),
+        re.compile(r"forget\s+(all|your|previous)\s+", re.IGNORECASE),
+        re.compile(r"new\s+(persona|role|identity|instructions?)", re.IGNORECASE),
+        re.compile(r"act\s+as\s+(if|a|an)\s+", re.IGNORECASE),
+        re.compile(r"pretend\s+(to\s+be|you\s+are)", re.IGNORECASE),
+        re.compile(r"jailbreak", re.IGNORECASE),
+        re.compile(r"DAN\s*mode", re.IGNORECASE),
+        re.compile(r"\[INST\]|\[/INST\]", re.IGNORECASE),
+        re.compile(r"<\|im_start\|>|<\|im_end\|>"),
+        re.compile(r"<<SYS>>|<</SYS>>"),
+    ],
+}
+
+
+def validate_input_for_injection(text: str, field_name: str, max_length: int) -> tuple[bool, str | None]:
+    """
+    Validate input for prompt injection patterns.
+    Returns (is_valid, error_code).
+    """
+    if len(text) > max_length:
+        return False, f"{field_name}_too_long"
+
+    for rule_id, pattern in enumerate(INPUT_VALIDATION_CONFIG["dangerous_patterns"]):
+        if pattern.search(text):
+            # Log security event (metadata only, no full input)
+            logger.warning(
+                "Prompt injection detected: "
+                f"field={field_name}, rule_id={rule_id}, input_length={len(text)}"
+            )
+            return False, "prompt_injection_detected"
+
+    return True, None
+
+
+def is_sanitize_mode() -> bool:
+    value = os.getenv("SANITIZE_MODE", "")
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+def get_validation_status_code(error_code: str) -> int:
+    if error_code.endswith("_too_long"):
+        return 413
+    return 400
+
 
 @app.post("/summarize")
 async def summarize(
@@ -3187,6 +3241,41 @@ async def summarize(
 
     if not text.strip():
         raise HTTPException(status_code=400, detail="text is required")
+
+    # --- Input validation (防御: API直叩き対策) ---
+    sanitize_mode = is_sanitize_mode()
+    warnings: list[str] = []
+
+    # Validate text
+    is_valid, error = validate_input_for_injection(
+        text, "text", INPUT_VALIDATION_CONFIG["max_text_length"]
+    )
+    if not is_valid:
+        raise HTTPException(status_code=get_validation_status_code(error), detail=error)
+
+    # Validate glossary_text
+    if glossary_text:
+        is_valid, error = validate_input_for_injection(
+            glossary_text, "glossary_text", INPUT_VALIDATION_CONFIG["max_glossary_length"]
+        )
+        if not is_valid:
+            if error == "prompt_injection_detected" and sanitize_mode:
+                glossary_text = ""
+                warnings.append("glossary_text_dropped")
+            else:
+                raise HTTPException(status_code=get_validation_status_code(error), detail=error)
+
+    # Validate summary_prompt
+    if summary_prompt:
+        is_valid, error = validate_input_for_injection(
+            summary_prompt, "summary_prompt", INPUT_VALIDATION_CONFIG["max_prompt_length"]
+        )
+        if not is_valid:
+            if error == "prompt_injection_detected" and sanitize_mode:
+                summary_prompt = ""
+                warnings.append("summary_prompt_dropped")
+            else:
+                raise HTTPException(status_code=get_validation_status_code(error), detail=error)
 
     # Normalize output language
     output_lang = normalize_output_lang(output_lang)
@@ -3221,7 +3310,89 @@ async def summarize(
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     result = await post_openai("https://api.openai.com/v1/responses", payload, headers)
     summary = extract_output_text(result)
-    return JSONResponse({"summary": summary})
+    response_payload = {"summary": summary}
+    if warnings:
+        response_payload["warnings"] = warnings
+    return JSONResponse(response_payload)
+
+
+TITLE_MAX_LENGTH = 40
+
+# Control character pattern for title sanitization
+CONTROL_CHAR_PATTERN = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def sanitize_title(title: str) -> str:
+    """Remove control characters and enforce length limit for generated titles."""
+    # Remove control characters
+    title = CONTROL_CHAR_PATTERN.sub("", title)
+    # Strip whitespace
+    title = title.strip()
+    # Enforce max length
+    title = title[:TITLE_MAX_LENGTH]
+    # Remove trailing punctuation
+    title = title.rstrip("。.、,!！?？")
+    return title
+
+
+@app.post("/generate_title")
+async def generate_title(
+    request: Request,
+    text: str = Form(...),
+    output_lang: str = Form("ja"),
+) -> JSONResponse:
+    """Generate a concise title for a session based on text content."""
+    # 認証必須: Firebase ID トークンを検証
+    get_uid_from_request(request)
+
+    if not text.strip():
+        raise HTTPException(status_code=400, detail="text is required")
+
+    # Input validation (防御: API直叩き対策)
+    # Only validate first 500 chars since we truncate anyway
+    input_text = text.strip()[:500]
+    # /generate_title always truncates, so length-based 413 won't trigger by design.
+    is_valid, error = validate_input_for_injection(
+        input_text, "text", INPUT_VALIDATION_CONFIG["max_text_length"]
+    )
+    if not is_valid:
+        raise HTTPException(status_code=get_validation_status_code(error), detail=error)
+
+    # Normalize output language
+    output_lang = normalize_output_lang(output_lang)
+    target_lang_name = LANG_NAMES.get(output_lang, "Japanese")
+
+    # Use a simple prompt to generate a short title
+    system_prompt = (
+        f"You are a title generator. Given text content, create a very short, specific title "
+        f"in {target_lang_name}. Rules: "
+        f"1) Maximum {TITLE_MAX_LENGTH} characters. "
+        f"2) Be specific and descriptive. "
+        f"3) No quotes, no punctuation at end. "
+        f"4) If text is a conversation, capture the main topic. "
+        f"5) Output ONLY the title, nothing else."
+    )
+
+    payload = {
+        "model": summarize_model_default,
+        "input": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": input_text},
+        ],
+    }
+    api_key = get_openai_api_key()
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+
+    try:
+        result = await post_openai("https://api.openai.com/v1/responses", payload, headers)
+        title = extract_output_text(result)
+        title = sanitize_title(title)
+        return JSONResponse({"title": title})
+    except Exception as e:
+        # Log error with metadata only (no full error string to client)
+        logger.warning(f"generate_title failed: input_length={len(input_text)}, error_type={type(e).__name__}")
+        # Return empty title on error (frontend will fallback) - NO error string exposed
+        return JSONResponse({"title": ""})
 
 
 async def run_ffmpeg(input_path: Path, output_path: Path) -> None:

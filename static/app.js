@@ -81,6 +81,10 @@ const STRINGS = {
     companySavedWithStripe: '保存しました（Stripe同期完了）',
     companySavedStripeSkipped: '保存しました（Stripe未同期）',
     companySaveError: '保存に失敗しました',
+    errorPromptInjection: '不正な入力パターンが検出されました。入力を確認してください。',
+    errorNoTextToSummarize: '要約するテキストがありません',
+    errorSummaryFailed: '要約の生成に失敗しました',
+    errorInputTooLong: '入力が長すぎます（上限を超えました）',
   },
   en: {
     login: 'Login',
@@ -160,6 +164,10 @@ const STRINGS = {
     companySavedWithStripe: 'Saved (Stripe synced)',
     companySavedStripeSkipped: 'Saved (Stripe not synced)',
     companySaveError: 'Failed to save',
+    errorPromptInjection: 'Invalid input pattern detected. Please check your input.',
+    errorNoTextToSummarize: 'No text to summarize',
+    errorSummaryFailed: 'Failed to generate summary',
+    errorInputTooLong: 'Input is too long (exceeded limit)',
   },
   'zh-Hans': {
     login: '登录',
@@ -239,6 +247,10 @@ const STRINGS = {
     companySavedWithStripe: '已保存（Stripe已同步）',
     companySavedStripeSkipped: '已保存（Stripe未同步）',
     companySaveError: '保存失败',
+    errorPromptInjection: '检测到无效的输入模式，请检查您的输入。',
+    errorNoTextToSummarize: '没有可摘要的文本',
+    errorInputTooLong: '输入过长（超过上限）',
+    errorSummaryFailed: '摘要生成失败',
   },
 };
 
@@ -685,6 +697,27 @@ const cacheElements = () => {
     swUpdateBanner: document.getElementById('swUpdateBanner'),
     swUpdateBtn: document.getElementById('swUpdateBtn'),
     buildShaDisplay: document.getElementById('buildShaDisplay'),
+    // Result Card (after Stop)
+    resultCard: document.getElementById('resultCard'),
+    resultCardTitle: document.getElementById('resultCardTitle'),
+    resultCardTimestamp: document.getElementById('resultCardTimestamp'),
+    resultCardFiles: document.getElementById('resultCardFiles'),
+    resultCardSummary: document.getElementById('resultCardSummary'),
+    runSummaryCard: document.getElementById('runSummaryCard'),
+    copySummaryCard: document.getElementById('copySummaryCard'),
+    summaryOutputCard: document.getElementById('summaryOutputCard'),
+    // History UI
+    openHistoryBtn: document.getElementById('openHistoryBtn'),
+    historyView: document.getElementById('historyView'),
+    historyBackBtn: document.getElementById('historyBackBtn'),
+    historyList: document.getElementById('historyList'),
+    historyListLoading: document.getElementById('historyListLoading'),
+    historyListEmpty: document.getElementById('historyListEmpty'),
+    // History Detail UI
+    historyDetailView: document.getElementById('historyDetailView'),
+    historyDetailBackBtn: document.getElementById('historyDetailBackBtn'),
+    historyDetailTitle: document.getElementById('historyDetailTitle'),
+    historyDetailContent: document.getElementById('historyDetailContent'),
   };
 };
 
@@ -726,6 +759,10 @@ const state = {
   // Diagnostics: session tracking
   sessionId: null, // Generated per connection attempt
   buildVersion: null, // Fetched from /build.txt
+  // History (Sprint 2): current session data for result card
+  currentSessionResult: null, // { id, timestamp, title, originals, translations, summary, audioUrl, m4aUrl }
+  // Temporary Blob URLs for cleanup (memory management)
+  objectUrls: [],
 };
 
 // ========== Glossary Storage Adapter ==========
@@ -758,6 +795,291 @@ const summaryPromptStorage = {
     localStorage.removeItem(SUMMARY_PROMPT_STORAGE_KEY);
     state.summaryPrompt = '';
   },
+};
+
+// ========== Prompt Injection Protection (Sprint 3) ==========
+const PROMPT_INJECTION_CONFIG = {
+  maxPromptLength: 2000,
+  maxGlossaryLength: 10000,
+  maxTextLength: 100000,
+  // Dangerous patterns that could attempt role/instruction hijacking
+  dangerousPatterns: [
+    // Role injection attempts
+    /^system\s*:/im,
+    /^developer\s*:/im,
+    /^tool\s*:/im,
+    /^assistant\s*:/im,
+    /\[\s*system\s*\]/im,
+    /\[\s*developer\s*\]/im,
+    // Instruction override attempts
+    /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?)/im,
+    /disregard\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?)/im,
+    /forget\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?)/im,
+    /override\s+(system|instructions?|prompts?)/im,
+    /new\s+instructions?\s*:/im,
+    /you\s+are\s+now\s+/im,
+    /act\s+as\s+(if\s+you\s+are\s+)?a?\s*(different|new|another)/im,
+    // Jailbreak patterns
+    /\bDAN\b.*mode/im,
+    /jailbreak/im,
+    /bypass\s+(safety|filter|restriction)/im,
+    // Markdown/format injection for prompt leaking
+    /```\s*(system|prompt|instruction)/im,
+  ],
+};
+
+// Audit log for security events (summary only, no full input)
+const logSecurityEvent = (eventType, details) => {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    eventType,
+    ...details,
+  };
+  // Log to console in debug mode, add to diag log
+  if (isDebugMode()) {
+    console.warn('[Security]', entry);
+  }
+  addDiagLog(`[Security] ${eventType}: ${JSON.stringify(details)}`);
+};
+
+// Validate and sanitize user prompt input
+const validatePromptInput = (input, fieldName, maxLength) => {
+  if (!input || typeof input !== 'string') {
+    return { valid: true, sanitized: '', warnings: [] };
+  }
+
+  const warnings = [];
+  let sanitized = input.trim();
+
+  // Length check
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.slice(0, maxLength);
+    warnings.push({ rule: 'LENGTH_EXCEEDED', field: fieldName, maxLength });
+  }
+
+  // Check for dangerous patterns
+  for (let i = 0; i < PROMPT_INJECTION_CONFIG.dangerousPatterns.length; i++) {
+    const pattern = PROMPT_INJECTION_CONFIG.dangerousPatterns[i];
+    if (pattern.test(sanitized)) {
+      logSecurityEvent('INJECTION_DETECTED', {
+        field: fieldName,
+        ruleIndex: i,
+        inputLength: input.length,
+      });
+      return {
+        valid: false,
+        sanitized: '',
+        warnings: [{ rule: 'INJECTION_PATTERN', field: fieldName, ruleIndex: i }],
+        errorMessage: t('errorPromptInjection') || '不正な入力パターンが検出されました。入力を確認してください。',
+      };
+    }
+  }
+
+  return { valid: true, sanitized, warnings };
+};
+
+// Validate all inputs before sending to /summarize
+const validateSummarizeInputs = (text, glossaryText, summaryPrompt) => {
+  const results = {
+    valid: true,
+    text: '',
+    glossaryText: '',
+    summaryPrompt: '',
+    errors: [],
+    warnings: [],
+  };
+
+  // Validate main text
+  const textResult = validatePromptInput(text, 'text', PROMPT_INJECTION_CONFIG.maxTextLength);
+  if (!textResult.valid) {
+    results.valid = false;
+    results.errors.push(textResult.errorMessage);
+  } else {
+    results.text = textResult.sanitized;
+    results.warnings.push(...textResult.warnings);
+  }
+
+  // Validate glossary
+  const glossaryResult = validatePromptInput(glossaryText, 'glossary', PROMPT_INJECTION_CONFIG.maxGlossaryLength);
+  if (!glossaryResult.valid) {
+    results.valid = false;
+    results.errors.push(glossaryResult.errorMessage);
+  } else {
+    results.glossaryText = glossaryResult.sanitized;
+    results.warnings.push(...glossaryResult.warnings);
+  }
+
+  // Validate custom prompt
+  const promptResult = validatePromptInput(summaryPrompt, 'summaryPrompt', PROMPT_INJECTION_CONFIG.maxPromptLength);
+  if (!promptResult.valid) {
+    results.valid = false;
+    results.errors.push(promptResult.errorMessage);
+  } else {
+    results.summaryPrompt = promptResult.sanitized;
+    results.warnings.push(...promptResult.warnings);
+  }
+
+  // Log warnings if any
+  if (results.warnings.length > 0) {
+    logSecurityEvent('INPUT_WARNINGS', { warnings: results.warnings });
+  }
+
+  return results;
+};
+
+// ========== LLM Title Generation (Sprint 3) ==========
+const generateSessionTitleLLM = async (text) => {
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    return null;
+  }
+
+  // Take first 500 chars for title generation (sufficient context)
+  const inputText = text.trim().slice(0, 500);
+
+  try {
+    const fd = new FormData();
+    fd.append('text', inputText);
+    fd.append('output_lang', state.outputLang || 'ja');
+
+    const res = await authFetch('/generate_title', { method: 'POST', body: fd });
+    if (!res.ok) {
+      addDiagLog(`LLM title generation failed: ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    const title = (data.title || '').trim();
+
+    if (title && title.length > 0 && title.length <= TITLE_MAX_LENGTH) {
+      addDiagLog(`LLM title generated: "${title}"`);
+      return title.replace(TITLE_FORBIDDEN_CHARS, '');
+    }
+    return null;
+  } catch (err) {
+    addDiagLog(`LLM title generation error: ${err.message}`);
+    return null;
+  }
+};
+
+// Generate title with LLM fallback to simple extraction
+const generateSessionTitleWithFallback = async (text) => {
+  // Try LLM first
+  const llmTitle = await generateSessionTitleLLM(text);
+  if (llmTitle) {
+    return llmTitle;
+  }
+  // Fallback to simple extraction
+  return generateSessionTitle(text);
+};
+
+// ========== History Storage (IndexedDB) ==========
+const HISTORY_DB_NAME = 'rt_history_db';
+const HISTORY_STORE_NAME = 'sessions';
+const HISTORY_DB_VERSION = 1;
+
+let historyDb = null;
+
+const openHistoryDb = () => {
+  return new Promise((resolve, reject) => {
+    if (historyDb) {
+      resolve(historyDb);
+      return;
+    }
+    const request = indexedDB.open(HISTORY_DB_NAME, HISTORY_DB_VERSION);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      historyDb = request.result;
+      resolve(historyDb);
+    };
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(HISTORY_STORE_NAME)) {
+        const store = db.createObjectStore(HISTORY_STORE_NAME, { keyPath: 'id' });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+    };
+  });
+};
+
+const historyStorage = {
+  async save(session) {
+    const db = await openHistoryDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const request = store.put(session);
+      request.onsuccess = () => resolve(session.id);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async getAll() {
+    const db = await openHistoryDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, 'readonly');
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const index = store.index('timestamp');
+      const request = index.openCursor(null, 'prev'); // newest first
+      const results = [];
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async get(id) {
+    const db = await openHistoryDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, 'readonly');
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async delete(id) {
+    const db = await openHistoryDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+};
+
+// ========== Title Generation (MVP) ==========
+const TITLE_MAX_LENGTH = 40;
+const TITLE_FORBIDDEN_CHARS = /[\/\\:*?"<>|]/g;
+
+const generateSessionTitle = (text) => {
+  if (!text || typeof text !== 'string') return '';
+  // Take first line or first N characters
+  const firstLine = text.split('\n')[0] || '';
+  let title = firstLine.trim().slice(0, TITLE_MAX_LENGTH);
+  // Remove forbidden characters
+  title = title.replace(TITLE_FORBIDDEN_CHARS, '');
+  // Trim trailing whitespace
+  title = title.trim();
+  return title || '';
+};
+
+const formatTimestamp = (ts) => {
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+// OS-safe timestamp for filenames (no ":" or spaces - Windows compatible)
+const formatTimestampForFilename = (ts) => {
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
 };
 
 // ========== Glossary Parsing ==========
@@ -1971,17 +2293,248 @@ const navigateBackFromDictionary = () => {
   }
 };
 
-// Handle hash routes (#/dictionary, #/billing/*, #/tickets/*)
+// ========== History View Navigation ==========
+const navigateToHistory = () => {
+  window.location.hash = '#/history';
+};
+
+const navigateBackFromHistory = () => {
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.hash = '';
+    hideHistoryView();
+  }
+};
+
+const navigateBackFromHistoryDetail = () => {
+  window.location.hash = '#/history';
+};
+
+const showHistoryView = async () => {
+  if (!els.historyView) return;
+  if (els.appShell) els.appShell.style.display = 'none';
+  els.historyView.style.display = 'block';
+  await loadHistoryList();
+};
+
+const hideHistoryView = () => {
+  if (!els.historyView) return;
+  els.historyView.style.display = 'none';
+  if (els.appShell) els.appShell.style.display = 'flex';
+};
+
+const loadHistoryList = async () => {
+  if (!els.historyList || !els.historyListLoading || !els.historyListEmpty) return;
+
+  els.historyListLoading.style.display = 'block';
+  els.historyList.style.display = 'none';
+  els.historyListEmpty.style.display = 'none';
+
+  try {
+    const sessions = await historyStorage.getAll();
+
+    els.historyListLoading.style.display = 'none';
+
+    if (sessions.length === 0) {
+      els.historyListEmpty.style.display = 'block';
+      return;
+    }
+
+    els.historyList.innerHTML = '';
+    sessions.forEach((session) => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      item.innerHTML = `
+        <div class="history-item-info">
+          <div class="history-item-title">${escapeHtml(session.title || 'Untitled')}</div>
+          <div class="history-item-meta">${formatTimestamp(session.timestamp)} • ${(session.originals || []).length} 発話</div>
+        </div>
+        <div class="history-item-actions">
+          <button class="secondary small hist-detail-btn" data-id="${session.id}">詳細</button>
+          <button class="secondary small danger hist-delete-btn" data-id="${session.id}">削除</button>
+        </div>
+      `;
+      els.historyList.appendChild(item);
+    });
+
+    // Event delegation for history list
+    els.historyList.onclick = (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      if (!id) return;
+
+      if (btn.classList.contains('hist-detail-btn')) {
+        window.location.hash = `#/history/${id}`;
+      } else if (btn.classList.contains('hist-delete-btn')) {
+        deleteHistoryEntry(id);
+      }
+    };
+
+    els.historyList.style.display = 'flex';
+  } catch (err) {
+    els.historyListLoading.style.display = 'none';
+    els.historyListEmpty.textContent = `エラー: ${err.message}`;
+    els.historyListEmpty.style.display = 'block';
+    addDiagLog(`History load error: ${err.message}`);
+  }
+};
+
+const deleteHistoryEntry = async (id) => {
+  if (!confirm('この履歴を削除しますか？')) return;
+  try {
+    await historyStorage.delete(id);
+    addDiagLog(`History deleted: ${id}`);
+    await loadHistoryList();
+  } catch (err) {
+    setError(`削除エラー: ${err.message}`);
+  }
+};
+
+const showHistoryDetailView = async (sessionId) => {
+  if (!els.historyDetailView || !els.historyDetailContent) return;
+
+  hideHistoryView();
+  els.historyDetailView.style.display = 'block';
+
+  try {
+    const session = await historyStorage.get(sessionId);
+    if (!session) {
+      els.historyDetailContent.innerHTML = '<p>セッションが見つかりません</p>';
+      return;
+    }
+
+    if (els.historyDetailTitle) {
+      els.historyDetailTitle.textContent = session.title || 'セッション詳細';
+    }
+
+    const originals = (session.originals || []).join('\n');
+    const translations = (session.translations || []).join('\n');
+    const bilingual = (session.originals || [])
+      .map((orig, idx) => `${orig}\n${(session.translations || [])[idx] || ''}`)
+      .join('\n\n');
+
+    els.historyDetailContent.innerHTML = `
+      <div class="history-detail-section">
+        <h4>情報</h4>
+        <div class="history-detail-text">
+          日時: ${formatTimestamp(session.timestamp)}<br>
+          入力言語: ${session.inputLang || 'auto'}<br>
+          出力言語: ${session.outputLang || 'ja'}<br>
+          発話数: ${(session.originals || []).length}
+        </div>
+      </div>
+      ${originals ? `
+      <div class="history-detail-section">
+        <h4>原文</h4>
+        <div class="history-detail-text">${escapeHtml(originals)}</div>
+      </div>
+      ` : ''}
+      ${translations ? `
+      <div class="history-detail-section">
+        <h4>翻訳</h4>
+        <div class="history-detail-text">${escapeHtml(translations)}</div>
+      </div>
+      ` : ''}
+      ${session.summary ? `
+      <div class="history-detail-section">
+        <h4>要約</h4>
+        <div class="history-detail-text">${escapeHtml(session.summary)}</div>
+      </div>
+      ` : ''}
+      <div class="history-detail-section">
+        <h4>ダウンロード</h4>
+        <div class="history-detail-downloads" id="historyDetailDownloads"></div>
+      </div>
+    `;
+
+    // Add download buttons
+    const downloadContainer = document.getElementById('historyDetailDownloads');
+    if (downloadContainer) {
+      const files = [];
+      const tsFilename = formatTimestampForFilename(session.timestamp);
+
+      if (session.m4aUrl) {
+        files.push({ label: '🎵 M4A', url: session.m4aUrl, download: `${tsFilename}.m4a` });
+      }
+      if (originals) {
+        const url = URL.createObjectURL(new Blob([originals], { type: 'text/plain' }));
+        state.objectUrls.push(url);
+        files.push({ label: '📝 原文', url, download: `原文_${tsFilename}.txt` });
+      }
+      if (bilingual) {
+        const url = URL.createObjectURL(new Blob([bilingual], { type: 'text/plain' }));
+        state.objectUrls.push(url);
+        files.push({ label: '🌐 原文+翻訳', url, download: `原文+翻訳_${tsFilename}.txt` });
+      }
+      if (session.summary) {
+        const url = URL.createObjectURL(new Blob([session.summary], { type: 'text/markdown' }));
+        state.objectUrls.push(url);
+        files.push({ label: '📋 要約', url, download: `要約_${tsFilename}.md` });
+      }
+
+      files.forEach((file) => {
+        const btn = document.createElement('a');
+        btn.href = file.url;
+        btn.download = file.download;
+        btn.className = 'result-file-btn';
+        btn.textContent = file.label;
+        downloadContainer.appendChild(btn);
+      });
+    }
+  } catch (err) {
+    els.historyDetailContent.innerHTML = `<p>エラー: ${escapeHtml(err.message)}</p>`;
+    addDiagLog(`History detail error: ${err.message}`);
+  }
+};
+
+const hideHistoryDetailView = () => {
+  if (!els.historyDetailView) return;
+  els.historyDetailView.style.display = 'none';
+  // Revoke temporary blob URLs created in history detail view
+  if (state.objectUrls && state.objectUrls.length > 0) {
+    state.objectUrls.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        // Ignore revoke errors
+      }
+    });
+    state.objectUrls = [];
+  }
+};
+
+// Handle hash routes (#/dictionary, #/history, #/history/:id, #/billing/*, #/tickets/*)
 const handleHashRoute = async () => {
   const hash = window.location.hash;
 
   // Dictionary view route (priority)
   if (hash === '#/dictionary') {
+    hideHistoryView();
+    hideHistoryDetailView();
     showDictionaryView();
     return;
   } else {
     // Any other route: hide dictionary view
     hideDictionaryView();
+  }
+
+  // History view routes
+  if (hash === '#/history') {
+    hideHistoryDetailView();
+    showHistoryView();
+    return;
+  } else if (hash.startsWith('#/history/')) {
+    const sessionId = hash.replace('#/history/', '');
+    if (sessionId) {
+      showHistoryDetailView(sessionId);
+      return;
+    }
+  } else {
+    // Any other route: hide history views
+    hideHistoryView();
+    hideHistoryDetailView();
   }
 
   if (hash === '#/billing/success') {
@@ -2522,6 +3075,17 @@ const uploadForM4A = async (blob) => {
   appendDownload('m4a', data.url);
 };
 
+// Returns the M4A URL for storage in history
+const uploadForM4AAndGetUrl = async (blob) => {
+  const fd = new FormData();
+  fd.append('file', blob, 'audio.webm');
+  const res = await authFetch('/audio_m4a', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error('m4a変換失敗');
+  const data = await res.json();
+  appendDownload('m4a', data.url);
+  return data.url;
+};
+
 const saveTextDownloads = async () => {
   const originals = state.logs.join('\n');
   const bilingual = state.logs
@@ -2563,6 +3127,172 @@ const saveTextDownloads = async () => {
     els.summarySection.style.display = 'block';
     if (els.runSummary) els.runSummary.disabled = false;
   }
+};
+
+// Enhanced version that also shows result card UI
+const saveTextDownloadsWithResultCard = async () => {
+  const originals = state.logs.join('\n');
+  const bilingual = state.logs
+    .map((orig, idx) => `${orig}\n${state.translations[idx] || ''}`)
+    .join('\n\n');
+
+  // Attempt auto-summary (non-blocking on failure)
+  let summaryMd = '';
+  if (originals.trim()) {
+    // Validate inputs before sending to /summarize
+    const validation = validateSummarizeInputs(
+      bilingual || originals,
+      state.glossaryText,
+      state.summaryPrompt
+    );
+
+    if (!validation.valid) {
+      addDiagLog(`Auto-summary blocked: ${validation.errors.join(', ')}`);
+      // Don't send to server, but continue with rest of flow
+    } else {
+      try {
+        const fd = new FormData();
+        fd.append('text', validation.text);
+        fd.append('output_lang', state.outputLang);
+        if (validation.glossaryText) {
+          fd.append('glossary_text', validation.glossaryText);
+        }
+        if (validation.summaryPrompt) {
+          fd.append('summary_prompt', validation.summaryPrompt);
+        }
+        const summaryRes = await authFetch('/summarize', {
+          method: 'POST',
+          body: fd,
+        });
+        if (summaryRes.ok) {
+          const data = await summaryRes.json();
+          summaryMd = data.summary || '';
+          if (state.currentSessionResult) {
+            state.currentSessionResult.summary = summaryMd;
+          }
+        }
+      } catch (err) {
+        addDiagLog(`Auto-summary failed: ${err.message}`);
+      }
+    }
+  }
+
+  const makeBlobLink = (label, content, type = 'text/plain') => {
+    const url = URL.createObjectURL(new Blob([content], { type }));
+    appendDownload(label, url);
+    return url;
+  };
+
+  makeBlobLink('原文.txt', originals);
+  makeBlobLink('原文+日本語.txt', bilingual);
+  if (summaryMd) makeBlobLink('要約.md', summaryMd, 'text/markdown');
+
+  // Show result card UI
+  showResultCard(summaryMd);
+
+  // Show summary section for manual summary generation (legacy)
+  if (originals.trim() && els.summarySection) {
+    els.summarySection.style.display = 'block';
+    if (els.runSummary) els.runSummary.disabled = false;
+  }
+};
+
+// Show result card after stop
+const showResultCard = (summaryMd = '') => {
+  if (!els.resultCard) return;
+
+  const session = state.currentSessionResult;
+  if (!session) return;
+
+  // Set title and timestamp
+  if (els.resultCardTitle) {
+    els.resultCardTitle.textContent = session.title || 'セッション結果';
+  }
+  if (els.resultCardTimestamp) {
+    els.resultCardTimestamp.textContent = formatTimestamp(session.timestamp);
+  }
+
+  // Build file download buttons
+  if (els.resultCardFiles) {
+    els.resultCardFiles.innerHTML = '';
+    const files = [];
+    const tsFilename = formatTimestampForFilename(session.timestamp);
+
+    // Audio files
+    if (session.audioUrl) {
+      files.push({ label: '🎤 WebM', url: session.audioUrl, download: `${tsFilename}.webm` });
+    }
+    if (session.m4aUrl) {
+      files.push({ label: '🎵 M4A', url: session.m4aUrl, download: `${tsFilename}.m4a` });
+    }
+
+    // Text files (create blob URLs and track for cleanup)
+    if (session.originals.length > 0) {
+      const originalsText = session.originals.join('\n');
+      const originalsUrl = URL.createObjectURL(new Blob([originalsText], { type: 'text/plain' }));
+      state.objectUrls.push(originalsUrl);
+      files.push({ label: '📝 原文', url: originalsUrl, download: `原文_${tsFilename}.txt` });
+
+      const bilingualText = session.originals
+        .map((orig, idx) => `${orig}\n${session.translations[idx] || ''}`)
+        .join('\n\n');
+      const bilingualUrl = URL.createObjectURL(new Blob([bilingualText], { type: 'text/plain' }));
+      state.objectUrls.push(bilingualUrl);
+      files.push({ label: '🌐 原文+翻訳', url: bilingualUrl, download: `原文+翻訳_${tsFilename}.txt` });
+    }
+
+    // Summary file (if exists)
+    if (summaryMd) {
+      const summaryUrl = URL.createObjectURL(new Blob([summaryMd], { type: 'text/markdown' }));
+      state.objectUrls.push(summaryUrl);
+      files.push({ label: '📋 要約', url: summaryUrl, download: `要約_${tsFilename}.md` });
+    }
+
+    files.forEach((file) => {
+      const btn = document.createElement('a');
+      btn.href = file.url;
+      btn.download = file.download;
+      btn.className = 'result-file-btn';
+      btn.textContent = file.label;
+      els.resultCardFiles.appendChild(btn);
+    });
+  }
+
+  // Show summary output
+  if (els.summaryOutputCard) {
+    els.summaryOutputCard.textContent = summaryMd || '';
+  }
+  if (els.copySummaryCard) {
+    els.copySummaryCard.style.display = summaryMd ? 'inline-block' : 'none';
+  }
+
+  // Update summary button text
+  if (els.runSummaryCard) {
+    els.runSummaryCard.textContent = summaryMd ? '要約を再生成' : '要約を生成';
+    els.runSummaryCard.disabled = false;
+  }
+
+  // Show the card
+  els.resultCard.style.display = 'block';
+};
+
+// Hide result card (called on start)
+const hideResultCard = () => {
+  if (els.resultCard) {
+    els.resultCard.style.display = 'none';
+  }
+  // Revoke temporary blob URLs to free memory
+  if (state.objectUrls && state.objectUrls.length > 0) {
+    state.objectUrls.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        // Ignore revoke errors
+      }
+    });
+    state.objectUrls = [];
+  }
+  state.currentSessionResult = null;
 };
 
 const translateCompleted = async (text) => {
@@ -2849,6 +3579,10 @@ const startConnectionAttempt = async () => {
 const start = async () => {
   addDiagLog('STEP1: start() entered');
   addDiagLog('Start requested');
+
+  // Hide previous result card when starting new session
+  hideResultCard();
+
   if (!firebaseState.initialized) {
     setError('Firebase初期化に失敗しました。設定を確認してください。');
     addDiagLog('Start blocked: Firebase not ready');
@@ -2991,17 +3725,36 @@ const stop = async () => {
   closeRtc();
   setStatus('Standby');
 
+  // Initialize session result for this stop
+  const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const sessionTimestamp = Date.now();
+  state.currentSessionResult = {
+    id: sessionId,
+    timestamp: sessionTimestamp,
+    title: '',
+    originals: [...state.logs],
+    translations: [...state.translations],
+    summary: '',
+    audioUrl: null,
+    m4aUrl: null,
+    inputLang: state.inputLang,
+    outputLang: state.outputLang,
+  };
+
   if (state.recorder) {
     state.recorder.stop();
   }
   if (state.recordingChunks.length) {
     const blob = new Blob(state.recordingChunks, { type: 'audio/webm' });
     const url = URL.createObjectURL(blob);
+    state.currentSessionResult.audioUrl = url;
     appendDownload('webm', url);
     try {
-      await uploadForM4A(blob);
+      const m4aUrl = await uploadForM4AAndGetUrl(blob);
+      state.currentSessionResult.m4aUrl = m4aUrl;
     } catch (err) {
       setError(err.message);
+      addDiagLog(`M4A conversion failed: ${err.message}`);
     }
   }
 
@@ -3012,7 +3765,23 @@ const stop = async () => {
   } else {
     addDiagLog('Stop: no active job to complete');
   }
-  await saveTextDownloads();
+
+  // Generate title from text (try LLM, fallback to simple extraction)
+  const titleSource = state.currentSessionResult.translations.join(' ') || state.currentSessionResult.originals.join(' ');
+  const llmTitle = await generateSessionTitleWithFallback(titleSource);
+  state.currentSessionResult.title = llmTitle || formatTimestampForFilename(sessionTimestamp);
+
+  // Save text downloads and attempt auto-summary
+  await saveTextDownloadsWithResultCard();
+
+  // Save to history (even if incomplete)
+  try {
+    await historyStorage.save(state.currentSessionResult);
+    addDiagLog(`History saved: ${sessionId}`);
+  } catch (err) {
+    addDiagLog(`History save failed: ${err.message}`);
+  }
+
   addDiagLog('Stop completed');
 };
 
@@ -3509,22 +4278,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      // Validate inputs before sending
+      const validation = validateSummarizeInputs(bilingual, state.glossaryText, state.summaryPrompt);
+      if (!validation.valid) {
+        setError(validation.errors[0] || t('errorPromptInjection'));
+        return;
+      }
+
       els.runSummary.disabled = true;
       els.runSummary.textContent = t('generating') || '生成中...';
 
       try {
         const fd = new FormData();
-        // Use bilingual text (original + translation) for richer summary
-        fd.append('text', bilingual);
+        // Use validated and sanitized inputs
+        fd.append('text', validation.text);
         fd.append('output_lang', state.outputLang);
-        if (state.glossaryText) {
-          fd.append('glossary_text', state.glossaryText);
+        if (validation.glossaryText) {
+          fd.append('glossary_text', validation.glossaryText);
         }
-        if (state.summaryPrompt) {
-          fd.append('summary_prompt', state.summaryPrompt);
+        if (validation.summaryPrompt) {
+          fd.append('summary_prompt', validation.summaryPrompt);
         }
         const res = await authFetch('/summarize', { method: 'POST', body: fd });
         if (!res.ok) {
+          if (res.status === 413) {
+            throw new Error(
+              t('errorInputTooLong') || 'Input is too long (exceeded limit)'
+            );
+          }
           throw new Error(t('errorSummaryFailed') || 'Summary generation failed');
         }
         const data = await res.json();
@@ -3681,6 +4462,115 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshBillingStatus();
     }
   });
+
+  // ========== History View Navigation ==========
+  if (els.openHistoryBtn) {
+    els.openHistoryBtn.addEventListener('click', navigateToHistory);
+  }
+  if (els.historyBackBtn) {
+    els.historyBackBtn.addEventListener('click', navigateBackFromHistory);
+  }
+  if (els.historyDetailBackBtn) {
+    els.historyDetailBackBtn.addEventListener('click', navigateBackFromHistoryDetail);
+  }
+
+  // ========== Result Card Summary Button ==========
+  if (els.runSummaryCard) {
+    els.runSummaryCard.addEventListener('click', async () => {
+      const session = state.currentSessionResult;
+      if (!session) return;
+
+      const originals = session.originals.join('\n');
+      const bilingual = session.originals
+        .map((orig, idx) => `${orig}\n${session.translations[idx] || ''}`)
+        .join('\n\n');
+
+      if (!originals.trim()) {
+        setError(t('errorNoTextToSummarize') || 'No text to summarize');
+        return;
+      }
+
+      // Validate inputs before sending
+      const validation = validateSummarizeInputs(bilingual || originals, state.glossaryText, state.summaryPrompt);
+      if (!validation.valid) {
+        setError(validation.errors[0] || t('errorPromptInjection'));
+        return;
+      }
+
+      els.runSummaryCard.disabled = true;
+      els.runSummaryCard.textContent = t('generating') || '生成中...';
+
+      try {
+        const fd = new FormData();
+        fd.append('text', validation.text);
+        fd.append('output_lang', state.outputLang);
+        if (validation.glossaryText) {
+          fd.append('glossary_text', validation.glossaryText);
+        }
+        if (validation.summaryPrompt) {
+          fd.append('summary_prompt', validation.summaryPrompt);
+        }
+        const res = await authFetch('/summarize', { method: 'POST', body: fd });
+        if (!res.ok) {
+          if (res.status === 413) {
+            throw new Error(
+              t('errorInputTooLong') || 'Input is too long (exceeded limit)'
+            );
+          }
+          throw new Error(t('errorSummaryFailed') || 'Summary generation failed');
+        }
+        const data = await res.json();
+        const summaryMd = data.summary || '';
+
+        // Update session and UI
+        session.summary = summaryMd;
+        if (els.summaryOutputCard) {
+          els.summaryOutputCard.textContent = summaryMd;
+        }
+        if (els.copySummaryCard && summaryMd) {
+          els.copySummaryCard.style.display = 'inline-block';
+        }
+
+        // Update history with new summary
+        try {
+          await historyStorage.save(session);
+          addDiagLog(`History updated with summary: ${session.id}`);
+        } catch (saveErr) {
+          addDiagLog(`History update failed: ${saveErr.message}`);
+        }
+
+        addDiagLog(`Summary (card) generated | length=${summaryMd.length}`);
+      } catch (err) {
+        const errorMsg = err.message || 'Summary failed';
+        setError(errorMsg);
+        if (els.summaryOutputCard) {
+          els.summaryOutputCard.textContent = `エラー: ${errorMsg}`;
+        }
+        addDiagLog(`Summary (card) error: ${errorMsg}`);
+      } finally {
+        els.runSummaryCard.disabled = false;
+        els.runSummaryCard.textContent = session.summary ? '要約を再生成' : '要約を生成';
+      }
+    });
+  }
+
+  // Copy Summary (card) button
+  if (els.copySummaryCard) {
+    els.copySummaryCard.addEventListener('click', async () => {
+      const text = els.summaryOutputCard?.textContent || '';
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = els.copySummaryCard.textContent;
+        els.copySummaryCard.textContent = t('copied') || 'コピー完了';
+        setTimeout(() => {
+          els.copySummaryCard.textContent = original;
+        }, 1500);
+      } catch (err) {
+        setError(t('errorCopyFailed') || 'Copy failed');
+      }
+    });
+  }
 
   updateLiveText();
 });

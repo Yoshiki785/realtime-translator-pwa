@@ -198,6 +198,25 @@ $ curl -s -X POST .../translate -F "text=hello"
 - [ ] ログイン後、Startボタン押下で翻訳開始できることを確認
 - [ ] ログアウト状態でStartボタン押下 → エラー表示（ログイン必要）
 
+---
+
+## S9: Prompt injection運用メモ
+**Status: NOTE**
+
+### SANITIZE_MODE（運用逃げ道）
+- `SANITIZE_MODE` は `1/true/yes/on` を True として判定
+- `SANITIZE_MODE=1` の場合、`/summarize` で `glossary_text` / `summary_prompt` に注入検知があっても破棄して続行
+- `text` は注入検知時に引き続きリジェクト（安全優先）
+- 破棄した場合はレスポンスの `warnings` に `glossary_text_dropped` / `summary_prompt_dropped` を含める
+
+### /generate_title の長さ仕様
+- `/generate_title` は **先頭500文字のみで処理**し、長さ超過(413)は返さない設計
+
+### 誤検知耐性の改善案（提案）
+- `text` は会話ログ/コード引用で `system:` などが混入しやすい
+- 現行ルールは維持しつつ、運用上は **textの検知を弱める / glossary_text と summary_prompt を強める** 方向が有効
+- 将来的にはフィールド別に `dangerous_patterns` を分離し、`text` 用は緩和ルールにする運用を推奨
+
 ### セキュリティ達成レベル
 
 | 項目 | 状態 |
@@ -326,4 +345,3 @@ firebase deploy --only hosting
 ### 注意事項
 - **Cloud Run再デプロイは不要**（バックエンドは既にS7でデプロイ済み）
 - Firebase Hostingのみデプロイ
-
