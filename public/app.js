@@ -1188,26 +1188,31 @@ const flushRealtimeEventQueue = () => {
 };
 
 // Send session.update with audio input settings
-// OpenAI Realtime API GA format: session.type is REQUIRED
+// OpenAI Realtime API: session.audio.input.transcription / session.audio.input.turn_detection
 const sendSessionUpdate = () => {
   const transcriptionLanguage = state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined;
   const silenceDurationMs = Number(state.vadSilence) || 500;
 
-  // GA版スキーマ: session.type='realtime' が必須、session直下に input_audio_transcription, turn_detection を配置
+  // 正しいスキーマ: session.audio.input 内に transcription, turn_detection を配置
+  // Ref: https://platform.openai.com/docs/api-reference/realtime-client-events/session/update
   const payload = {
     type: 'session.update',
     session: {
-      type: 'realtime',  // REQUIRED in GA API - fixes "Missing required parameter: 'session.type'."
-      input_audio_transcription: {
-        model: 'gpt-4o-mini-transcribe',
-        ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
-      },
-      turn_detection: {
-        type: 'server_vad',
-        silence_duration_ms: silenceDurationMs,
-        prefix_padding_ms: 300,
-        threshold: 0.5,
-        create_response: false,
+      type: 'realtime',
+      audio: {
+        input: {
+          transcription: {
+            model: 'gpt-4o-mini-transcribe',
+            ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
+          },
+          turn_detection: {
+            type: 'server_vad',
+            silence_duration_ms: silenceDurationMs,
+            prefix_padding_ms: 300,
+            threshold: 0.5,
+            create_response: false,
+          },
+        },
       },
     },
   };
@@ -2301,12 +2306,8 @@ const navigateToHistory = () => {
 };
 
 const navigateBackFromHistory = () => {
-  if (window.history.length > 1) {
-    window.history.back();
-  } else {
-    window.location.hash = '';
-    hideHistoryView();
-  }
+  // 決め打ちでメイン画面へ遷移（history.back() は履歴スタック依存で不安定）
+  window.location.hash = '#/';
 };
 
 const navigateBackFromHistoryDetail = () => {
@@ -2508,36 +2509,46 @@ const hideHistoryDetailView = () => {
 };
 
 // Handle hash routes (#/dictionary, #/history, #/history/:id, #/billing/*, #/tickets/*)
+// ルーティング: #/ or '' => メイン, #/history => 履歴一覧, #/history/<id> => 履歴詳細
 const handleHashRoute = async () => {
-  const hash = window.location.hash;
+  const hash = window.location.hash || '';
 
-  // Dictionary view route (priority)
+  // メイン画面（#/ or '' or #）
+  if (hash === '#/' || hash === '' || hash === '#') {
+    hideDictionaryView();
+    hideHistoryView();
+    hideHistoryDetailView();
+    if (els.appShell) els.appShell.style.display = 'flex';
+    return;
+  }
+
+  // Dictionary view route
   if (hash === '#/dictionary') {
     hideHistoryView();
     hideHistoryDetailView();
     showDictionaryView();
     return;
   } else {
-    // Any other route: hide dictionary view
     hideDictionaryView();
   }
 
-  // History view routes
+  // History view routes（厳密に分岐）
   if (hash === '#/history') {
     hideHistoryDetailView();
     showHistoryView();
     return;
-  } else if (hash.startsWith('#/history/')) {
-    const sessionId = hash.replace('#/history/', '');
-    if (sessionId) {
-      showHistoryDetailView(sessionId);
-      return;
-    }
-  } else {
-    // Any other route: hide history views
-    hideHistoryView();
-    hideHistoryDetailView();
   }
+  // #/history/<sessionId> のパターン
+  const historyDetailMatch = hash.match(/^#\/history\/(.+)$/);
+  if (historyDetailMatch && historyDetailMatch[1]) {
+    const sessionId = historyDetailMatch[1];
+    showHistoryDetailView(sessionId);
+    return;
+  }
+
+  // それ以外のルート: 全ビューを非表示にしてメイン表示
+  hideHistoryView();
+  hideHistoryDetailView();
 
   if (hash === '#/billing/success') {
     // Show success banner with polling
