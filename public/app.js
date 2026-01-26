@@ -1188,18 +1188,18 @@ const flushRealtimeEventQueue = () => {
 };
 
 // Send session.update with audio input settings
-// OpenAI Realtime Calls API format (avoid deprecated/invalid parameters)
+// OpenAI Realtime API GA format: session.type is REQUIRED
 const sendSessionUpdate = () => {
   const transcriptionLanguage = state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined;
   const silenceDurationMs = Number(state.vadSilence) || 500;
 
-  // Realtime Calls API session.update format
-  // Ref: https://platform.openai.com/docs/api-reference/realtime
+  // GA版スキーマ: session.type='realtime' が必須、session直下に input_audio_transcription, turn_detection を配置
   const payload = {
     type: 'session.update',
     session: {
+      type: 'realtime',  // REQUIRED in GA API - fixes "Missing required parameter: 'session.type'."
       input_audio_transcription: {
-        model: 'whisper-1',
+        model: 'gpt-4o-mini-transcribe',
         ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
       },
       turn_detection: {
@@ -1213,7 +1213,9 @@ const sendSessionUpdate = () => {
   };
 
   try {
-    addDiagLog(`STEP_SESSION_UPDATE: sid=${state.sessionId || 'no_sid'} payload=${JSON.stringify(payload.session)}`);
+    // 送信前ログ（デバッグ用・機密なし）
+    console.log('[sendSessionUpdate] payload:', JSON.stringify(payload, null, 2));
+    addDiagLog(`STEP_SESSION_UPDATE: session.type=${payload.session.type} sid=${state.sessionId || 'no_sid'}`);
     const sent = sendRealtimeEvent(payload);
     addDiagLog(`session.update sent | queued=${!sent} sid=${state.sessionId || 'no_sid'}`);
   } catch (err) {
@@ -3402,14 +3404,15 @@ const handleDataMessage = (event) => {
     const msg = JSON.parse(event.data);
     const type = msg.type || msg.event || '';
 
-    // Detailed error logging with session context
-    if (msg?.type === 'error' || msg?.error) {
+    // エラーイベントの完全ログ出力（原因特定用・session context含む）
+    if (msg?.type === 'error' || type === 'error' || msg.error) {
       const errInfo = msg.error || msg;
       const errType = errInfo.type || 'unknown_type';
       const errCode = errInfo.code || 'unknown_code';
       const errParam = errInfo.param || '';
-      const errMessage = errInfo.message || msg.message || 'No message';
-      console.error('[realtime:error]', msg);
+      const errMessage = errInfo.message || msg.message || 'Realtime error';
+      console.error('[realtime:error] Full error payload:', JSON.stringify(msg, null, 2));
+      console.error(`[realtime:error] code=${errCode}, type=${errType}, param=${errParam}, message=${errMessage}`);
       addDiagLog(`REALTIME_ERROR | sid=${state.sessionId || 'no_sid'} type=${errType} code=${errCode} param=${errParam} msg=${errMessage}`);
       addDiagLog(`REALTIME_ERROR_JSON: ${JSON.stringify(msg)}`);
       setError(errMessage);
@@ -3422,7 +3425,7 @@ const handleDataMessage = (event) => {
       handleCompleted(msg);
     }
   } catch (err) {
-    console.error('[realtime] message parse error', err);
+    console.error('[realtime:parse] message parse error:', err);
     addDiagLog(`REALTIME_PARSE_ERROR | sid=${state.sessionId || 'no_sid'} error=${err.message}`);
   }
 };
