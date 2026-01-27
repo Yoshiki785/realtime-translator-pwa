@@ -101,7 +101,7 @@ fi
 job_id=$(json_get "$CURL_BODY" "jobId") || fail "jobs/create response missing jobId"
 log "Job created: $job_id"
 
-complete_payload=$(printf '{"jobId":"%s","audioSeconds":1}' "$job_id")
+complete_payload=$(printf '{"jobId":"%s","audioSeconds":1,"transcriptHead":"E2E test transcript","outputLang":"ja"}' "$job_id")
 log "Complete job: POST $APP_BASE_URL/api/v1/jobs/complete"
 CURL_BODY=""
 CURL_CODE=""
@@ -111,6 +111,15 @@ if [[ "$CURL_CODE" != "200" ]]; then
   fail "jobs/complete returned $CURL_CODE"
 fi
 log "Job completed: $(pretty_json "$CURL_BODY")"
+
+# Check that title was generated (can be auto or fallback)
+job_title=$(json_get "$CURL_BODY" "title" 2>/dev/null || echo "")
+title_status=$(json_get "$CURL_BODY" "title_status" 2>/dev/null || echo "")
+if [[ -n "$job_title" ]]; then
+  log "Title generated: '$job_title' (status=$title_status)"
+else
+  log "Warning: No title in response (may be expected if title generation disabled)"
+fi
 
 log "Usage (after): GET $APP_BASE_URL/api/v1/usage/remaining"
 CURL_BODY=""

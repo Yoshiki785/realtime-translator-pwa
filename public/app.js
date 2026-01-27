@@ -3362,7 +3362,7 @@ const getJobElapsedSeconds = () => {
   return Math.max(0, Math.round((Date.now() - state.jobStartedAt) / 1000));
 };
 
-const completeCurrentJob = async (audioSeconds) => {
+const completeCurrentJob = async (audioSeconds, titleInputs = {}) => {
   if (!state.currentJob) {
     addDiagLog('completeCurrentJob: no active job to complete');
     return null;
@@ -3375,6 +3375,15 @@ const completeCurrentJob = async (audioSeconds) => {
   if (typeof audioSeconds === 'number' && Number.isFinite(audioSeconds)) {
     payload.audioSeconds = Math.max(0, Math.round(audioSeconds));
   }
+  // Add title generation inputs (summary, transcriptHead, outputLang)
+  if (titleInputs.summary) {
+    payload.summary = titleInputs.summary.slice(0, 800);
+  }
+  if (titleInputs.transcriptHead) {
+    payload.transcriptHead = titleInputs.transcriptHead.slice(0, 800);
+  }
+  payload.outputLang = titleInputs.outputLang || state.outputLang || 'ja';
+
   try {
     const res = await authFetch('/api/v1/jobs/complete', {
       method: 'POST',
@@ -3387,7 +3396,7 @@ const completeCurrentJob = async (audioSeconds) => {
       throw new Error(message);
     }
     applyQuotaFromPayload(data);
-    addDiagLog(`Job completed | billed=${data.billedSeconds ?? 'n/a'}s | jobActive=false`);
+    addDiagLog(`Job completed | billed=${data.billedSeconds ?? 'n/a'}s | title_status=${data.title_status ?? 'n/a'} | jobActive=false`);
     return data;
   } catch (err) {
     addDiagLog(`Job completion failed: ${err.message || err}`);
@@ -4158,18 +4167,34 @@ const stop = async () => {
     }
   }
 
+  // Prepare title generation inputs for server
+  const transcriptHead = state.currentSessionResult.originals.slice(0, 5).join(' ');
+  const titleInputs = {
+    transcriptHead: transcriptHead,
+    summary: '', // Summary not available at this point
+    outputLang: state.outputLang,
+  };
+
   // jobActiveがtrueの場合のみジョブを完了させる
+  let completeResult = null;
   if (state.jobActive) {
     const elapsedSeconds = getJobElapsedSeconds();
-    await completeCurrentJob(elapsedSeconds);
+    completeResult = await completeCurrentJob(elapsedSeconds, titleInputs);
   } else {
     addDiagLog('Stop: no active job to complete');
   }
 
-  // Generate title from text (try LLM, fallback to simple extraction)
-  const titleSource = state.currentSessionResult.translations.join(' ') || state.currentSessionResult.originals.join(' ');
-  const llmTitle = await generateSessionTitleWithFallback(titleSource);
-  state.currentSessionResult.title = llmTitle || formatTimestampForFilename(sessionTimestamp);
+  // Use server-generated title if available, otherwise fallback to local generation
+  if (completeResult && completeResult.title) {
+    state.currentSessionResult.title = completeResult.title;
+    addDiagLog(`Using server-generated title: "${completeResult.title}" (status=${completeResult.title_status})`);
+  } else {
+    // Fallback: Generate title locally (try LLM, fallback to simple extraction)
+    const titleSource = state.currentSessionResult.translations.join(' ') || state.currentSessionResult.originals.join(' ');
+    const llmTitle = await generateSessionTitleWithFallback(titleSource);
+    state.currentSessionResult.title = llmTitle || formatTimestampForFilename(sessionTimestamp);
+    addDiagLog(`Using local-generated title: "${state.currentSessionResult.title}"`);
+  }
 
   // Save text downloads and attempt auto-summary
   await saveTextDownloadsWithResultCard();
