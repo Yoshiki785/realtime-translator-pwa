@@ -607,7 +607,7 @@ const cacheElements = () => {
     start: document.getElementById('startBtn'),
     stop: document.getElementById('stopBtn'),
     error: document.getElementById('error'),
-    downloads: document.getElementById('downloads'),
+    // downloads: document.getElementById('downloads'), // Old UI removed
     a2hs: document.getElementById('a2hs'),
     settingsBtn: document.getElementById('settingsBtn'),
     settingsModal: document.getElementById('settingsModal'),
@@ -655,11 +655,11 @@ const cacheElements = () => {
     dictionaryCsvInput: document.getElementById('dictionaryCsvInput'),
     uploadDictionaryCsv: document.getElementById('uploadDictionaryCsv'),
     dictionaryUploadResult: document.getElementById('dictionaryUploadResult'),
-    // Summary Section (after Stop)
-    summarySection: document.getElementById('summarySection'),
-    runSummary: document.getElementById('runSummary'),
-    copySummary: document.getElementById('copySummary'),
-    summaryOutput: document.getElementById('summaryOutput'),
+    // Summary Section (legacy - removed, replaced by Result Card)
+    // summarySection: document.getElementById('summarySection'),
+    // runSummary: document.getElementById('runSummary'),
+    // copySummary: document.getElementById('copySummary'),
+    // summaryOutput: document.getElementById('summaryOutput'),
     // Billing Section
     billingSection: document.getElementById('billingSection'),
     upgradeProBtn: document.getElementById('upgradeProBtn'),
@@ -750,6 +750,7 @@ const state = {
   gapMs: Number(localStorage.getItem('gapMs')) || 1000,
   vadSilence: Number(localStorage.getItem('vadSilence')) || 400,
   uiLang: localStorage.getItem('uiLang') || 'ja',
+  // Translation UI input/output languages (separate from realtime STT input)
   inputLang: localStorage.getItem('inputLang') || 'auto',
   outputLang: localStorage.getItem('outputLang') || 'ja',
   token: null,
@@ -779,6 +780,11 @@ const state = {
     vadPrefix: Number(localStorage.getItem('stt_vad_prefix')) || 500,
     noiseReduction: localStorage.getItem('stt_noise_reduction') || 'auto', // auto=don't send, near_field/far_field/off
     transcriptionModel: localStorage.getItem('stt_transcription_model') || 'auto', // auto=gpt-4o-mini-transcribe (default), gpt-4o-transcribe
+    // Auto language lock (internal only, no UI)
+    lockedLanguage: null,
+    autoLockEnabled:
+      isDebugMode() && new URLSearchParams(window.location.search).get('sttAutoLock') === '1',
+    autoLockApplied: false,
     // Dirty flags (true = user changed this setting, should be sent to API)
     dirty: {
       inputLang: false,
@@ -1184,6 +1190,161 @@ const buildSessionInstructions = (glossaryEntries, outputLang) => {
   return instructions;
 };
 
+// ========== STT Stabilization Helpers ==========
+const STT_AUTOLOCK_MIN_CHARS = 6;
+const STT_POSTPROCESS_MAX_LENGTH = 10000;
+const STT_POSTPROCESS_MAX_REPLACEMENTS = 50;
+
+const guessLangFromText = (text) => {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const compact = trimmed.replace(/\s+/g, '');
+  if (compact.length < STT_AUTOLOCK_MIN_CHARS) return null;
+
+  let hiragana = 0;
+  let katakana = 0;
+  let han = 0;
+  let latin = 0;
+
+  for (const ch of compact) {
+    if (/[ぁ-ゖ]/u.test(ch)) {
+      hiragana += 1;
+    } else if (/[ァ-ヺ]/u.test(ch)) {
+      katakana += 1;
+    } else if (/[一-龯]/u.test(ch)) {
+      han += 1;
+    } else if (/[A-Za-z]/.test(ch)) {
+      latin += 1;
+    }
+  }
+
+  const total = hiragana + katakana + han + latin;
+  if (total === 0) return null;
+
+  const kana = hiragana + katakana;
+  if (kana >= 2 && kana / total >= 0.2) return 'ja';
+  if (han >= 2 && han / total >= 0.2 && kana / total < 0.05) return 'zh';
+  if (latin >= 2 && latin / total >= 0.6) return 'en';
+  return null;
+};
+
+const maybeLockSttLanguage = (text) => {
+  const stt = state.sttSettings;
+  if (stt.inputLang !== 'auto') return;
+  if (stt.lockedLanguage) return;
+  const guessed = guessLangFromText(text);
+  if (!guessed) return;
+
+  stt.lockedLanguage = guessed;
+  addDiagLog(`STT auto-lock observed: ${guessed}`);
+  updateDevStatusSummary();
+
+  if (!stt.autoLockEnabled || stt.autoLockApplied) return;
+
+  const transcriptionModel = stt.dirty.transcriptionModel && stt.transcriptionModel !== 'auto'
+    ? stt.transcriptionModel
+    : 'gpt-4o-mini-transcribe';
+
+  const payload = {
+    type: 'session.update',
+    session: {
+      type: 'realtime',
+      audio: {
+        input: {
+          transcription: {
+            model: transcriptionModel,
+            language: guessed,
+          },
+        },
+      },
+    },
+  };
+
+  const sent = sendRealtimeEvent(payload);
+  stt.autoLockApplied = true;
+  addDiagLog(`STT auto-lock session.update sent=${sent}`);
+};
+
+const REGEX_ESCAPE_CHARS = new Set([
+  '\\',
+  '^',
+  '$',
+  '*',
+  '+',
+  '?',
+  '.',
+  '(',
+  ')',
+  '|',
+  '{',
+  '}',
+  '[',
+  ']',
+]);
+
+const escapeRegExp = (value) => {
+  if (!value) return '';
+  let escaped = '';
+  for (const ch of value) {
+    escaped += REGEX_ESCAPE_CHARS.has(ch) ? `\\${ch}` : ch;
+  }
+  return escaped;
+};
+
+const buildSttReplacePattern = (source) => {
+  const escaped = escapeRegExp(source);
+  if (/^[A-Za-z0-9][A-Za-z0-9 '\-]*$/.test(source)) {
+    return { pattern: new RegExp(`\\b${escaped}\\b`, 'g'), hasBoundary: false };
+  }
+  const boundary = '[\\s\\.,!\\?、。！？「」『』（）()\\[\\]{}"“”]';
+  return {
+    pattern: new RegExp(`(^|${boundary})(${escaped})(?=$|${boundary})`, 'g'),
+    hasBoundary: true,
+  };
+};
+
+const truncateSttLog = (text, max = 140) => {
+  if (!text || text.length <= max) return text;
+  return `${text.slice(0, max)}...`;
+};
+
+const postprocessSttText = (text) => {
+  if (!text || typeof text !== 'string') return text;
+  if (text.length > STT_POSTPROCESS_MAX_LENGTH) return text;
+
+  const entries = parseGlossary(state.glossaryText);
+  if (!entries.length) return text;
+
+  const sorted = [...entries]
+    .filter(({ source, target }) => source && target && source !== target)
+    .sort((a, b) => b.source.length - a.source.length);
+
+  let result = text;
+  let replacements = 0;
+
+  sorted.forEach(({ source, target }) => {
+    if (replacements >= STT_POSTPROCESS_MAX_REPLACEMENTS) return;
+    const { pattern, hasBoundary } = buildSttReplacePattern(source);
+    result = result.replace(pattern, (match, prefix, matched) => {
+      if (replacements >= STT_POSTPROCESS_MAX_REPLACEMENTS) return match;
+      replacements += 1;
+      if (!hasBoundary) {
+        return target;
+      }
+      return `${prefix || ''}${target}`;
+    });
+  });
+
+  if (replacements > 0 && isDebugMode()) {
+    addDiagLog(
+      `STT postprocess applied (${replacements}) | "${truncateSttLog(text)}" -> "${truncateSttLog(result)}"`
+    );
+  }
+
+  return result;
+};
+
 // ========== Realtime Event Sender with Queue ==========
 const sendRealtimeEvent = (payload) => {
   const dc = state.dataChannel;
@@ -1444,6 +1605,10 @@ const updateDevStatusSummary = () => {
     `Languages: input=${state.inputLang} → output=${state.outputLang} (UI: ${state.uiLang})`,
     `Settings: maxChars=${state.maxChars}, gapMs=${state.gapMs}, vadSilence=${state.vadSilence}`,
   ];
+  const stt = state.sttSettings;
+  lines.push(
+    `STT autoLock: ${stt.autoLockEnabled ? 'on' : 'off'} | locked=${stt.lockedLanguage || '-'}`
+  );
   if (state.quota.loaded) {
     const totalMinutes = formatMinutes(state.quota.totalAvailableThisMonth);
     const dailyInfo =
@@ -3239,19 +3404,19 @@ const trimTail = (text, limit) => {
   return '…' + text.slice(text.length - limit);
 };
 
-const appendDownload = (label, url) => {
-  if (!els.downloads) return;
-  const link = document.createElement('a');
-  link.href = url;
-  link.textContent = label;
-  link.download = '';
-  els.downloads.appendChild(link);
-};
-
-const resetDownloads = () => {
-  if (!els.downloads) return;
-  els.downloads.innerHTML = '';
-};
+// Legacy download helpers - removed (replaced by Result Card)
+// const appendDownload = (label, url) => {
+//   if (!els.downloads) return;
+//   const link = document.createElement('a');
+//   link.href = url;
+//   link.textContent = label;
+//   link.download = '';
+//   els.downloads.appendChild(link);
+// };
+// const resetDownloads = () => {
+//   if (!els.downloads) return;
+//   els.downloads.innerHTML = '';
+// };
 
 const updateLiveText = () => {
   if (!els.liveTranscript) return;
@@ -3342,7 +3507,7 @@ const uploadForM4A = async (blob) => {
   const res = await authFetch('/audio_m4a', { method: 'POST', body: fd });
   if (!res.ok) throw new Error('m4a変換失敗');
   const data = await res.json();
-  appendDownload('m4a', data.url);
+  // appendDownload('m4a', data.url); // Old UI removed - Result Card handles this
 };
 
 // Returns the M4A URL for storage in history
@@ -3352,52 +3517,12 @@ const uploadForM4AAndGetUrl = async (blob) => {
   const res = await authFetch('/audio_m4a', { method: 'POST', body: fd });
   if (!res.ok) throw new Error('m4a変換失敗');
   const data = await res.json();
-  appendDownload('m4a', data.url);
+  // appendDownload('m4a', data.url); // Old UI removed - Result Card handles this
   return data.url;
 };
 
-const saveTextDownloads = async () => {
-  const originals = state.logs.join('\n');
-  const bilingual = state.logs
-    .map((orig, idx) => `${orig}\n${state.translations[idx] || ''}`)
-    .join('\n\n');
-
-  let summaryMd = '';
-  if (originals.trim()) {
-    const fd = new FormData();
-    fd.append('text', originals);
-    fd.append('output_lang', state.outputLang);
-    if (state.glossaryText) {
-      fd.append('glossary_text', state.glossaryText);
-    }
-    if (state.summaryPrompt) {
-      fd.append('summary_prompt', state.summaryPrompt);
-    }
-    const summaryRes = await authFetch('/summarize', {
-      method: 'POST',
-      body: fd,
-    });
-    if (summaryRes.ok) {
-      const data = await summaryRes.json();
-      summaryMd = data.summary || '';
-    }
-  }
-
-  const makeBlobLink = (label, content, type = 'text/plain') => {
-    const url = URL.createObjectURL(new Blob([content], { type }));
-    appendDownload(label, url);
-  };
-
-  makeBlobLink('原文.txt', originals);
-  makeBlobLink('原文+日本語.txt', bilingual);
-  if (summaryMd) makeBlobLink('要約.md', summaryMd, 'text/markdown');
-
-  // Show summary section for manual summary generation
-  if (originals.trim() && els.summarySection) {
-    els.summarySection.style.display = 'block';
-    if (els.runSummary) els.runSummary.disabled = false;
-  }
-};
+// Legacy saveTextDownloads - removed (replaced by saveTextDownloadsWithResultCard)
+// const saveTextDownloads = async () => { ... };
 
 // Enhanced version that also shows result card UI
 const saveTextDownloadsWithResultCard = async () => {
@@ -3447,24 +3572,10 @@ const saveTextDownloadsWithResultCard = async () => {
     }
   }
 
-  const makeBlobLink = (label, content, type = 'text/plain') => {
-    const url = URL.createObjectURL(new Blob([content], { type }));
-    appendDownload(label, url);
-    return url;
-  };
-
-  makeBlobLink('原文.txt', originals);
-  makeBlobLink('原文+日本語.txt', bilingual);
-  if (summaryMd) makeBlobLink('要約.md', summaryMd, 'text/markdown');
+  // Legacy makeBlobLink calls removed (Result Card provides download links)
 
   // Show result card UI
   showResultCard(summaryMd);
-
-  // Show summary section for manual summary generation (legacy)
-  if (originals.trim() && els.summarySection) {
-    els.summarySection.style.display = 'block';
-    if (els.runSummary) els.runSummary.disabled = false;
-  }
 };
 
 // Show result card after stop
@@ -3584,9 +3695,11 @@ const translateCompleted = async (text) => {
 
 const commitLog = (text, itemId = null) => {
   if (!text || !text.trim()) return;
-  state.logs.push(text);
-  addTranscriptLog(text);
-  translateCompleted(text);
+  maybeLockSttLanguage(text);
+  const processed = postprocessSttText(text);
+  state.logs.push(processed);
+  addTranscriptLog(processed);
+  translateCompleted(processed);
   state.liveOriginal = '';
   if (itemId) {
     state.committedItems.add(itemId);
@@ -3901,7 +4014,7 @@ const start = async () => {
     els.start.disabled = true;
     els.stop.disabled = false;
   clearGapTimer();
-  resetDownloads();
+  // resetDownloads(); // Old UI removed
   clearLogs();
   state.logs = [];
   state.translations = [];
@@ -3911,6 +4024,8 @@ const start = async () => {
   state.activeItemId = null;
   state.realtimeEventQueue = []; // Clear any stale queued events
   state.sttSettings.wsAppliedOnce = false; // Reset STT settings applied flag for new connection
+  state.sttSettings.lockedLanguage = null;
+  state.sttSettings.autoLockApplied = false;
   updateLiveText();
   setError('');
 
@@ -4033,7 +4148,7 @@ const stop = async () => {
     const blob = new Blob(state.recordingChunks, { type: 'audio/webm' });
     const url = URL.createObjectURL(blob);
     state.currentSessionResult.audioUrl = url;
-    appendDownload('webm', url);
+    // appendDownload('webm', url); // Old UI removed - Result Card handles this
     try {
       const m4aUrl = await uploadForM4AAndGetUrl(blob);
       state.currentSessionResult.m4aUrl = m4aUrl;
@@ -4477,9 +4592,12 @@ document.addEventListener('DOMContentLoaded', () => {
     els.sttInputLang.addEventListener('change', () => {
       state.sttSettings.inputLang = els.sttInputLang.value;
       state.sttSettings.dirty.inputLang = true;
+      state.sttSettings.lockedLanguage = null;
+      state.sttSettings.autoLockApplied = false;
       saveSttSettings();
       updateSttDebugPayload();
       addDiagLog(`STT input lang changed: ${state.sttSettings.inputLang}`);
+      updateDevStatusSummary();
     });
   }
 
