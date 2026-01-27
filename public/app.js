@@ -640,6 +640,17 @@ const cacheElements = () => {
     glossaryTextInput: document.getElementById('glossaryTextInput'),
     summaryPromptInput: document.getElementById('summaryPromptInput'),
     resetUserSettings: document.getElementById('resetUserSettings'),
+    // STT Settings (Realtime API)
+    sttInputLang: document.getElementById('sttInputLang'),
+    sttVadPreset: document.getElementById('sttVadPreset'),
+    sttVadCustom: document.getElementById('sttVadCustom'),
+    sttVadThreshold: document.getElementById('sttVadThreshold'),
+    sttVadSilence: document.getElementById('sttVadSilence'),
+    sttVadPrefix: document.getElementById('sttVadPrefix'),
+    sttNoiseReduction: document.getElementById('sttNoiseReduction'),
+    sttTranscriptionModel: document.getElementById('sttTranscriptionModel'),
+    sttDebugPayload: document.getElementById('sttDebugPayload'),
+    sttDebugPayloadContent: document.getElementById('sttDebugPayloadContent'),
     // Dictionary CSV Upload
     dictionaryCsvInput: document.getElementById('dictionaryCsvInput'),
     uploadDictionaryCsv: document.getElementById('uploadDictionaryCsv'),
@@ -758,6 +769,26 @@ const state = {
   summaryPrompt: localStorage.getItem('rt_summary_prompt') || '',
   // Realtime event queue (for session.update before dataChannel is open)
   realtimeEventQueue: [],
+  // STT Settings (Realtime API session.update)
+  sttSettings: {
+    // Selected values (persisted to localStorage)
+    inputLang: localStorage.getItem('stt_input_lang') || 'auto', // auto/zh/ja/en
+    vadPreset: localStorage.getItem('stt_vad_preset') || 'stable', // stable/fast/custom
+    vadThreshold: Number(localStorage.getItem('stt_vad_threshold')) || 0.65,
+    vadSilence: Number(localStorage.getItem('stt_vad_silence')) || 800,
+    vadPrefix: Number(localStorage.getItem('stt_vad_prefix')) || 500,
+    noiseReduction: localStorage.getItem('stt_noise_reduction') || 'auto', // auto=don't send, near_field/far_field/off
+    transcriptionModel: localStorage.getItem('stt_transcription_model') || 'auto', // auto=gpt-4o-mini-transcribe (default), gpt-4o-transcribe
+    // Dirty flags (true = user changed this setting, should be sent to API)
+    dirty: {
+      inputLang: false,
+      vadPreset: false,
+      noiseReduction: false,
+      transcriptionModel: false,
+    },
+    // Guard: only apply once per WS open
+    wsAppliedOnce: false,
+  },
   // Diagnostics: session tracking
   sessionId: null, // Generated per connection attempt
   buildVersion: null, // Fetched from /build.txt
@@ -1189,33 +1220,185 @@ const flushRealtimeEventQueue = () => {
   }
 };
 
-// Send session.update with audio input settings
-// OpenAI Realtime API: session.audio.input.transcription / session.audio.input.turn_detection
-const sendSessionUpdate = () => {
-  const transcriptionLanguage = state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined;
-  const silenceDurationMs = Number(state.vadSilence) || 500;
+// Build STT settings payload based on dirty flags
+// Only includes settings that user has explicitly changed
+const buildSttPayload = () => {
+  const stt = state.sttSettings;
+  const dirty = stt.dirty;
 
-  // 正しいスキーマ: session.audio.input 内に transcription, turn_detection を配置
-  // Ref: https://platform.openai.com/docs/api-reference/realtime-client-events/session/update
+  const transcription = {};
+  const turn_detection = { type: 'server_vad', create_response: false };
+  let hasTranscription = false;
+  let hasTurnDetection = false;
+  let noiseReduction = null;
+
+  // Transcription model (only if dirty)
+  if (dirty.transcriptionModel && stt.transcriptionModel !== 'auto') {
+    transcription.model = stt.transcriptionModel;
+    hasTranscription = true;
+  } else if (dirty.transcriptionModel) {
+    // auto = use default (gpt-4o-mini-transcribe)
+    transcription.model = 'gpt-4o-mini-transcribe';
+    hasTranscription = true;
+  }
+
+  // Input language (only if dirty and not auto)
+  if (dirty.inputLang && stt.inputLang !== 'auto') {
+    transcription.language = stt.inputLang;
+    hasTranscription = true;
+  }
+
+  // VAD preset (only if dirty)
+  if (dirty.vadPreset) {
+    hasTurnDetection = true;
+    if (stt.vadPreset === 'custom') {
+      turn_detection.threshold = stt.vadThreshold;
+      turn_detection.silence_duration_ms = stt.vadSilence;
+      turn_detection.prefix_padding_ms = stt.vadPrefix;
+    } else {
+      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.stable;
+      turn_detection.threshold = preset.threshold;
+      turn_detection.silence_duration_ms = preset.silence_duration_ms;
+      turn_detection.prefix_padding_ms = preset.prefix_padding_ms;
+    }
+  }
+
+  // Noise reduction (only if dirty and not auto)
+  if (dirty.noiseReduction && stt.noiseReduction !== 'auto') {
+    noiseReduction = stt.noiseReduction;
+  }
+
+  // Build the payload
+  const input = {};
+  if (hasTranscription) {
+    // If model not set, use default
+    if (!transcription.model) {
+      transcription.model = 'gpt-4o-mini-transcribe';
+    }
+    input.transcription = transcription;
+  }
+  if (hasTurnDetection) {
+    input.turn_detection = turn_detection;
+  }
+  if (noiseReduction) {
+    input.noise_reduction = { type: noiseReduction };
+  }
+
+  // Return null if no settings to send
+  if (Object.keys(input).length === 0) {
+    return null;
+  }
+
+  return {
+    type: 'session.update',
+    session: {
+      type: 'realtime',
+      audio: { input },
+    },
+  };
+};
+
+// Apply STT settings via session.update (called once after WS open if dirty settings exist)
+const applyRealtimeSttSettings = () => {
+  // Guard: only apply once per connection
+  if (state.sttSettings.wsAppliedOnce) {
+    addDiagLog('applyRealtimeSttSettings: already applied, skipping');
+    return;
+  }
+
+  const payload = buildSttPayload();
+
+  // Update debug display if in debug mode
+  if (isDebugMode() && els.sttDebugPayload && els.sttDebugPayloadContent) {
+    els.sttDebugPayload.style.display = 'block';
+    els.sttDebugPayloadContent.textContent = payload
+      ? JSON.stringify(payload, null, 2)
+      : '(no dirty settings to send)';
+  }
+
+  if (!payload) {
+    addDiagLog('applyRealtimeSttSettings: no dirty settings, skipping send');
+    state.sttSettings.wsAppliedOnce = true;
+    return;
+  }
+
+  try {
+    console.log('[applyRealtimeSttSettings] payload:', JSON.stringify(payload, null, 2));
+    addDiagLog(`applyRealtimeSttSettings: sending session.update | sid=${state.sessionId || 'no_sid'}`);
+    const sent = sendRealtimeEvent(payload);
+    addDiagLog(`applyRealtimeSttSettings: session.update sent=${sent} queued=${!sent}`);
+    state.sttSettings.wsAppliedOnce = true;
+  } catch (err) {
+    logErrorDetails('applyRealtimeSttSettings', err);
+    addDiagLog(`applyRealtimeSttSettings: error - ${err.message}`);
+  }
+};
+
+// Legacy sendSessionUpdate - now uses sttSettings for VAD but keeps backward compatibility
+// This is called from dataChannel.onopen for basic session setup
+const sendSessionUpdate = () => {
+  // Use sttSettings VAD values if dirty, otherwise use legacy state.vadSilence
+  const stt = state.sttSettings;
+  let vadConfig;
+
+  if (stt.dirty.vadPreset) {
+    // User changed VAD preset - use sttSettings
+    if (stt.vadPreset === 'custom') {
+      vadConfig = {
+        threshold: stt.vadThreshold,
+        silence_duration_ms: stt.vadSilence,
+        prefix_padding_ms: stt.vadPrefix,
+      };
+    } else {
+      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.stable;
+      vadConfig = {
+        threshold: preset.threshold,
+        silence_duration_ms: preset.silence_duration_ms,
+        prefix_padding_ms: preset.prefix_padding_ms,
+      };
+    }
+  } else {
+    // Use legacy settings (backward compatible - existing behavior)
+    vadConfig = {
+      threshold: 0.5,
+      silence_duration_ms: Number(state.vadSilence) || 500,
+      prefix_padding_ms: 300,
+    };
+  }
+
+  // Language: use sttSettings if dirty, otherwise use legacy state.inputLang
+  const transcriptionLanguage = stt.dirty.inputLang
+    ? (stt.inputLang !== 'auto' ? stt.inputLang : undefined)
+    : (state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined);
+
+  // Model: use sttSettings if dirty, otherwise use default
+  const transcriptionModel = stt.dirty.transcriptionModel && stt.transcriptionModel !== 'auto'
+    ? stt.transcriptionModel
+    : 'gpt-4o-mini-transcribe';
+
+  // Build payload
+  const input = {
+    transcription: {
+      model: transcriptionModel,
+      ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
+    },
+    turn_detection: {
+      type: 'server_vad',
+      ...vadConfig,
+      create_response: false,
+    },
+  };
+
+  // Add noise reduction if dirty and not auto
+  if (stt.dirty.noiseReduction && stt.noiseReduction !== 'auto') {
+    input.noise_reduction = { type: stt.noiseReduction };
+  }
+
   const payload = {
     type: 'session.update',
     session: {
       type: 'realtime',
-      audio: {
-        input: {
-          transcription: {
-            model: 'gpt-4o-mini-transcribe',
-            ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
-          },
-          turn_detection: {
-            type: 'server_vad',
-            silence_duration_ms: silenceDurationMs,
-            prefix_padding_ms: 300,
-            threshold: 0.5,
-            create_response: false,
-          },
-        },
-      },
+      audio: { input },
     },
   };
 
@@ -1225,6 +1408,15 @@ const sendSessionUpdate = () => {
     addDiagLog(`STEP_SESSION_UPDATE: session.type=${payload.session.type} sid=${state.sessionId || 'no_sid'}`);
     const sent = sendRealtimeEvent(payload);
     addDiagLog(`session.update sent | queued=${!sent} sid=${state.sessionId || 'no_sid'}`);
+
+    // Mark STT settings as applied
+    state.sttSettings.wsAppliedOnce = true;
+
+    // Update debug display
+    if (isDebugMode() && els.sttDebugPayload && els.sttDebugPayloadContent) {
+      els.sttDebugPayload.style.display = 'block';
+      els.sttDebugPayloadContent.textContent = JSON.stringify(payload, null, 2);
+    }
   } catch (err) {
     logErrorDetails('sendSessionUpdate', err);
     throw err;
@@ -1408,6 +1600,12 @@ const PRESETS = {
   fast: { maxChars: 240, gapMs: 700, vadSilence: 300 },
   balanced: { maxChars: 300, gapMs: 1000, vadSilence: 400 },
   stable: { maxChars: 360, gapMs: 1500, vadSilence: 550 },
+};
+
+// STT VAD Presets for OpenAI Realtime API turn_detection
+const STT_VAD_PRESETS = {
+  stable: { threshold: 0.65, silence_duration_ms: 800, prefix_padding_ms: 500 },
+  fast: { threshold: 0.45, silence_duration_ms: 400, prefix_padding_ms: 300 },
 };
 
 const applyPreset = (name) => {
@@ -3712,6 +3910,7 @@ const start = async () => {
   state.committedItems = new Set();
   state.activeItemId = null;
   state.realtimeEventQueue = []; // Clear any stale queued events
+  state.sttSettings.wsAppliedOnce = false; // Reset STT settings applied flag for new connection
   updateLiveText();
   setError('');
 
@@ -4223,6 +4422,123 @@ document.addEventListener('DOMContentLoaded', () => {
   if (els.presetStable) {
     els.presetStable.addEventListener('click', () => applyPreset('stable'));
   }
+
+  // ========== STT Settings Event Handlers ==========
+  // Initialize STT UI values from state
+  const initSttSettingsUI = () => {
+    const stt = state.sttSettings;
+    if (els.sttInputLang) els.sttInputLang.value = stt.inputLang;
+    if (els.sttVadPreset) els.sttVadPreset.value = stt.vadPreset;
+    if (els.sttVadThreshold) els.sttVadThreshold.value = stt.vadThreshold;
+    if (els.sttVadSilence) els.sttVadSilence.value = stt.vadSilence;
+    if (els.sttVadPrefix) els.sttVadPrefix.value = stt.vadPrefix;
+    if (els.sttNoiseReduction) els.sttNoiseReduction.value = stt.noiseReduction;
+    if (els.sttTranscriptionModel) els.sttTranscriptionModel.value = stt.transcriptionModel;
+    // Show/hide custom VAD inputs
+    if (els.sttVadCustom) {
+      els.sttVadCustom.style.display = stt.vadPreset === 'custom' ? 'block' : 'none';
+    }
+    // Show debug payload in debug mode
+    if (isDebugMode() && els.sttDebugPayload) {
+      els.sttDebugPayload.style.display = 'block';
+      if (els.sttDebugPayloadContent) {
+        const payload = buildSttPayload();
+        els.sttDebugPayloadContent.textContent = payload
+          ? JSON.stringify(payload, null, 2)
+          : '(no dirty settings)';
+      }
+    }
+  };
+
+  // Save STT settings to localStorage
+  const saveSttSettings = () => {
+    const stt = state.sttSettings;
+    localStorage.setItem('stt_input_lang', stt.inputLang);
+    localStorage.setItem('stt_vad_preset', stt.vadPreset);
+    localStorage.setItem('stt_vad_threshold', String(stt.vadThreshold));
+    localStorage.setItem('stt_vad_silence', String(stt.vadSilence));
+    localStorage.setItem('stt_vad_prefix', String(stt.vadPrefix));
+    localStorage.setItem('stt_noise_reduction', stt.noiseReduction);
+    localStorage.setItem('stt_transcription_model', stt.transcriptionModel);
+  };
+
+  // Update debug payload display
+  const updateSttDebugPayload = () => {
+    if (isDebugMode() && els.sttDebugPayload && els.sttDebugPayloadContent) {
+      els.sttDebugPayload.style.display = 'block';
+      const payload = buildSttPayload();
+      els.sttDebugPayloadContent.textContent = payload
+        ? JSON.stringify(payload, null, 2)
+        : '(no dirty settings)';
+    }
+  };
+
+  if (els.sttInputLang) {
+    els.sttInputLang.addEventListener('change', () => {
+      state.sttSettings.inputLang = els.sttInputLang.value;
+      state.sttSettings.dirty.inputLang = true;
+      saveSttSettings();
+      updateSttDebugPayload();
+      addDiagLog(`STT input lang changed: ${state.sttSettings.inputLang}`);
+    });
+  }
+
+  if (els.sttVadPreset) {
+    els.sttVadPreset.addEventListener('change', () => {
+      state.sttSettings.vadPreset = els.sttVadPreset.value;
+      state.sttSettings.dirty.vadPreset = true;
+      saveSttSettings();
+      // Show/hide custom inputs
+      if (els.sttVadCustom) {
+        els.sttVadCustom.style.display = state.sttSettings.vadPreset === 'custom' ? 'block' : 'none';
+      }
+      updateSttDebugPayload();
+      addDiagLog(`STT VAD preset changed: ${state.sttSettings.vadPreset}`);
+    });
+  }
+
+  // VAD custom inputs
+  const handleVadCustomChange = () => {
+    state.sttSettings.vadThreshold = Number(els.sttVadThreshold?.value) || 0.65;
+    state.sttSettings.vadSilence = Number(els.sttVadSilence?.value) || 800;
+    state.sttSettings.vadPrefix = Number(els.sttVadPrefix?.value) || 500;
+    state.sttSettings.dirty.vadPreset = true; // Mark as dirty when custom values change
+    saveSttSettings();
+    updateSttDebugPayload();
+  };
+
+  if (els.sttVadThreshold) {
+    els.sttVadThreshold.addEventListener('change', handleVadCustomChange);
+  }
+  if (els.sttVadSilence) {
+    els.sttVadSilence.addEventListener('change', handleVadCustomChange);
+  }
+  if (els.sttVadPrefix) {
+    els.sttVadPrefix.addEventListener('change', handleVadCustomChange);
+  }
+
+  if (els.sttNoiseReduction) {
+    els.sttNoiseReduction.addEventListener('change', () => {
+      state.sttSettings.noiseReduction = els.sttNoiseReduction.value;
+      state.sttSettings.dirty.noiseReduction = true;
+      saveSttSettings();
+      updateSttDebugPayload();
+      addDiagLog(`STT noise reduction changed: ${state.sttSettings.noiseReduction}`);
+    });
+  }
+
+  if (els.sttTranscriptionModel) {
+    els.sttTranscriptionModel.addEventListener('change', () => {
+      state.sttSettings.transcriptionModel = els.sttTranscriptionModel.value;
+      state.sttSettings.dirty.transcriptionModel = true;
+      saveSttSettings();
+      updateSttDebugPayload();
+      addDiagLog(`STT transcription model changed: ${state.sttSettings.transcriptionModel}`);
+    });
+  }
+
+  // Initialize STT UI on page load
+  initSttSettingsUI();
 
   if (els.resetUserSettings) {
     els.resetUserSettings.addEventListener('click', () => {

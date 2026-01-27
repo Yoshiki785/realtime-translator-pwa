@@ -1320,3 +1320,67 @@ button.disabled {
   gap: 8px;
   margin-top: 8px;
 }
+
+/* ========== STT Settings Section ========== */
+.stt-settings-section {
+  margin: 8px 0;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+}
+
+.stt-settings-section summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  padding: 4px 0;
+}
+
+.stt-settings-section summary:hover {
+  color: var(--fg);
+}
+
+.stt-settings-section[open] summary {
+  margin-bottom: 8px;
+}
+
+.stt-settings-section label {
+  font-size: 12px;
+}
+
+.stt-vad-custom {
+  margin-left: 12px;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  margin-bottom: 8px;
+}
+
+.stt-vad-custom label {
+  font-size: 11px;
+}
+
+.stt-debug-payload {
+  margin-top: 8px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-radius: 6px;
+  font-size: 11px;
+}
+
+.stt-debug-payload small {
+  color: var(--muted);
+  display: block;
+  margin-bottom: 4px;
+}
+
+.stt-debug-payload pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 10px;
+  color: var(--accent);
+  max-height: 150px;
+  overflow-y: auto;
+}
+
