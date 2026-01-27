@@ -2737,6 +2737,19 @@ const CONNECTION_TIMEOUT_MS = 10000; // 10秒でタイムアウト
 const RETRY_BACKOFF_MS = 750; // リトライまでの待機時間（500ms〜1sの中間）
 const MAX_RETRY_COUNT = 1; // リトライは1回のみ
 
+// UUID生成（client_request_id 用）
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older browsers
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
+
 // ========== Start Throttle / Rate Limit ==========
 const START_THROTTLE_MS = 12000; // クライアント側スロットル: 12秒に1回まで（5回/分）
 const DEFAULT_RATE_LIMIT_WAIT_MS = 60000; // 429時のデフォルト待機時間
@@ -2874,7 +2887,15 @@ const hasQuotaForStart = () => {
 };
 
 const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
-  addDiagLog('Requesting job reservation');
+  // ========== 二重呼び出し防止: すでにジョブがある場合は呼ばない ==========
+  if (state.currentJob || state.jobActive) {
+    addDiagLog(`reserveJobSlot skipped: job already active | jobId=${state.currentJob?.jobId} | jobActive=${state.jobActive}`);
+    return state.currentJob;
+  }
+
+  // client_request_id を生成（観測用）
+  const clientRequestId = generateUUID();
+  addDiagLog(`Requesting job reservation | clientRequestId=${clientRequestId}`);
 
   // 呼び出し時刻を記録（スロットル用）
   state.lastJobCreateAt = Date.now();
@@ -2882,11 +2903,40 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   const createUrl = forceTakeover
     ? '/api/v1/jobs/create?force_takeover=true'
     : '/api/v1/jobs/create';
-  const res = await authFetch(createUrl, { method: 'POST' });
+  const res = await authFetch(createUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientRequestId }),
+  });
   const data = await res.json().catch(() => ({}));
 
+  // 409 active_job_in_progress の処理
   if (res.status === 409 && data?.error === 'active_job_in_progress') {
-    addDiagLog('Job create blocked: active_job_in_progress');
+    addDiagLog(`Job create blocked: active_job_in_progress | clientRequestId=${clientRequestId}`);
+    // 409 はリトライしない（UIはRETRYINGにしない）
+    // /jobs/active を叩いて復帰導線を出す
+    try {
+      const activeRes = await authFetch('/api/v1/jobs/active', { method: 'GET' });
+      if (activeRes.ok) {
+        const activeData = await activeRes.json();
+        addDiagLog(`Active job found via /jobs/active | jobId=${activeData.jobId} | recovering...`);
+        // 既存ジョブで復帰
+        state.currentJob = {
+          jobId: activeData.jobId,
+          reservedSeconds: activeData.reservedSeconds,
+          reservedBaseSeconds: activeData.reservedBaseSeconds,
+          reservedTicketSeconds: activeData.reservedTicketSeconds,
+        };
+        state.jobStartedAt = Date.now();
+        state.jobActive = true;
+        applyQuotaFromPayload(activeData);
+        addDiagLog(`Job recovered from /jobs/active | jobId=${activeData.jobId} | jobActive=true`);
+        return activeData;
+      }
+    } catch (activeErr) {
+      addDiagLog(`Failed to fetch /jobs/active: ${activeErr.message}`);
+    }
+    // /jobs/active も失敗した場合は takeover ダイアログを表示
     if (forceTakeover) {
       const takeoverErr = new Error('active_job_in_progress');
       takeoverErr._context = 'job_create';
@@ -2911,7 +2961,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
         waitMs = retryAfterSec * 1000;
       }
     }
-    addDiagLog(`429 Too Many Requests | Retry-After=${retryAfterHeader || 'none'} | waitMs=${waitMs}`);
+    addDiagLog(`429 Too Many Requests | Retry-After=${retryAfterHeader || 'none'} | waitMs=${waitMs} | clientRequestId=${clientRequestId}`);
 
     // 特別なエラーをthrowして、呼び出し元でクールダウン処理を行う
     const rateLimitErr = new Error('rate_limit');
@@ -2924,6 +2974,13 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
     const message = extractErrorMessage(data, 'ジョブの予約に失敗しました。');
     throw new Error(message);
   }
+
+  // reused=true の場合は復帰フロー
+  const reused = data.reused === true;
+  if (reused) {
+    addDiagLog(`Job reused (idempotent recovery) | jobId=${data.jobId} | clientRequestId=${clientRequestId}`);
+  }
+
   state.currentJob = {
     jobId: data.jobId,
     reservedSeconds: data.reservedSeconds,
@@ -2933,7 +2990,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   state.jobStartedAt = Date.now();
   state.jobActive = true; // ジョブ有効化
   applyQuotaFromPayload(data);
-  addDiagLog(`Job reserved | jobId=${data.jobId} | jobActive=true`);
+  addDiagLog(`Job reserved | jobId=${data.jobId} | reused=${reused} | jobActive=true | clientRequestId=${clientRequestId}`);
   return data;
 };
 

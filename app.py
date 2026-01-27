@@ -856,7 +856,42 @@ def _create_job_core(
                 force_takeover_used = True
                 continue
             if should_block:
-                raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
+                # Idempotent: return existing active job instead of 409
+                existing_job_ref = db.collection("jobs").document(active_job_id)
+                existing_job_snap = existing_job_ref.get(transaction=transaction)
+                if existing_job_snap.exists:
+                    existing_job_data = existing_job_snap.to_dict() or {}
+                    # Only return if job is still in running state
+                    if existing_job_data.get("status") == "running":
+                        # Convert createdAt to ISO string if it's a datetime
+                        created_at = existing_job_data.get("createdAt")
+                        if isinstance(created_at, datetime):
+                            created_at = created_at.isoformat()
+                        return {
+                            "jobId": active_job_id,
+                            "status": existing_job_data.get("status", "running"),
+                            "plan": existing_job_data.get("plan"),
+                            "reservedSeconds": existing_job_data.get("reservedSeconds", 0),
+                            "reservedBaseSeconds": existing_job_data.get("reservedBaseSeconds", 0),
+                            "reservedTicketSeconds": existing_job_data.get("reservedTicketSeconds", 0),
+                            "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
+                            "creditSeconds": snapshot["creditSeconds"],
+                            "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
+                            "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
+                            "baseDailyQuotaSeconds": existing_job_data.get("reservedDailyLimitSeconds"),
+                            "dailyRemainingSeconds": snapshot.get("dailyRemainingSeconds"),
+                            "maxSessionSeconds": existing_job_data.get("maxSessionSeconds", max_session),
+                            "retentionDays": existing_job_data.get("retentionDays", 7),
+                            "monthKey": user_state.get("monthKey"),
+                            "createdAt": created_at,
+                            "reused": True,
+                        }
+                # If job doesn't exist or not running, clear the stale activeJobId and continue
+                user_updates = {"activeJobId": None, "activeJobStartedAt": None}
+                apply_user_updates(user_ref, user_updates, transaction)
+                user_state["activeJobId"] = None
+                user_state["activeJobStartedAt"] = None
+                continue
         break
 
     reserved_seconds = min(total_available, max_session)
@@ -1446,18 +1481,87 @@ async def create_job(request: Request) -> JSONResponse:
             transaction, db, uid, job_id, current_jst, now_utc, force_takeover=force_takeover
         )
 
+    reused = result.get("reused", False)
+    actual_job_id = result.get("jobId", job_id)
     log_payload = {
         "uid": uid,
-        "jobId": job_id,
+        "jobId": actual_job_id,
         "endpoint": "jobs.create",
         "plan": result.get("plan"),
         "reservedSeconds": result.get("reservedSeconds"),
         "reservedBaseSeconds": result.get("reservedBaseSeconds"),
         "reservedTicketSeconds": result.get("reservedTicketSeconds"),
         "totalAvailableThisMonth": result.get("totalAvailableThisMonth"),
+        "reused": reused,
     }
     logger.info(f"Job reservation | {json.dumps(log_payload)}")
     return JSONResponse(result)
+
+
+@app.get("/api/v1/jobs/active")
+async def get_active_job(request: Request) -> JSONResponse:
+    """Get the current user's active job if exists, or 404 if none."""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+    current_jst = now_jst()
+
+    user_ref, user_state, plan, plan_config = read_user_state(db, uid, current_jst)
+    active_job_id = user_state.get("activeJobId")
+
+    if not active_job_id:
+        raise HTTPException(status_code=404, detail={"error": "no_active_job"})
+
+    job_ref = db.collection("jobs").document(active_job_id)
+    job_snap = job_ref.get()
+
+    if not job_snap.exists:
+        # Stale activeJobId - clear it
+        user_ref.update({"activeJobId": None, "activeJobStartedAt": None})
+        raise HTTPException(status_code=404, detail={"error": "no_active_job"})
+
+    job_data = job_snap.to_dict() or {}
+
+    # Verify job belongs to this user
+    if job_data.get("uid") != uid:
+        # Stale activeJobId - clear it
+        user_ref.update({"activeJobId": None, "activeJobStartedAt": None})
+        raise HTTPException(status_code=404, detail={"error": "no_active_job"})
+
+    # Check if job is still in running state
+    status = job_data.get("status", "running")
+    if status in FINAL_JOB_STATUSES:
+        # Job has completed - clear activeJobId
+        user_ref.update({"activeJobId": None, "activeJobStartedAt": None})
+        raise HTTPException(status_code=404, detail={"error": "no_active_job"})
+
+    snapshot = build_quota_snapshot(user_state, plan_config)
+
+    # Convert createdAt to ISO string if it's a datetime
+    created_at = job_data.get("createdAt")
+    if isinstance(created_at, datetime):
+        created_at = created_at.isoformat()
+
+    response = {
+        "jobId": active_job_id,
+        "status": status,
+        "plan": job_data.get("plan"),
+        "reservedSeconds": job_data.get("reservedSeconds", 0),
+        "reservedBaseSeconds": job_data.get("reservedBaseSeconds", 0),
+        "reservedTicketSeconds": job_data.get("reservedTicketSeconds", 0),
+        "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
+        "creditSeconds": snapshot["creditSeconds"],
+        "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
+        "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
+        "baseDailyQuotaSeconds": job_data.get("reservedDailyLimitSeconds"),
+        "dailyRemainingSeconds": snapshot.get("dailyRemainingSeconds"),
+        "maxSessionSeconds": job_data.get("maxSessionSeconds", 600),
+        "retentionDays": job_data.get("retentionDays", 7),
+        "monthKey": user_state.get("monthKey"),
+        "createdAt": created_at,
+    }
+
+    logger.info(f"Active job retrieved | uid={uid} | jobId={active_job_id}")
+    return JSONResponse(response)
 
 
 @app.post("/api/v1/jobs/complete")
