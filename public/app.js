@@ -4125,6 +4125,61 @@ const start = async () => {
   }
 };
 
+const buildTranscriptHead = (originals, targetMin = 400, targetMax = 800) => {
+  if (!Array.isArray(originals) || originals.length === 0) return '';
+  const minLength = 5;
+  const skipPatterns = [
+    /^こんにちは[。、]?$/,
+    /^おはよう(ございます)?[。、]?$/,
+    /^こんばんは[。、]?$/,
+    /^ありがとう(ございます)?[。、]?$/,
+    /^すみません[。、]?$/,
+    /^えっと[。、]?$/,
+    /^あの[ー〜]?[。、]?$/,
+    /^その[ー〜]?[。、]?$/,
+    /^なんか[。、]?$/,
+    /^hello[.,]?$/i,
+    /^good\s*morning[.,]?$/i,
+    /^good\s*evening[.,]?$/i,
+    /^thanks?[.,]?$/i,
+    /^sorry[.,]?$/i,
+    /^uh+[.,]?$/i,
+    /^um+[.,]?$/i,
+    /^你好[。，]?$/,
+    /^早上好[。，]?$/,
+    /^晚上好[。，]?$/,
+    /^谢谢[。，]?$/,
+    /^不好意思[。，]?$/,
+    /^呃+[。，]?$/,
+    /^那个[。，]?$/,
+  ];
+  const shouldSkip = (text) => {
+    const trimmed = (text || '').trim();
+    if (!trimmed || trimmed.length < minLength) return true;
+    return skipPatterns.some((pattern) => pattern.test(trimmed));
+  };
+  let result = '';
+  for (const sentence of originals) {
+    if (shouldSkip(sentence)) continue;
+    const addition = result ? ` ${sentence}` : sentence;
+    if (result.length + addition.length > targetMax) {
+      if (result.length < targetMin) {
+        const remaining = targetMax - result.length - (result ? 1 : 0);
+        if (remaining > 0) {
+          result += (result ? ' ' : '') + sentence.slice(0, remaining);
+        }
+      }
+      break;
+    }
+    result += addition;
+    if (result.length >= targetMax) break;
+  }
+  if (!result.trim()) {
+    result = originals.slice(0, 5).join(' ');
+  }
+  return result.slice(0, targetMax);
+};
+
 const stop = async () => {
   addDiagLog(`Stop requested | jobActive=${state.jobActive}`);
   els.start.disabled = false;
@@ -4168,7 +4223,7 @@ const stop = async () => {
   }
 
   // Prepare title generation inputs for server
-  const transcriptHead = state.currentSessionResult.originals.slice(0, 5).join(' ');
+  const transcriptHead = buildTranscriptHead(state.currentSessionResult.originals, 400, 800);
   const titleInputs = {
     transcriptHead: transcriptHead,
     summary: '', // Summary not available at this point
