@@ -51,6 +51,15 @@ const STRINGS = {
     billingError: 'エラーが発生しました',
     alreadyPro: 'Proプラン利用中',
     manageSubscription: 'サブスク管理',
+    buyTicket: '追加購入',
+    buyTicketProOnly: '追加購入（Pro限定）',
+    proRequiredHint: 'Proプランのみ購入可能です。アップグレードしてください。',
+    purchasing: '購入中...',
+    ticketSuccess: 'チケット購入完了！',
+    ticketCancelled: '購入キャンセル',
+    ticketSelectTitle: '追加チケットを選択',
+    ticketCheckoutError: '決済を開始できませんでした',
+    proRequired: 'Proプランのみ購入可能',
     billingStatusFree: 'Freeプラン',
     billingStatusPro: 'Proプラン',
     billingStatusCanceling: '解約予定（{date}まで有効）',
@@ -67,10 +76,15 @@ const STRINGS = {
     taxIdLabel: '税ID種別',
     taxIdValue: '税ID値',
     saveCompany: '保存',
+    editCompany: '会社情報を編集',
     companySaved: '保存しました',
     companySavedWithStripe: '保存しました（Stripe同期完了）',
     companySavedStripeSkipped: '保存しました（Stripe未同期）',
     companySaveError: '保存に失敗しました',
+    errorPromptInjection: '不正な入力パターンが検出されました。入力を確認してください。',
+    errorNoTextToSummarize: '要約するテキストがありません',
+    errorSummaryFailed: '要約の生成に失敗しました',
+    errorInputTooLong: '入力が長すぎます（上限を超えました）',
   },
   en: {
     login: 'Login',
@@ -120,6 +134,15 @@ const STRINGS = {
     billingError: 'An error occurred',
     alreadyPro: 'Pro plan active',
     manageSubscription: 'Manage Subscription',
+    buyTicket: 'Buy Add-on',
+    buyTicketProOnly: 'Buy Add-on (Pro only)',
+    proRequiredHint: 'Available for Pro plans only. Please upgrade.',
+    purchasing: 'Purchasing...',
+    ticketSuccess: 'Ticket purchased!',
+    ticketCancelled: 'Purchase cancelled',
+    ticketSelectTitle: 'Select ticket pack',
+    ticketCheckoutError: 'Failed to start checkout',
+    proRequired: 'Pro only',
     billingStatusFree: 'Free Plan',
     billingStatusPro: 'Pro Plan',
     billingStatusCanceling: 'Canceling (valid until {date})',
@@ -136,10 +159,15 @@ const STRINGS = {
     taxIdLabel: 'Tax ID Type',
     taxIdValue: 'Tax ID',
     saveCompany: 'Save',
+    editCompany: 'Edit Company Info',
     companySaved: 'Saved',
     companySavedWithStripe: 'Saved (Stripe synced)',
     companySavedStripeSkipped: 'Saved (Stripe not synced)',
     companySaveError: 'Failed to save',
+    errorPromptInjection: 'Invalid input pattern detected. Please check your input.',
+    errorNoTextToSummarize: 'No text to summarize',
+    errorSummaryFailed: 'Failed to generate summary',
+    errorInputTooLong: 'Input is too long (exceeded limit)',
   },
   'zh-Hans': {
     login: '登录',
@@ -189,6 +217,15 @@ const STRINGS = {
     billingError: '发生错误',
     alreadyPro: 'Pro计划使用中',
     manageSubscription: '管理订阅',
+    buyTicket: '追加购买',
+    buyTicketProOnly: '追加购买（仅Pro）',
+    proRequiredHint: '仅限Pro计划购买，请升级。',
+    purchasing: '购买中...',
+    ticketSuccess: '购买成功！',
+    ticketCancelled: '购买已取消',
+    ticketSelectTitle: '选择加购套餐',
+    ticketCheckoutError: '无法开始结算',
+    proRequired: '仅Pro可购买',
     billingStatusFree: '免费版',
     billingStatusPro: 'Pro版',
     billingStatusCanceling: '取消中（{date}前有效）',
@@ -205,10 +242,15 @@ const STRINGS = {
     taxIdLabel: '税号类型',
     taxIdValue: '税号',
     saveCompany: '保存',
+    editCompany: '编辑公司信息',
     companySaved: '已保存',
     companySavedWithStripe: '已保存（Stripe已同步）',
     companySavedStripeSkipped: '已保存（Stripe未同步）',
     companySaveError: '保存失败',
+    errorPromptInjection: '检测到无效的输入模式，请检查您的输入。',
+    errorNoTextToSummarize: '没有可摘要的文本',
+    errorInputTooLong: '输入过长（超过上限）',
+    errorSummaryFailed: '摘要生成失败',
   },
 };
 
@@ -317,7 +359,7 @@ const createDefaultQuotaState = () => ({
   totalAvailableThisMonth: null,
   baseDailyQuotaSeconds: null,
   dailyRemainingSeconds: null,
-  ticketSecondsBalance: null,
+  creditSeconds: null,
   maxSessionSeconds: null,
   nextResetAt: null,
   blockedReason: null,
@@ -377,9 +419,12 @@ const logErrorDetails = (label, err) => {
   const name = err?.name || 'Error';
   const message = err?.message || String(err);
   const stack = err?.stack || 'no_stack';
-  addDiagLog(`${label} error | name=${name} message=${message}`);
+  const context = err?._context || label;
+  const sessionId = state.sessionId || 'no_session';
+  const buildVer = state.buildVersion || 'unknown';
+  addDiagLog(`${label} error | ctx=${context} sid=${sessionId} build=${buildVer} name=${name} message=${message}`);
   addDiagLog(`${label} error stack | ${stack}`);
-  console.error(label, err);
+  console.error(`[${label}] ctx=${context} sid=${sessionId} build=${buildVer}`, err);
 };
 
 const addRawRealtimeEvent = (raw) => {
@@ -562,7 +607,7 @@ const cacheElements = () => {
     start: document.getElementById('startBtn'),
     stop: document.getElementById('stopBtn'),
     error: document.getElementById('error'),
-    downloads: document.getElementById('downloads'),
+    // downloads: document.getElementById('downloads'), // Old UI removed
     a2hs: document.getElementById('a2hs'),
     settingsBtn: document.getElementById('settingsBtn'),
     settingsModal: document.getElementById('settingsModal'),
@@ -595,18 +640,42 @@ const cacheElements = () => {
     glossaryTextInput: document.getElementById('glossaryTextInput'),
     summaryPromptInput: document.getElementById('summaryPromptInput'),
     resetUserSettings: document.getElementById('resetUserSettings'),
-    // Summary Section (after Stop)
-    summarySection: document.getElementById('summarySection'),
-    runSummary: document.getElementById('runSummary'),
-    copySummary: document.getElementById('copySummary'),
-    summaryOutput: document.getElementById('summaryOutput'),
+    // STT Settings (Realtime API)
+    sttInputLang: document.getElementById('sttInputLang'),
+    sttVadPreset: document.getElementById('sttVadPreset'),
+    sttVadCustom: document.getElementById('sttVadCustom'),
+    sttVadThreshold: document.getElementById('sttVadThreshold'),
+    sttVadSilence: document.getElementById('sttVadSilence'),
+    sttVadPrefix: document.getElementById('sttVadPrefix'),
+    sttNoiseReduction: document.getElementById('sttNoiseReduction'),
+    sttTranscriptionModel: document.getElementById('sttTranscriptionModel'),
+    sttDebugPayload: document.getElementById('sttDebugPayload'),
+    sttDebugPayloadContent: document.getElementById('sttDebugPayloadContent'),
+    // Dictionary CSV Upload
+    dictionaryCsvInput: document.getElementById('dictionaryCsvInput'),
+    uploadDictionaryCsv: document.getElementById('uploadDictionaryCsv'),
+    dictionaryUploadResult: document.getElementById('dictionaryUploadResult'),
+    // Summary Section (legacy - removed, replaced by Result Card)
+    // summarySection: document.getElementById('summarySection'),
+    // runSummary: document.getElementById('runSummary'),
+    // copySummary: document.getElementById('copySummary'),
+    // summaryOutput: document.getElementById('summaryOutput'),
     // Billing Section
     billingSection: document.getElementById('billingSection'),
     upgradeProBtn: document.getElementById('upgradeProBtn'),
     manageBillingBtn: document.getElementById('manageBillingBtn'),
+    buyTicketBtn: document.getElementById('buyTicketBtn'),
     billingStatus: document.getElementById('billingStatus'),
-    // Company Section
+    // Ticket Modal
+    ticketModal: document.getElementById('ticketModal'),
+    ticketModalClose: document.getElementById('ticketModalClose'),
+    ticketModalStatus: document.getElementById('ticketModalStatus'),
+    // Company Section (in settings)
     companySection: document.getElementById('companySection'),
+    editCompanyBtn: document.getElementById('editCompanyBtn'),
+    // Company Edit Modal
+    companyEditModal: document.getElementById('companyEditModal'),
+    companyEditClose: document.getElementById('companyEditClose'),
     companyName: document.getElementById('companyName'),
     companyDepartment: document.getElementById('companyDepartment'),
     companyPosition: document.getElementById('companyPosition'),
@@ -617,6 +686,49 @@ const cacheElements = () => {
     companyTaxIdValue: document.getElementById('companyTaxIdValue'),
     saveCompanyBtn: document.getElementById('saveCompanyBtn'),
     companyStatus: document.getElementById('companyStatus'),
+    // Dictionary UI
+    dictionaryCountDisplay: document.getElementById('dictionaryCountDisplay'),
+    dictionaryView: document.getElementById('dictionaryView'),
+    dictionaryBackBtn: document.getElementById('dictionaryBackBtn'),
+    openDictionaryBtn: document.getElementById('openDictionaryBtn'),
+    appShell: document.querySelector('.app-shell'),
+    downloadDictionaryTemplate: document.getElementById('downloadDictionaryTemplate'),
+    dictAddSource: document.getElementById('dictAddSource'),
+    dictAddTarget: document.getElementById('dictAddTarget'),
+    dictAddNote: document.getElementById('dictAddNote'),
+    dictAddBtn: document.getElementById('dictAddBtn'),
+    dictAddResult: document.getElementById('dictAddResult'),
+    dictListLoading: document.getElementById('dictListLoading'),
+    dictListEmpty: document.getElementById('dictListEmpty'),
+    dictTable: document.getElementById('dictTable'),
+    dictTableBody: document.getElementById('dictTableBody'),
+    dictLoadMore: document.getElementById('dictLoadMore'),
+    dictListCount: document.getElementById('dictListCount'),
+    // SW Update UI
+    swUpdateBanner: document.getElementById('swUpdateBanner'),
+    swUpdateBtn: document.getElementById('swUpdateBtn'),
+    buildShaDisplay: document.getElementById('buildShaDisplay'),
+    // Result Card (after Stop)
+    resultCard: document.getElementById('resultCard'),
+    resultCardTitle: document.getElementById('resultCardTitle'),
+    resultCardTimestamp: document.getElementById('resultCardTimestamp'),
+    resultCardFiles: document.getElementById('resultCardFiles'),
+    resultCardSummary: document.getElementById('resultCardSummary'),
+    runSummaryCard: document.getElementById('runSummaryCard'),
+    copySummaryCard: document.getElementById('copySummaryCard'),
+    summaryOutputCard: document.getElementById('summaryOutputCard'),
+    // History UI
+    openHistoryBtn: document.getElementById('openHistoryBtn'),
+    historyView: document.getElementById('historyView'),
+    historyBackBtn: document.getElementById('historyBackBtn'),
+    historyList: document.getElementById('historyList'),
+    historyListLoading: document.getElementById('historyListLoading'),
+    historyListEmpty: document.getElementById('historyListEmpty'),
+    // History Detail UI
+    historyDetailView: document.getElementById('historyDetailView'),
+    historyDetailBackBtn: document.getElementById('historyDetailBackBtn'),
+    historyDetailTitle: document.getElementById('historyDetailTitle'),
+    historyDetailContent: document.getElementById('historyDetailContent'),
   };
 };
 
@@ -638,6 +750,7 @@ const state = {
   gapMs: Number(localStorage.getItem('gapMs')) || 1000,
   vadSilence: Number(localStorage.getItem('vadSilence')) || 400,
   uiLang: localStorage.getItem('uiLang') || 'ja',
+  // Translation UI input/output languages (separate from realtime STT input)
   inputLang: localStorage.getItem('inputLang') || 'auto',
   outputLang: localStorage.getItem('outputLang') || 'ja',
   token: null,
@@ -646,6 +759,8 @@ const state = {
   currentJob: null,
   jobStartedAt: null,
   jobActive: false, // ジョブが有効（予約済み〜完了前）かどうか
+  startInFlight: false, // Start処理がin-flight中かどうか（二重発火防止）
+  uiBound: false, // UIイベントハンドラが登録済みか（二重登録防止）
   // スロットル/クールダウン管理
   lastJobCreateAt: 0, // 最後にjobs/createを呼んだ時刻（Date.now()）
   cooldownUntil: 0, // クールダウン終了時刻（Date.now()）
@@ -655,6 +770,38 @@ const state = {
   summaryPrompt: localStorage.getItem('rt_summary_prompt') || '',
   // Realtime event queue (for session.update before dataChannel is open)
   realtimeEventQueue: [],
+  // STT Settings (Realtime API session.update)
+  sttSettings: {
+    // Selected values (persisted to localStorage)
+    inputLang: localStorage.getItem('stt_input_lang') || 'auto', // auto/zh/ja/en
+    vadPreset: localStorage.getItem('stt_vad_preset') || 'stable', // stable/fast/custom
+    vadThreshold: Number(localStorage.getItem('stt_vad_threshold')) || 0.65,
+    vadSilence: Number(localStorage.getItem('stt_vad_silence')) || 800,
+    vadPrefix: Number(localStorage.getItem('stt_vad_prefix')) || 500,
+    noiseReduction: localStorage.getItem('stt_noise_reduction') || 'auto', // auto=don't send, near_field/far_field/off
+    transcriptionModel: localStorage.getItem('stt_transcription_model') || 'auto', // auto=gpt-4o-mini-transcribe (default), gpt-4o-transcribe
+    // Auto language lock (internal only, no UI)
+    lockedLanguage: null,
+    autoLockEnabled:
+      isDebugMode() && new URLSearchParams(window.location.search).get('sttAutoLock') === '1',
+    autoLockApplied: false,
+    // Dirty flags (true = user changed this setting, should be sent to API)
+    dirty: {
+      inputLang: false,
+      vadPreset: false,
+      noiseReduction: false,
+      transcriptionModel: false,
+    },
+    // Guard: only apply once per WS open
+    wsAppliedOnce: false,
+  },
+  // Diagnostics: session tracking
+  sessionId: null, // Generated per connection attempt
+  buildVersion: null, // Fetched from /build.txt
+  // History (Sprint 2): current session data for result card
+  currentSessionResult: null, // { id, timestamp, title, originals, translations, summary, audioUrl, m4aUrl }
+  // Temporary Blob URLs for cleanup (memory management)
+  objectUrls: [],
 };
 
 // ========== Glossary Storage Adapter ==========
@@ -687,6 +834,291 @@ const summaryPromptStorage = {
     localStorage.removeItem(SUMMARY_PROMPT_STORAGE_KEY);
     state.summaryPrompt = '';
   },
+};
+
+// ========== Prompt Injection Protection (Sprint 3) ==========
+const PROMPT_INJECTION_CONFIG = {
+  maxPromptLength: 2000,
+  maxGlossaryLength: 10000,
+  maxTextLength: 100000,
+  // Dangerous patterns that could attempt role/instruction hijacking
+  dangerousPatterns: [
+    // Role injection attempts
+    /^system\s*:/im,
+    /^developer\s*:/im,
+    /^tool\s*:/im,
+    /^assistant\s*:/im,
+    /\[\s*system\s*\]/im,
+    /\[\s*developer\s*\]/im,
+    // Instruction override attempts
+    /ignore\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?)/im,
+    /disregard\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?)/im,
+    /forget\s+(all\s+)?(previous|above|prior)\s+(instructions?|prompts?)/im,
+    /override\s+(system|instructions?|prompts?)/im,
+    /new\s+instructions?\s*:/im,
+    /you\s+are\s+now\s+/im,
+    /act\s+as\s+(if\s+you\s+are\s+)?a?\s*(different|new|another)/im,
+    // Jailbreak patterns
+    /\bDAN\b.*mode/im,
+    /jailbreak/im,
+    /bypass\s+(safety|filter|restriction)/im,
+    // Markdown/format injection for prompt leaking
+    /```\s*(system|prompt|instruction)/im,
+  ],
+};
+
+// Audit log for security events (summary only, no full input)
+const logSecurityEvent = (eventType, details) => {
+  const entry = {
+    timestamp: new Date().toISOString(),
+    eventType,
+    ...details,
+  };
+  // Log to console in debug mode, add to diag log
+  if (isDebugMode()) {
+    console.warn('[Security]', entry);
+  }
+  addDiagLog(`[Security] ${eventType}: ${JSON.stringify(details)}`);
+};
+
+// Validate and sanitize user prompt input
+const validatePromptInput = (input, fieldName, maxLength) => {
+  if (!input || typeof input !== 'string') {
+    return { valid: true, sanitized: '', warnings: [] };
+  }
+
+  const warnings = [];
+  let sanitized = input.trim();
+
+  // Length check
+  if (sanitized.length > maxLength) {
+    sanitized = sanitized.slice(0, maxLength);
+    warnings.push({ rule: 'LENGTH_EXCEEDED', field: fieldName, maxLength });
+  }
+
+  // Check for dangerous patterns
+  for (let i = 0; i < PROMPT_INJECTION_CONFIG.dangerousPatterns.length; i++) {
+    const pattern = PROMPT_INJECTION_CONFIG.dangerousPatterns[i];
+    if (pattern.test(sanitized)) {
+      logSecurityEvent('INJECTION_DETECTED', {
+        field: fieldName,
+        ruleIndex: i,
+        inputLength: input.length,
+      });
+      return {
+        valid: false,
+        sanitized: '',
+        warnings: [{ rule: 'INJECTION_PATTERN', field: fieldName, ruleIndex: i }],
+        errorMessage: t('errorPromptInjection') || '不正な入力パターンが検出されました。入力を確認してください。',
+      };
+    }
+  }
+
+  return { valid: true, sanitized, warnings };
+};
+
+// Validate all inputs before sending to /summarize
+const validateSummarizeInputs = (text, glossaryText, summaryPrompt) => {
+  const results = {
+    valid: true,
+    text: '',
+    glossaryText: '',
+    summaryPrompt: '',
+    errors: [],
+    warnings: [],
+  };
+
+  // Validate main text
+  const textResult = validatePromptInput(text, 'text', PROMPT_INJECTION_CONFIG.maxTextLength);
+  if (!textResult.valid) {
+    results.valid = false;
+    results.errors.push(textResult.errorMessage);
+  } else {
+    results.text = textResult.sanitized;
+    results.warnings.push(...textResult.warnings);
+  }
+
+  // Validate glossary
+  const glossaryResult = validatePromptInput(glossaryText, 'glossary', PROMPT_INJECTION_CONFIG.maxGlossaryLength);
+  if (!glossaryResult.valid) {
+    results.valid = false;
+    results.errors.push(glossaryResult.errorMessage);
+  } else {
+    results.glossaryText = glossaryResult.sanitized;
+    results.warnings.push(...glossaryResult.warnings);
+  }
+
+  // Validate custom prompt
+  const promptResult = validatePromptInput(summaryPrompt, 'summaryPrompt', PROMPT_INJECTION_CONFIG.maxPromptLength);
+  if (!promptResult.valid) {
+    results.valid = false;
+    results.errors.push(promptResult.errorMessage);
+  } else {
+    results.summaryPrompt = promptResult.sanitized;
+    results.warnings.push(...promptResult.warnings);
+  }
+
+  // Log warnings if any
+  if (results.warnings.length > 0) {
+    logSecurityEvent('INPUT_WARNINGS', { warnings: results.warnings });
+  }
+
+  return results;
+};
+
+// ========== LLM Title Generation (Sprint 3) ==========
+const generateSessionTitleLLM = async (text) => {
+  if (!text || typeof text !== 'string' || !text.trim()) {
+    return null;
+  }
+
+  // Take first 500 chars for title generation (sufficient context)
+  const inputText = text.trim().slice(0, 500);
+
+  try {
+    const fd = new FormData();
+    fd.append('text', inputText);
+    fd.append('output_lang', state.outputLang || 'ja');
+
+    const res = await authFetch('/generate_title', { method: 'POST', body: fd });
+    if (!res.ok) {
+      addDiagLog(`LLM title generation failed: ${res.status}`);
+      return null;
+    }
+    const data = await res.json();
+    const title = (data.title || '').trim();
+
+    if (title && title.length > 0 && title.length <= TITLE_MAX_LENGTH) {
+      addDiagLog(`LLM title generated: "${title}"`);
+      return title.replace(TITLE_FORBIDDEN_CHARS, '');
+    }
+    return null;
+  } catch (err) {
+    addDiagLog(`LLM title generation error: ${err.message}`);
+    return null;
+  }
+};
+
+// Generate title with LLM fallback to simple extraction
+const generateSessionTitleWithFallback = async (text) => {
+  // Try LLM first
+  const llmTitle = await generateSessionTitleLLM(text);
+  if (llmTitle) {
+    return llmTitle;
+  }
+  // Fallback to simple extraction
+  return generateSessionTitle(text);
+};
+
+// ========== History Storage (IndexedDB) ==========
+const HISTORY_DB_NAME = 'rt_history_db';
+const HISTORY_STORE_NAME = 'sessions';
+const HISTORY_DB_VERSION = 1;
+
+let historyDb = null;
+
+const openHistoryDb = () => {
+  return new Promise((resolve, reject) => {
+    if (historyDb) {
+      resolve(historyDb);
+      return;
+    }
+    const request = indexedDB.open(HISTORY_DB_NAME, HISTORY_DB_VERSION);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      historyDb = request.result;
+      resolve(historyDb);
+    };
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      if (!db.objectStoreNames.contains(HISTORY_STORE_NAME)) {
+        const store = db.createObjectStore(HISTORY_STORE_NAME, { keyPath: 'id' });
+        store.createIndex('timestamp', 'timestamp', { unique: false });
+      }
+    };
+  });
+};
+
+const historyStorage = {
+  async save(session) {
+    const db = await openHistoryDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const request = store.put(session);
+      request.onsuccess = () => resolve(session.id);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async getAll() {
+    const db = await openHistoryDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, 'readonly');
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const index = store.index('timestamp');
+      const request = index.openCursor(null, 'prev'); // newest first
+      const results = [];
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          resolve(results);
+        }
+      };
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async get(id) {
+    const db = await openHistoryDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, 'readonly');
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const request = store.get(id);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error);
+    });
+  },
+  async delete(id) {
+    const db = await openHistoryDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE_NAME, 'readwrite');
+      const store = tx.objectStore(HISTORY_STORE_NAME);
+      const request = store.delete(id);
+      request.onsuccess = () => resolve();
+      request.onerror = () => reject(request.error);
+    });
+  },
+};
+
+// ========== Title Generation (MVP) ==========
+const TITLE_MAX_LENGTH = 40;
+const TITLE_FORBIDDEN_CHARS = /[\/\\:*?"<>|]/g;
+
+const generateSessionTitle = (text) => {
+  if (!text || typeof text !== 'string') return '';
+  // Take first line or first N characters
+  const firstLine = text.split('\n')[0] || '';
+  let title = firstLine.trim().slice(0, TITLE_MAX_LENGTH);
+  // Remove forbidden characters
+  title = title.replace(TITLE_FORBIDDEN_CHARS, '');
+  // Trim trailing whitespace
+  title = title.trim();
+  return title || '';
+};
+
+const formatTimestamp = (ts) => {
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
+
+// OS-safe timestamp for filenames (no ":" or spaces - Windows compatible)
+const formatTimestampForFilename = (ts) => {
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}_${pad(d.getHours())}-${pad(d.getMinutes())}`;
 };
 
 // ========== Glossary Parsing ==========
@@ -758,6 +1190,161 @@ const buildSessionInstructions = (glossaryEntries, outputLang) => {
   return instructions;
 };
 
+// ========== STT Stabilization Helpers ==========
+const STT_AUTOLOCK_MIN_CHARS = 6;
+const STT_POSTPROCESS_MAX_LENGTH = 10000;
+const STT_POSTPROCESS_MAX_REPLACEMENTS = 50;
+
+const guessLangFromText = (text) => {
+  if (!text || typeof text !== 'string') return null;
+  const trimmed = text.trim();
+  if (!trimmed) return null;
+  const compact = trimmed.replace(/\s+/g, '');
+  if (compact.length < STT_AUTOLOCK_MIN_CHARS) return null;
+
+  let hiragana = 0;
+  let katakana = 0;
+  let han = 0;
+  let latin = 0;
+
+  for (const ch of compact) {
+    if (/[ぁ-ゖ]/u.test(ch)) {
+      hiragana += 1;
+    } else if (/[ァ-ヺ]/u.test(ch)) {
+      katakana += 1;
+    } else if (/[一-龯]/u.test(ch)) {
+      han += 1;
+    } else if (/[A-Za-z]/.test(ch)) {
+      latin += 1;
+    }
+  }
+
+  const total = hiragana + katakana + han + latin;
+  if (total === 0) return null;
+
+  const kana = hiragana + katakana;
+  if (kana >= 2 && kana / total >= 0.2) return 'ja';
+  if (han >= 2 && han / total >= 0.2 && kana / total < 0.05) return 'zh';
+  if (latin >= 2 && latin / total >= 0.6) return 'en';
+  return null;
+};
+
+const maybeLockSttLanguage = (text) => {
+  const stt = state.sttSettings;
+  if (stt.inputLang !== 'auto') return;
+  if (stt.lockedLanguage) return;
+  const guessed = guessLangFromText(text);
+  if (!guessed) return;
+
+  stt.lockedLanguage = guessed;
+  addDiagLog(`STT auto-lock observed: ${guessed}`);
+  updateDevStatusSummary();
+
+  if (!stt.autoLockEnabled || stt.autoLockApplied) return;
+
+  const transcriptionModel = stt.dirty.transcriptionModel && stt.transcriptionModel !== 'auto'
+    ? stt.transcriptionModel
+    : 'gpt-4o-mini-transcribe';
+
+  const payload = {
+    type: 'session.update',
+    session: {
+      type: 'realtime',
+      audio: {
+        input: {
+          transcription: {
+            model: transcriptionModel,
+            language: guessed,
+          },
+        },
+      },
+    },
+  };
+
+  const sent = sendRealtimeEvent(payload);
+  stt.autoLockApplied = true;
+  addDiagLog(`STT auto-lock session.update sent=${sent}`);
+};
+
+const REGEX_ESCAPE_CHARS = new Set([
+  '\\',
+  '^',
+  '$',
+  '*',
+  '+',
+  '?',
+  '.',
+  '(',
+  ')',
+  '|',
+  '{',
+  '}',
+  '[',
+  ']',
+]);
+
+const escapeRegExp = (value) => {
+  if (!value) return '';
+  let escaped = '';
+  for (const ch of value) {
+    escaped += REGEX_ESCAPE_CHARS.has(ch) ? `\\${ch}` : ch;
+  }
+  return escaped;
+};
+
+const buildSttReplacePattern = (source) => {
+  const escaped = escapeRegExp(source);
+  if (/^[A-Za-z0-9][A-Za-z0-9 '\-]*$/.test(source)) {
+    return { pattern: new RegExp(`\\b${escaped}\\b`, 'g'), hasBoundary: false };
+  }
+  const boundary = '[\\s\\.,!\\?、。！？「」『』（）()\\[\\]{}"“”]';
+  return {
+    pattern: new RegExp(`(^|${boundary})(${escaped})(?=$|${boundary})`, 'g'),
+    hasBoundary: true,
+  };
+};
+
+const truncateSttLog = (text, max = 140) => {
+  if (!text || text.length <= max) return text;
+  return `${text.slice(0, max)}...`;
+};
+
+const postprocessSttText = (text) => {
+  if (!text || typeof text !== 'string') return text;
+  if (text.length > STT_POSTPROCESS_MAX_LENGTH) return text;
+
+  const entries = parseGlossary(state.glossaryText);
+  if (!entries.length) return text;
+
+  const sorted = [...entries]
+    .filter(({ source, target }) => source && target && source !== target)
+    .sort((a, b) => b.source.length - a.source.length);
+
+  let result = text;
+  let replacements = 0;
+
+  sorted.forEach(({ source, target }) => {
+    if (replacements >= STT_POSTPROCESS_MAX_REPLACEMENTS) return;
+    const { pattern, hasBoundary } = buildSttReplacePattern(source);
+    result = result.replace(pattern, (match, prefix, matched) => {
+      if (replacements >= STT_POSTPROCESS_MAX_REPLACEMENTS) return match;
+      replacements += 1;
+      if (!hasBoundary) {
+        return target;
+      }
+      return `${prefix || ''}${target}`;
+    });
+  });
+
+  if (replacements > 0 && isDebugMode()) {
+    addDiagLog(
+      `STT postprocess applied (${replacements}) | "${truncateSttLog(text)}" -> "${truncateSttLog(result)}"`
+    );
+  }
+
+  return result;
+};
+
 // ========== Realtime Event Sender with Queue ==========
 const sendRealtimeEvent = (payload) => {
   const dc = state.dataChannel;
@@ -794,38 +1381,203 @@ const flushRealtimeEventQueue = () => {
   }
 };
 
-// Send session.update with glossary instructions
+// Build STT settings payload based on dirty flags
+// Only includes settings that user has explicitly changed
+const buildSttPayload = () => {
+  const stt = state.sttSettings;
+  const dirty = stt.dirty;
+
+  const transcription = {};
+  const turn_detection = { type: 'server_vad', create_response: false };
+  let hasTranscription = false;
+  let hasTurnDetection = false;
+  let noiseReduction = null;
+
+  // Transcription model (only if dirty)
+  if (dirty.transcriptionModel && stt.transcriptionModel !== 'auto') {
+    transcription.model = stt.transcriptionModel;
+    hasTranscription = true;
+  } else if (dirty.transcriptionModel) {
+    // auto = use default (gpt-4o-mini-transcribe)
+    transcription.model = 'gpt-4o-mini-transcribe';
+    hasTranscription = true;
+  }
+
+  // Input language (only if dirty and not auto)
+  if (dirty.inputLang && stt.inputLang !== 'auto') {
+    transcription.language = stt.inputLang;
+    hasTranscription = true;
+  }
+
+  // VAD preset (only if dirty)
+  if (dirty.vadPreset) {
+    hasTurnDetection = true;
+    if (stt.vadPreset === 'custom') {
+      turn_detection.threshold = stt.vadThreshold;
+      turn_detection.silence_duration_ms = stt.vadSilence;
+      turn_detection.prefix_padding_ms = stt.vadPrefix;
+    } else {
+      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.stable;
+      turn_detection.threshold = preset.threshold;
+      turn_detection.silence_duration_ms = preset.silence_duration_ms;
+      turn_detection.prefix_padding_ms = preset.prefix_padding_ms;
+    }
+  }
+
+  // Noise reduction (only if dirty and not auto)
+  if (dirty.noiseReduction && stt.noiseReduction !== 'auto') {
+    noiseReduction = stt.noiseReduction;
+  }
+
+  // Build the payload
+  const input = {};
+  if (hasTranscription) {
+    // If model not set, use default
+    if (!transcription.model) {
+      transcription.model = 'gpt-4o-mini-transcribe';
+    }
+    input.transcription = transcription;
+  }
+  if (hasTurnDetection) {
+    input.turn_detection = turn_detection;
+  }
+  if (noiseReduction) {
+    input.noise_reduction = { type: noiseReduction };
+  }
+
+  // Return null if no settings to send
+  if (Object.keys(input).length === 0) {
+    return null;
+  }
+
+  return {
+    type: 'session.update',
+    session: {
+      type: 'realtime',
+      audio: { input },
+    },
+  };
+};
+
+// Apply STT settings via session.update (called once after WS open if dirty settings exist)
+const applyRealtimeSttSettings = () => {
+  // Guard: only apply once per connection
+  if (state.sttSettings.wsAppliedOnce) {
+    addDiagLog('applyRealtimeSttSettings: already applied, skipping');
+    return;
+  }
+
+  const payload = buildSttPayload();
+
+  // Update debug display if in debug mode
+  if (isDebugMode() && els.sttDebugPayload && els.sttDebugPayloadContent) {
+    els.sttDebugPayload.style.display = 'block';
+    els.sttDebugPayloadContent.textContent = payload
+      ? JSON.stringify(payload, null, 2)
+      : '(no dirty settings to send)';
+  }
+
+  if (!payload) {
+    addDiagLog('applyRealtimeSttSettings: no dirty settings, skipping send');
+    state.sttSettings.wsAppliedOnce = true;
+    return;
+  }
+
+  try {
+    console.log('[applyRealtimeSttSettings] payload:', JSON.stringify(payload, null, 2));
+    addDiagLog(`applyRealtimeSttSettings: sending session.update | sid=${state.sessionId || 'no_sid'}`);
+    const sent = sendRealtimeEvent(payload);
+    addDiagLog(`applyRealtimeSttSettings: session.update sent=${sent} queued=${!sent}`);
+    state.sttSettings.wsAppliedOnce = true;
+  } catch (err) {
+    logErrorDetails('applyRealtimeSttSettings', err);
+    addDiagLog(`applyRealtimeSttSettings: error - ${err.message}`);
+  }
+};
+
+// Legacy sendSessionUpdate - now uses sttSettings for VAD but keeps backward compatibility
+// This is called from dataChannel.onopen for basic session setup
 const sendSessionUpdate = () => {
-  const transcriptionLanguage = state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined;
-  const silenceDurationMs = Number(state.vadSilence) || 500;
+  // Use sttSettings VAD values if dirty, otherwise use legacy state.vadSilence
+  const stt = state.sttSettings;
+  let vadConfig;
+
+  if (stt.dirty.vadPreset) {
+    // User changed VAD preset - use sttSettings
+    if (stt.vadPreset === 'custom') {
+      vadConfig = {
+        threshold: stt.vadThreshold,
+        silence_duration_ms: stt.vadSilence,
+        prefix_padding_ms: stt.vadPrefix,
+      };
+    } else {
+      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.stable;
+      vadConfig = {
+        threshold: preset.threshold,
+        silence_duration_ms: preset.silence_duration_ms,
+        prefix_padding_ms: preset.prefix_padding_ms,
+      };
+    }
+  } else {
+    // Use legacy settings (backward compatible - existing behavior)
+    vadConfig = {
+      threshold: 0.5,
+      silence_duration_ms: Number(state.vadSilence) || 500,
+      prefix_padding_ms: 300,
+    };
+  }
+
+  // Language: use sttSettings if dirty, otherwise use legacy state.inputLang
+  const transcriptionLanguage = stt.dirty.inputLang
+    ? (stt.inputLang !== 'auto' ? stt.inputLang : undefined)
+    : (state.inputLang && state.inputLang !== 'auto' ? state.inputLang : undefined);
+
+  // Model: use sttSettings if dirty, otherwise use default
+  const transcriptionModel = stt.dirty.transcriptionModel && stt.transcriptionModel !== 'auto'
+    ? stt.transcriptionModel
+    : 'gpt-4o-mini-transcribe';
+
+  // Build payload
+  const input = {
+    transcription: {
+      model: transcriptionModel,
+      ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
+    },
+    turn_detection: {
+      type: 'server_vad',
+      ...vadConfig,
+      create_response: false,
+    },
+  };
+
+  // Add noise reduction if dirty and not auto
+  if (stt.dirty.noiseReduction && stt.noiseReduction !== 'auto') {
+    input.noise_reduction = { type: stt.noiseReduction };
+  }
 
   const payload = {
     type: 'session.update',
     session: {
       type: 'realtime',
-      audio: {
-        input: {
-          transcription: {
-            model: 'gpt-4o-mini-transcribe',
-            ...(transcriptionLanguage ? { language: transcriptionLanguage } : {}),
-          },
-          turn_detection: {
-            type: 'server_vad',
-            silence_duration_ms: silenceDurationMs,
-            prefix_padding_ms: 300,
-            threshold: 0.5,
-            create_response: false,
-          },
-          noise_reduction: { type: 'near_field' },
-        },
-      },
+      audio: { input },
     },
   };
 
   try {
-    addDiagLog(`STEP_SESSION_UPDATE: sending ${JSON.stringify(payload.session)}`);
+    // 送信前ログ（デバッグ用・機密なし）
+    console.log('[sendSessionUpdate] payload:', JSON.stringify(payload, null, 2));
+    addDiagLog(`STEP_SESSION_UPDATE: session.type=${payload.session.type} sid=${state.sessionId || 'no_sid'}`);
     const sent = sendRealtimeEvent(payload);
-    addDiagLog(`session.update sent (audio.input) | queued=${!sent}`);
+    addDiagLog(`session.update sent | queued=${!sent} sid=${state.sessionId || 'no_sid'}`);
+
+    // Mark STT settings as applied
+    state.sttSettings.wsAppliedOnce = true;
+
+    // Update debug display
+    if (isDebugMode() && els.sttDebugPayload && els.sttDebugPayloadContent) {
+      els.sttDebugPayload.style.display = 'block';
+      els.sttDebugPayloadContent.textContent = JSON.stringify(payload, null, 2);
+    }
   } catch (err) {
     logErrorDetails('sendSessionUpdate', err);
     throw err;
@@ -853,6 +1605,10 @@ const updateDevStatusSummary = () => {
     `Languages: input=${state.inputLang} → output=${state.outputLang} (UI: ${state.uiLang})`,
     `Settings: maxChars=${state.maxChars}, gapMs=${state.gapMs}, vadSilence=${state.vadSilence}`,
   ];
+  const stt = state.sttSettings;
+  lines.push(
+    `STT autoLock: ${stt.autoLockEnabled ? 'on' : 'off'} | locked=${stt.lockedLanguage || '-'}`
+  );
   if (state.quota.loaded) {
     const totalMinutes = formatMinutes(state.quota.totalAvailableThisMonth);
     const dailyInfo =
@@ -1011,6 +1767,12 @@ const PRESETS = {
   stable: { maxChars: 360, gapMs: 1500, vadSilence: 550 },
 };
 
+// STT VAD Presets for OpenAI Realtime API turn_detection
+const STT_VAD_PRESETS = {
+  stable: { threshold: 0.65, silence_duration_ms: 800, prefix_padding_ms: 500 },
+  fast: { threshold: 0.45, silence_duration_ms: 400, prefix_padding_ms: 300 },
+};
+
 const applyPreset = (name) => {
   const preset = PRESETS[name];
   if (!preset) return;
@@ -1081,7 +1843,7 @@ const updateQuotaBreakdown = () => {
   }
   const planLabel = q.plan === 'pro' ? 'Pro' : 'Free';
   const monthlyMin = formatMinutes(q.baseRemainingThisMonth);
-  const ticketMin = formatMinutes(q.ticketSecondsBalance);
+  const ticketMin = formatMinutes(q.creditSeconds);
   const totalMin = formatMinutes(q.totalAvailableThisMonth);
   const nextReset = formatNextReset(q.nextResetAt);
   els.quotaBreakdown.innerHTML = `
@@ -1124,6 +1886,20 @@ const updateBillingSection = (show) => {
         els.manageBillingBtn.disabled = false;
       } else {
         els.manageBillingBtn.style.display = 'none';
+      }
+    }
+
+    // Buy ticket button: enabled for Pro, disabled for Free (visible to both)
+    if (els.buyTicketBtn) {
+      els.buyTicketBtn.style.display = '';
+      if (isPro) {
+        els.buyTicketBtn.textContent = t('buyTicket');
+        els.buyTicketBtn.disabled = false;
+        els.buyTicketBtn.classList.remove('disabled');
+      } else {
+        els.buyTicketBtn.textContent = t('buyTicketProOnly');
+        els.buyTicketBtn.disabled = true;
+        els.buyTicketBtn.classList.add('disabled');
       }
     }
   }
@@ -1324,6 +2100,122 @@ const openManageSubscription = async () => {
   }
 };
 
+// Open ticket selection modal
+const openTicketModal = () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  // Check if user is Pro - Free users cannot buy tickets
+  const isPro = state.quota.plan === 'pro';
+  if (!isPro) {
+    // Show hint in billingStatus and highlight upgrade button
+    if (els.billingStatus) {
+      els.billingStatus.textContent = t('proRequiredHint');
+      els.billingStatus.className = 'billing-status error';
+    }
+    // Pulse the upgrade button to draw attention
+    if (els.upgradeProBtn) {
+      els.upgradeProBtn.classList.add('pulse');
+      setTimeout(() => els.upgradeProBtn.classList.remove('pulse'), 2000);
+    }
+    return;
+  }
+
+  if (!els.ticketModal) return;
+
+  // Clear any previous status
+  if (els.ticketModalStatus) {
+    els.ticketModalStatus.textContent = '';
+    els.ticketModalStatus.className = 'billing-status';
+  }
+
+  // Re-enable all pack buttons
+  els.ticketModal.querySelectorAll('.ticket-pack').forEach((btn) => {
+    btn.disabled = false;
+  });
+
+  els.ticketModal.showModal();
+};
+
+// Close ticket modal
+const closeTicketModal = () => {
+  if (els.ticketModal) {
+    els.ticketModal.close();
+  }
+};
+
+// Handle ticket pack selection and checkout
+const selectTicketPack = async (packId) => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  // Disable all pack buttons during checkout
+  if (els.ticketModal) {
+    els.ticketModal.querySelectorAll('.ticket-pack').forEach((btn) => {
+      btn.disabled = true;
+    });
+  }
+
+  const statusEl = els.ticketModalStatus;
+  if (statusEl) {
+    statusEl.textContent = t('purchasing');
+    statusEl.className = 'billing-status pending';
+  }
+
+  try {
+    const baseUrl = window.location.origin;
+    const successUrl = `${baseUrl}/#/tickets/success`;
+    const cancelUrl = `${baseUrl}/#/tickets/cancel`;
+
+    const res = await authFetch('/api/v1/billing/stripe/tickets/checkout', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        packId,
+        successUrl,
+        cancelUrl,
+      }),
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      // Handle pro_required error specifically
+      if (data.detail === 'pro_required') {
+        throw new Error(t('proRequired'));
+      }
+      throw new Error(data.detail || `Ticket checkout failed (${res.status})`);
+    }
+
+    const data = await res.json();
+    addDiagLog(`Ticket checkout session created | packId=${packId} sessionId=${data.sessionId}`);
+
+    // Close modal and redirect to Stripe Checkout
+    closeTicketModal();
+    if (data.url) {
+      window.location.href = data.url;
+    } else {
+      throw new Error('No checkout URL returned');
+    }
+  } catch (err) {
+    console.error('[selectTicketPack] Error:', err);
+    addDiagLog(`Ticket checkout error: ${err.message}`);
+    if (statusEl) {
+      statusEl.textContent = t('ticketCheckoutError') + ': ' + err.message;
+      statusEl.className = 'billing-status error';
+    }
+    // Re-enable pack buttons
+    if (els.ticketModal) {
+      els.ticketModal.querySelectorAll('.ticket-pack').forEach((btn) => {
+        btn.disabled = false;
+      });
+    }
+  }
+};
+
 // ========== Company Profile ==========
 const loadCompanyProfile = async () => {
   if (!currentUser) return;
@@ -1438,6 +2330,288 @@ const saveCompanyProfile = async () => {
   }
 };
 
+// ========== Company Edit Modal ==========
+const openCompanyEditModal = () => {
+  if (els.companyEditModal) {
+    els.companyEditModal.showModal();
+    loadCompanyProfile();
+  }
+};
+
+const closeCompanyEditModal = () => {
+  if (els.companyEditModal) {
+    els.companyEditModal.close();
+  }
+};
+
+// ========== Dictionary UI ==========
+const DICTIONARY_LIMIT_FREE = 10;
+const DICTIONARY_LIMIT_PRO = 1000;
+
+const getDictionaryLimit = () => (state.quota?.plan === 'pro' ? DICTIONARY_LIMIT_PRO : DICTIONARY_LIMIT_FREE);
+
+const updateDictionarySummary = () => {
+  if (!els.dictionaryCountDisplay) return;
+  const limit = getDictionaryLimit();
+  const count = dictItems.length;
+  const moreSuffix = dictNextCursor ? '+' : '';
+  els.dictionaryCountDisplay.textContent = `辞書: ${count}${moreSuffix}/${limit}`;
+};
+
+let dictNextCursor = null;
+let dictItems = [];
+
+const loadDictionaryList = async (append = false) => {
+  if (!currentUser) return;
+
+  if (!append) {
+    dictItems = [];
+    dictNextCursor = null;
+    if (els.dictTableBody) els.dictTableBody.innerHTML = '';
+  }
+
+  if (els.dictListLoading) els.dictListLoading.style.display = 'block';
+  if (els.dictListEmpty) els.dictListEmpty.style.display = 'none';
+  if (els.dictTable) els.dictTable.style.display = 'none';
+  if (els.dictLoadMore) els.dictLoadMore.style.display = 'none';
+
+  try {
+    let url = '/api/v1/dictionary?limit=100';
+    if (append && dictNextCursor) {
+      url += `&cursor=${encodeURIComponent(dictNextCursor)}`;
+    }
+
+    const res = await authFetch(url);
+    const data = await res.json();
+
+    if (!res.ok) {
+      throw new Error(data.detail?.message || 'Failed to load dictionary');
+    }
+
+    const items = data.items || [];
+    dictNextCursor = data.nextCursor || null;
+
+    if (append) {
+      dictItems = [...dictItems, ...items];
+    } else {
+      dictItems = items;
+    }
+
+    updateDictionarySummary();
+    renderDictionaryTable();
+    addDiagLog(`Dictionary loaded: ${dictItems.length} items`);
+  } catch (err) {
+    console.error('[loadDictionaryList] Error:', err);
+    addDiagLog(`Dictionary load error: ${err.message}`);
+  } finally {
+    if (els.dictListLoading) els.dictListLoading.style.display = 'none';
+  }
+};
+
+const renderDictionaryTable = () => {
+  if (!els.dictTableBody) return;
+
+  if (dictItems.length === 0) {
+    if (els.dictListEmpty) els.dictListEmpty.style.display = 'block';
+    if (els.dictTable) els.dictTable.style.display = 'none';
+    if (els.dictLoadMore) els.dictLoadMore.style.display = 'none';
+    if (els.dictListCount) els.dictListCount.textContent = '';
+    return;
+  }
+
+  if (els.dictListEmpty) els.dictListEmpty.style.display = 'none';
+  if (els.dictTable) els.dictTable.style.display = 'table';
+  if (els.dictListCount) els.dictListCount.textContent = `(${dictItems.length}件)`;
+
+  els.dictTableBody.innerHTML = '';
+  for (const item of dictItems) {
+    const tr = document.createElement('tr');
+    tr.dataset.id = item.id;
+
+    tr.innerHTML = `
+      <td class="dict-cell-source">${escapeHtml(item.source)}</td>
+      <td class="dict-cell-target">${escapeHtml(item.target)}</td>
+      <td class="dict-cell-note">${escapeHtml(item.note || '')}</td>
+      <td class="dict-cell-actions">
+        <button class="dict-edit-btn secondary small" data-id="${item.id}">編集</button>
+        <button class="dict-delete-btn secondary small danger" data-id="${item.id}">削除</button>
+      </td>
+    `;
+    els.dictTableBody.appendChild(tr);
+  }
+
+  // Show/hide load more button
+  if (els.dictLoadMore) {
+    els.dictLoadMore.style.display = dictNextCursor ? 'block' : 'none';
+  }
+};
+
+const escapeHtml = (str) => {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+};
+
+const addDictionaryEntry = async () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  const source = els.dictAddSource?.value?.trim() || '';
+  const target = els.dictAddTarget?.value?.trim() || '';
+  const note = els.dictAddNote?.value?.trim() || '';
+
+  if (!source || !target) {
+    if (els.dictAddResult) {
+      els.dictAddResult.textContent = 'source と target は必須です';
+      els.dictAddResult.className = 'upload-result error';
+    }
+    return;
+  }
+
+  if (els.dictAddBtn) els.dictAddBtn.disabled = true;
+  if (els.dictAddResult) els.dictAddResult.textContent = '';
+
+  try {
+    const res = await authFetch('/api/v1/dictionary/entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source, target, note }),
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      if (els.dictAddResult) {
+        els.dictAddResult.textContent = `追加しました (${data.count}/${data.limit})`;
+        els.dictAddResult.className = 'upload-result success';
+      }
+      // Clear inputs
+      if (els.dictAddSource) els.dictAddSource.value = '';
+      if (els.dictAddTarget) els.dictAddTarget.value = '';
+      if (els.dictAddNote) els.dictAddNote.value = '';
+      // Reload list
+      loadDictionaryList();
+      addDiagLog(`Dictionary entry added: ${source}`);
+    } else {
+      const reason = data.detail?.reason || data.detail?.message || 'エラー';
+      if (els.dictAddResult) {
+        els.dictAddResult.textContent = `エラー: ${reason}`;
+        els.dictAddResult.className = 'upload-result error';
+      }
+      addDiagLog(`Dictionary add failed: ${reason}`);
+    }
+  } catch (err) {
+    if (els.dictAddResult) {
+      els.dictAddResult.textContent = `エラー: ${err.message}`;
+      els.dictAddResult.className = 'upload-result error';
+    }
+    addDiagLog(`Dictionary add error: ${err.message}`);
+  } finally {
+    if (els.dictAddBtn) els.dictAddBtn.disabled = false;
+  }
+};
+
+const editDictionaryEntry = async (id) => {
+  const item = dictItems.find(i => i.id === id);
+  if (!item) return;
+
+  const newSource = prompt('source:', item.source);
+  if (newSource === null) return;
+  const newTarget = prompt('target:', item.target);
+  if (newTarget === null) return;
+  const newNote = prompt('note:', item.note || '');
+  if (newNote === null) return;
+
+  if (!newSource.trim() || !newTarget.trim()) {
+    alert('source と target は必須です');
+    return;
+  }
+
+  try {
+    const res = await authFetch(`/api/v1/dictionary/entry/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        source: newSource.trim(),
+        target: newTarget.trim(),
+        note: newNote.trim(),
+      }),
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      loadDictionaryList();
+      addDiagLog(`Dictionary entry updated: ${id}`);
+    } else {
+      const reason = data.detail?.reason || data.detail?.message || 'エラー';
+      alert(`エラー: ${reason}`);
+      addDiagLog(`Dictionary update failed: ${reason}`);
+    }
+  } catch (err) {
+    alert(`エラー: ${err.message}`);
+    addDiagLog(`Dictionary update error: ${err.message}`);
+  }
+};
+
+const deleteDictionaryEntry = async (id) => {
+  if (!confirm('この単語を削除しますか？')) return;
+
+  try {
+    const res = await authFetch(`/api/v1/dictionary/entry/${id}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+
+    if (res.ok) {
+      loadDictionaryList();
+      addDiagLog(`Dictionary entry deleted: ${id}`);
+    } else {
+      const reason = data.detail?.reason || data.detail?.message || 'エラー';
+      alert(`エラー: ${reason}`);
+      addDiagLog(`Dictionary delete failed: ${reason}`);
+    }
+  } catch (err) {
+    alert(`エラー: ${err.message}`);
+    addDiagLog(`Dictionary delete error: ${err.message}`);
+  }
+};
+
+const downloadDictionaryTemplate = async () => {
+  if (!currentUser) {
+    setError(t('errorLoginRequired'));
+    return;
+  }
+
+  try {
+    const res = await authFetch('/api/v1/dictionary/template.csv');
+
+    if (!res.ok) {
+      throw new Error('Failed to download template');
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'dictionary_template.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    addDiagLog('Dictionary template downloaded');
+  } catch (err) {
+    console.error('[downloadDictionaryTemplate] Error:', err);
+    alert(`ダウンロードエラー: ${err.message}`);
+    addDiagLog(`Dictionary template download error: ${err.message}`);
+  }
+};
+
 // Poll for plan update after successful checkout
 const pollForPlanUpdate = async (maxAttempts = 12, intervalMs = 5000) => {
   for (let i = 0; i < maxAttempts; i++) {
@@ -1450,9 +2624,296 @@ const pollForPlanUpdate = async (maxAttempts = 12, intervalMs = 5000) => {
   return false;
 };
 
-// Handle billing result from hash routes
-const handleBillingRoute = async () => {
-  const hash = window.location.hash;
+// ========== Dictionary View (Hash Route #/dictionary) ==========
+const showDictionaryView = () => {
+  if (els.dictionaryView && els.appShell) {
+    els.appShell.style.display = 'none';
+    els.dictionaryView.style.display = 'block';
+    // Load dictionary list when showing view (with fallback to prevent crash)
+    if (typeof loadDictionaryPage === 'function') {
+      loadDictionaryPage(true);
+    } else if (typeof loadDictionaryList === 'function') {
+      loadDictionaryList();
+    } else {
+      console.warn('[showDictionaryView] No dictionary load function available');
+    }
+  }
+};
+
+const hideDictionaryView = () => {
+  if (els.dictionaryView && els.appShell) {
+    els.dictionaryView.style.display = 'none';
+    els.appShell.style.display = 'block';
+  }
+};
+
+const navigateToDictionary = () => {
+  // Close settings modal first if open
+  if (els.settingsModal?.open) {
+    els.settingsModal.close();
+  }
+  window.location.hash = '#/dictionary';
+};
+
+const navigateBackFromDictionary = () => {
+  // Try history.back(), fallback to clearing hash if no history
+  if (window.history.length > 1) {
+    window.history.back();
+  } else {
+    window.location.hash = '';
+    hideDictionaryView();
+  }
+};
+
+// ========== History View Navigation ==========
+const navigateToHistory = () => {
+  window.location.hash = '#/history';
+};
+
+const navigateBackFromHistory = () => {
+  // 決め打ちでメイン画面へ遷移（history.back() は履歴スタック依存で不安定）
+  window.location.hash = '#/';
+};
+
+const navigateBackFromHistoryDetail = () => {
+  window.location.hash = '#/history';
+};
+
+const showHistoryView = async () => {
+  if (!els.historyView) return;
+  if (els.appShell) els.appShell.style.display = 'none';
+  els.historyView.style.display = 'block';
+  await loadHistoryList();
+};
+
+const hideHistoryView = () => {
+  if (!els.historyView) return;
+  els.historyView.style.display = 'none';
+  if (els.appShell) els.appShell.style.display = 'flex';
+};
+
+const loadHistoryList = async () => {
+  if (!els.historyList || !els.historyListLoading || !els.historyListEmpty) return;
+
+  els.historyListLoading.style.display = 'block';
+  els.historyList.style.display = 'none';
+  els.historyListEmpty.style.display = 'none';
+
+  try {
+    const sessions = await historyStorage.getAll();
+
+    els.historyListLoading.style.display = 'none';
+
+    if (sessions.length === 0) {
+      els.historyListEmpty.style.display = 'block';
+      return;
+    }
+
+    els.historyList.innerHTML = '';
+    sessions.forEach((session) => {
+      const item = document.createElement('div');
+      item.className = 'history-item';
+      item.innerHTML = `
+        <div class="history-item-info">
+          <div class="history-item-title">${escapeHtml(session.title || 'Untitled')}</div>
+          <div class="history-item-meta">${formatTimestamp(session.timestamp)} • ${(session.originals || []).length} 発話</div>
+        </div>
+        <div class="history-item-actions">
+          <button class="secondary small hist-detail-btn" data-id="${session.id}">詳細</button>
+          <button class="secondary small danger hist-delete-btn" data-id="${session.id}">削除</button>
+        </div>
+      `;
+      els.historyList.appendChild(item);
+    });
+
+    // Event delegation for history list
+    els.historyList.onclick = (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      if (!id) return;
+
+      if (btn.classList.contains('hist-detail-btn')) {
+        window.location.hash = `#/history/${id}`;
+      } else if (btn.classList.contains('hist-delete-btn')) {
+        deleteHistoryEntry(id);
+      }
+    };
+
+    els.historyList.style.display = 'flex';
+  } catch (err) {
+    els.historyListLoading.style.display = 'none';
+    els.historyListEmpty.textContent = `エラー: ${err.message}`;
+    els.historyListEmpty.style.display = 'block';
+    addDiagLog(`History load error: ${err.message}`);
+  }
+};
+
+const deleteHistoryEntry = async (id) => {
+  if (!confirm('この履歴を削除しますか？')) return;
+  try {
+    await historyStorage.delete(id);
+    addDiagLog(`History deleted: ${id}`);
+    await loadHistoryList();
+  } catch (err) {
+    setError(`削除エラー: ${err.message}`);
+  }
+};
+
+const showHistoryDetailView = async (sessionId) => {
+  if (!els.historyDetailView || !els.historyDetailContent) return;
+
+  hideHistoryView();
+  els.historyDetailView.style.display = 'block';
+
+  try {
+    const session = await historyStorage.get(sessionId);
+    if (!session) {
+      els.historyDetailContent.innerHTML = '<p>セッションが見つかりません</p>';
+      return;
+    }
+
+    if (els.historyDetailTitle) {
+      els.historyDetailTitle.textContent = session.title || 'セッション詳細';
+    }
+
+    const originals = (session.originals || []).join('\n');
+    const translations = (session.translations || []).join('\n');
+    const bilingual = (session.originals || [])
+      .map((orig, idx) => `${orig}\n${(session.translations || [])[idx] || ''}`)
+      .join('\n\n');
+
+    els.historyDetailContent.innerHTML = `
+      <div class="history-detail-section">
+        <h4>情報</h4>
+        <div class="history-detail-text">
+          日時: ${formatTimestamp(session.timestamp)}<br>
+          入力言語: ${session.inputLang || 'auto'}<br>
+          出力言語: ${session.outputLang || 'ja'}<br>
+          発話数: ${(session.originals || []).length}
+        </div>
+      </div>
+      ${originals ? `
+      <div class="history-detail-section">
+        <h4>原文</h4>
+        <div class="history-detail-text">${escapeHtml(originals)}</div>
+      </div>
+      ` : ''}
+      ${translations ? `
+      <div class="history-detail-section">
+        <h4>翻訳</h4>
+        <div class="history-detail-text">${escapeHtml(translations)}</div>
+      </div>
+      ` : ''}
+      ${session.summary ? `
+      <div class="history-detail-section">
+        <h4>要約</h4>
+        <div class="history-detail-text">${escapeHtml(session.summary)}</div>
+      </div>
+      ` : ''}
+      <div class="history-detail-section">
+        <h4>ダウンロード</h4>
+        <div class="history-detail-downloads" id="historyDetailDownloads"></div>
+      </div>
+    `;
+
+    // Add download buttons
+    const downloadContainer = document.getElementById('historyDetailDownloads');
+    if (downloadContainer) {
+      const files = [];
+      const tsFilename = formatTimestampForFilename(session.timestamp);
+
+      if (session.m4aUrl) {
+        files.push({ label: '🎵 M4A', url: session.m4aUrl, download: `${tsFilename}.m4a` });
+      }
+      if (originals) {
+        const url = URL.createObjectURL(new Blob([originals], { type: 'text/plain' }));
+        state.objectUrls.push(url);
+        files.push({ label: '📝 原文', url, download: `原文_${tsFilename}.txt` });
+      }
+      if (bilingual) {
+        const url = URL.createObjectURL(new Blob([bilingual], { type: 'text/plain' }));
+        state.objectUrls.push(url);
+        files.push({ label: '🌐 原文+翻訳', url, download: `原文+翻訳_${tsFilename}.txt` });
+      }
+      if (session.summary) {
+        const url = URL.createObjectURL(new Blob([session.summary], { type: 'text/markdown' }));
+        state.objectUrls.push(url);
+        files.push({ label: '📋 要約', url, download: `要約_${tsFilename}.md` });
+      }
+
+      files.forEach((file) => {
+        const btn = document.createElement('a');
+        btn.href = file.url;
+        btn.download = file.download;
+        btn.className = 'result-file-btn';
+        btn.textContent = file.label;
+        downloadContainer.appendChild(btn);
+      });
+    }
+  } catch (err) {
+    els.historyDetailContent.innerHTML = `<p>エラー: ${escapeHtml(err.message)}</p>`;
+    addDiagLog(`History detail error: ${err.message}`);
+  }
+};
+
+const hideHistoryDetailView = () => {
+  if (!els.historyDetailView) return;
+  els.historyDetailView.style.display = 'none';
+  // Revoke temporary blob URLs created in history detail view
+  if (state.objectUrls && state.objectUrls.length > 0) {
+    state.objectUrls.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        // Ignore revoke errors
+      }
+    });
+    state.objectUrls = [];
+  }
+};
+
+// Handle hash routes (#/dictionary, #/history, #/history/:id, #/billing/*, #/tickets/*)
+// ルーティング: #/ or '' => メイン, #/history => 履歴一覧, #/history/<id> => 履歴詳細
+const handleHashRoute = async () => {
+  const hash = window.location.hash || '';
+
+  // メイン画面（#/ or '' or #）
+  if (hash === '#/' || hash === '' || hash === '#') {
+    hideDictionaryView();
+    hideHistoryView();
+    hideHistoryDetailView();
+    if (els.appShell) els.appShell.style.display = 'flex';
+    return;
+  }
+
+  // Dictionary view route
+  if (hash === '#/dictionary') {
+    hideHistoryView();
+    hideHistoryDetailView();
+    showDictionaryView();
+    return;
+  } else {
+    hideDictionaryView();
+  }
+
+  // History view routes（厳密に分岐）
+  if (hash === '#/history') {
+    hideHistoryDetailView();
+    showHistoryView();
+    return;
+  }
+  // #/history/<sessionId> のパターン
+  const historyDetailMatch = hash.match(/^#\/history\/(.+)$/);
+  if (historyDetailMatch && historyDetailMatch[1]) {
+    const sessionId = historyDetailMatch[1];
+    showHistoryDetailView(sessionId);
+    return;
+  }
+
+  // それ以外のルート: 全ビューを非表示にしてメイン表示
+  hideHistoryView();
+  hideHistoryDetailView();
 
   if (hash === '#/billing/success') {
     // Show success banner with polling
@@ -1471,8 +2932,22 @@ const handleBillingRoute = async () => {
     showBillingBanner('cancelled');
     addDiagLog('Billing: Checkout cancelled');
     history.replaceState(null, '', window.location.pathname);
+  } else if (hash === '#/tickets/success') {
+    // Ticket purchase success - refresh quota to show new balance
+    showBillingBanner('ticket-success');
+    addDiagLog('Tickets: Purchase successful');
+    // Refresh quota to show updated ticket balance
+    refreshQuotaAndPlan();
+    history.replaceState(null, '', window.location.pathname);
+  } else if (hash === '#/tickets/cancel') {
+    showBillingBanner('ticket-cancelled');
+    addDiagLog('Tickets: Purchase cancelled');
+    history.replaceState(null, '', window.location.pathname);
   }
 };
+
+// Backward compatibility alias
+const handleBillingRoute = handleHashRoute;
 
 const showBillingBanner = (status) => {
   // Remove existing banner
@@ -1501,6 +2976,12 @@ const showBillingBanner = (status) => {
     case 'cancelled':
       message = t('billingCancelled');
       break;
+    case 'ticket-success':
+      message = t('ticketSuccess');
+      break;
+    case 'ticket-cancelled':
+      message = t('ticketCancelled');
+      break;
     default:
       message = status;
   }
@@ -1525,7 +3006,7 @@ const applyQuotaFromPayload = (payload = {}) => {
     totalAvailableThisMonth: numberOrNull(payload.totalAvailableThisMonth),
     baseDailyQuotaSeconds: numberOrNull(payload.baseDailyQuotaSeconds),
     dailyRemainingSeconds: numberOrNull(payload.dailyRemainingSeconds),
-    ticketSecondsBalance: numberOrNull(payload.ticketSecondsBalance),
+    creditSeconds: numberOrNull(payload.creditSeconds),
     maxSessionSeconds: numberOrNull(
       payload.maxSessionSeconds != null ? payload.maxSessionSeconds : state.quota.maxSessionSeconds,
     ),
@@ -1618,6 +3099,19 @@ const ERROR_MESSAGES = {
 const CONNECTION_TIMEOUT_MS = 10000; // 10秒でタイムアウト
 const RETRY_BACKOFF_MS = 750; // リトライまでの待機時間（500ms〜1sの中間）
 const MAX_RETRY_COUNT = 1; // リトライは1回のみ
+
+// UUID生成（client_request_id 用）
+const generateUUID = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  // Fallback for older browsers
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
 
 // ========== Start Throttle / Rate Limit ==========
 const START_THROTTLE_MS = 12000; // クライアント側スロットル: 12秒に1回まで（5回/分）
@@ -1756,7 +3250,15 @@ const hasQuotaForStart = () => {
 };
 
 const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
-  addDiagLog('Requesting job reservation');
+  // ========== 二重呼び出し防止: すでにジョブがある場合は呼ばない ==========
+  if (state.currentJob || state.jobActive) {
+    addDiagLog(`reserveJobSlot skipped: job already active | jobId=${state.currentJob?.jobId} | jobActive=${state.jobActive}`);
+    return state.currentJob;
+  }
+
+  // client_request_id を生成（観測用）
+  const clientRequestId = generateUUID();
+  addDiagLog(`Requesting job reservation | clientRequestId=${clientRequestId}`);
 
   // 呼び出し時刻を記録（スロットル用）
   state.lastJobCreateAt = Date.now();
@@ -1764,11 +3266,40 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   const createUrl = forceTakeover
     ? '/api/v1/jobs/create?force_takeover=true'
     : '/api/v1/jobs/create';
-  const res = await authFetch(createUrl, { method: 'POST' });
+  const res = await authFetch(createUrl, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ clientRequestId }),
+  });
   const data = await res.json().catch(() => ({}));
 
+  // 409 active_job_in_progress の処理
   if (res.status === 409 && data?.error === 'active_job_in_progress') {
-    addDiagLog('Job create blocked: active_job_in_progress');
+    addDiagLog(`Job create blocked: active_job_in_progress | clientRequestId=${clientRequestId}`);
+    // 409 はリトライしない（UIはRETRYINGにしない）
+    // /jobs/active を叩いて復帰導線を出す
+    try {
+      const activeRes = await authFetch('/api/v1/jobs/active', { method: 'GET' });
+      if (activeRes.ok) {
+        const activeData = await activeRes.json();
+        addDiagLog(`Active job found via /jobs/active | jobId=${activeData.jobId} | recovering...`);
+        // 既存ジョブで復帰
+        state.currentJob = {
+          jobId: activeData.jobId,
+          reservedSeconds: activeData.reservedSeconds,
+          reservedBaseSeconds: activeData.reservedBaseSeconds,
+          reservedTicketSeconds: activeData.reservedTicketSeconds,
+        };
+        state.jobStartedAt = Date.now();
+        state.jobActive = true;
+        applyQuotaFromPayload(activeData);
+        addDiagLog(`Job recovered from /jobs/active | jobId=${activeData.jobId} | jobActive=true`);
+        return activeData;
+      }
+    } catch (activeErr) {
+      addDiagLog(`Failed to fetch /jobs/active: ${activeErr.message}`);
+    }
+    // /jobs/active も失敗した場合は takeover ダイアログを表示
     if (forceTakeover) {
       const takeoverErr = new Error('active_job_in_progress');
       takeoverErr._context = 'job_create';
@@ -1793,7 +3324,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
         waitMs = retryAfterSec * 1000;
       }
     }
-    addDiagLog(`429 Too Many Requests | Retry-After=${retryAfterHeader || 'none'} | waitMs=${waitMs}`);
+    addDiagLog(`429 Too Many Requests | Retry-After=${retryAfterHeader || 'none'} | waitMs=${waitMs} | clientRequestId=${clientRequestId}`);
 
     // 特別なエラーをthrowして、呼び出し元でクールダウン処理を行う
     const rateLimitErr = new Error('rate_limit');
@@ -1806,6 +3337,13 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
     const message = extractErrorMessage(data, 'ジョブの予約に失敗しました。');
     throw new Error(message);
   }
+
+  // reused=true の場合は復帰フロー
+  const reused = data.reused === true;
+  if (reused) {
+    addDiagLog(`Job reused (idempotent recovery) | jobId=${data.jobId} | clientRequestId=${clientRequestId}`);
+  }
+
   state.currentJob = {
     jobId: data.jobId,
     reservedSeconds: data.reservedSeconds,
@@ -1815,7 +3353,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   state.jobStartedAt = Date.now();
   state.jobActive = true; // ジョブ有効化
   applyQuotaFromPayload(data);
-  addDiagLog(`Job reserved | jobId=${data.jobId} | jobActive=true`);
+  addDiagLog(`Job reserved | jobId=${data.jobId} | reused=${reused} | jobActive=true | clientRequestId=${clientRequestId}`);
   return data;
 };
 
@@ -1866,19 +3404,19 @@ const trimTail = (text, limit) => {
   return '…' + text.slice(text.length - limit);
 };
 
-const appendDownload = (label, url) => {
-  if (!els.downloads) return;
-  const link = document.createElement('a');
-  link.href = url;
-  link.textContent = label;
-  link.download = '';
-  els.downloads.appendChild(link);
-};
-
-const resetDownloads = () => {
-  if (!els.downloads) return;
-  els.downloads.innerHTML = '';
-};
+// Legacy download helpers - removed (replaced by Result Card)
+// const appendDownload = (label, url) => {
+//   if (!els.downloads) return;
+//   const link = document.createElement('a');
+//   link.href = url;
+//   link.textContent = label;
+//   link.download = '';
+//   els.downloads.appendChild(link);
+// };
+// const resetDownloads = () => {
+//   if (!els.downloads) return;
+//   els.downloads.innerHTML = '';
+// };
 
 const updateLiveText = () => {
   if (!els.liveTranscript) return;
@@ -1969,50 +3507,173 @@ const uploadForM4A = async (blob) => {
   const res = await authFetch('/audio_m4a', { method: 'POST', body: fd });
   if (!res.ok) throw new Error('m4a変換失敗');
   const data = await res.json();
-  appendDownload('m4a', data.url);
+  // appendDownload('m4a', data.url); // Old UI removed - Result Card handles this
 };
 
-const saveTextDownloads = async () => {
+// Returns the M4A URL for storage in history
+const uploadForM4AAndGetUrl = async (blob) => {
+  const fd = new FormData();
+  fd.append('file', blob, 'audio.webm');
+  const res = await authFetch('/audio_m4a', { method: 'POST', body: fd });
+  if (!res.ok) throw new Error('m4a変換失敗');
+  const data = await res.json();
+  // appendDownload('m4a', data.url); // Old UI removed - Result Card handles this
+  return data.url;
+};
+
+// Legacy saveTextDownloads - removed (replaced by saveTextDownloadsWithResultCard)
+// const saveTextDownloads = async () => { ... };
+
+// Enhanced version that also shows result card UI
+const saveTextDownloadsWithResultCard = async () => {
   const originals = state.logs.join('\n');
   const bilingual = state.logs
     .map((orig, idx) => `${orig}\n${state.translations[idx] || ''}`)
     .join('\n\n');
 
+  // Attempt auto-summary (non-blocking on failure)
   let summaryMd = '';
   if (originals.trim()) {
-    const fd = new FormData();
-    fd.append('text', originals);
-    fd.append('output_lang', state.outputLang);
-    if (state.glossaryText) {
-      fd.append('glossary_text', state.glossaryText);
+    // Validate inputs before sending to /summarize
+    const validation = validateSummarizeInputs(
+      bilingual || originals,
+      state.glossaryText,
+      state.summaryPrompt
+    );
+
+    if (!validation.valid) {
+      addDiagLog(`Auto-summary blocked: ${validation.errors.join(', ')}`);
+      // Don't send to server, but continue with rest of flow
+    } else {
+      try {
+        const fd = new FormData();
+        fd.append('text', validation.text);
+        fd.append('output_lang', state.outputLang);
+        if (validation.glossaryText) {
+          fd.append('glossary_text', validation.glossaryText);
+        }
+        if (validation.summaryPrompt) {
+          fd.append('summary_prompt', validation.summaryPrompt);
+        }
+        const summaryRes = await authFetch('/summarize', {
+          method: 'POST',
+          body: fd,
+        });
+        if (summaryRes.ok) {
+          const data = await summaryRes.json();
+          summaryMd = data.summary || '';
+          if (state.currentSessionResult) {
+            state.currentSessionResult.summary = summaryMd;
+          }
+        }
+      } catch (err) {
+        addDiagLog(`Auto-summary failed: ${err.message}`);
+      }
     }
-    if (state.summaryPrompt) {
-      fd.append('summary_prompt', state.summaryPrompt);
+  }
+
+  // Legacy makeBlobLink calls removed (Result Card provides download links)
+
+  // Show result card UI
+  showResultCard(summaryMd);
+};
+
+// Show result card after stop
+const showResultCard = (summaryMd = '') => {
+  if (!els.resultCard) return;
+
+  const session = state.currentSessionResult;
+  if (!session) return;
+
+  // Set title and timestamp
+  if (els.resultCardTitle) {
+    els.resultCardTitle.textContent = session.title || 'セッション結果';
+  }
+  if (els.resultCardTimestamp) {
+    els.resultCardTimestamp.textContent = formatTimestamp(session.timestamp);
+  }
+
+  // Build file download buttons
+  if (els.resultCardFiles) {
+    els.resultCardFiles.innerHTML = '';
+    const files = [];
+    const tsFilename = formatTimestampForFilename(session.timestamp);
+
+    // Audio files
+    if (session.audioUrl) {
+      files.push({ label: '🎤 WebM', url: session.audioUrl, download: `${tsFilename}.webm` });
     }
-    const summaryRes = await authFetch('/summarize', {
-      method: 'POST',
-      body: fd,
+    if (session.m4aUrl) {
+      files.push({ label: '🎵 M4A', url: session.m4aUrl, download: `${tsFilename}.m4a` });
+    }
+
+    // Text files (create blob URLs and track for cleanup)
+    if (session.originals.length > 0) {
+      const originalsText = session.originals.join('\n');
+      const originalsUrl = URL.createObjectURL(new Blob([originalsText], { type: 'text/plain' }));
+      state.objectUrls.push(originalsUrl);
+      files.push({ label: '📝 原文', url: originalsUrl, download: `原文_${tsFilename}.txt` });
+
+      const bilingualText = session.originals
+        .map((orig, idx) => `${orig}\n${session.translations[idx] || ''}`)
+        .join('\n\n');
+      const bilingualUrl = URL.createObjectURL(new Blob([bilingualText], { type: 'text/plain' }));
+      state.objectUrls.push(bilingualUrl);
+      files.push({ label: '🌐 原文+翻訳', url: bilingualUrl, download: `原文+翻訳_${tsFilename}.txt` });
+    }
+
+    // Summary file (if exists)
+    if (summaryMd) {
+      const summaryUrl = URL.createObjectURL(new Blob([summaryMd], { type: 'text/markdown' }));
+      state.objectUrls.push(summaryUrl);
+      files.push({ label: '📋 要約', url: summaryUrl, download: `要約_${tsFilename}.md` });
+    }
+
+    files.forEach((file) => {
+      const btn = document.createElement('a');
+      btn.href = file.url;
+      btn.download = file.download;
+      btn.className = 'result-file-btn';
+      btn.textContent = file.label;
+      els.resultCardFiles.appendChild(btn);
     });
-    if (summaryRes.ok) {
-      const data = await summaryRes.json();
-      summaryMd = data.summary || '';
-    }
   }
 
-  const makeBlobLink = (label, content, type = 'text/plain') => {
-    const url = URL.createObjectURL(new Blob([content], { type }));
-    appendDownload(label, url);
-  };
-
-  makeBlobLink('原文.txt', originals);
-  makeBlobLink('原文+日本語.txt', bilingual);
-  if (summaryMd) makeBlobLink('要約.md', summaryMd, 'text/markdown');
-
-  // Show summary section for manual summary generation
-  if (originals.trim() && els.summarySection) {
-    els.summarySection.style.display = 'block';
-    if (els.runSummary) els.runSummary.disabled = false;
+  // Show summary output
+  if (els.summaryOutputCard) {
+    els.summaryOutputCard.textContent = summaryMd || '';
   }
+  if (els.copySummaryCard) {
+    els.copySummaryCard.style.display = summaryMd ? 'inline-block' : 'none';
+  }
+
+  // Update summary button text
+  if (els.runSummaryCard) {
+    els.runSummaryCard.textContent = summaryMd ? '要約を再生成' : '要約を生成';
+    els.runSummaryCard.disabled = false;
+  }
+
+  // Show the card
+  els.resultCard.style.display = 'block';
+};
+
+// Hide result card (called on start)
+const hideResultCard = () => {
+  if (els.resultCard) {
+    els.resultCard.style.display = 'none';
+  }
+  // Revoke temporary blob URLs to free memory
+  if (state.objectUrls && state.objectUrls.length > 0) {
+    state.objectUrls.forEach((url) => {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (e) {
+        // Ignore revoke errors
+      }
+    });
+    state.objectUrls = [];
+  }
+  state.currentSessionResult = null;
 };
 
 const translateCompleted = async (text) => {
@@ -2034,9 +3695,11 @@ const translateCompleted = async (text) => {
 
 const commitLog = (text, itemId = null) => {
   if (!text || !text.trim()) return;
-  state.logs.push(text);
-  addTranscriptLog(text);
-  translateCompleted(text);
+  maybeLockSttLanguage(text);
+  const processed = postprocessSttText(text);
+  state.logs.push(processed);
+  addTranscriptLog(processed);
+  translateCompleted(processed);
   state.liveOriginal = '';
   if (itemId) {
     state.committedItems.add(itemId);
@@ -2121,19 +3784,30 @@ const handleDataMessage = (event) => {
   try {
     const msg = JSON.parse(event.data);
     const type = msg.type || msg.event || '';
-    if (msg?.type === 'error') {
-      console.error('[realtime:error]', msg);
+
+    // エラーイベントの完全ログ出力（原因特定用・session context含む）
+    if (msg?.type === 'error' || type === 'error' || msg.error) {
+      const errInfo = msg.error || msg;
+      const errType = errInfo.type || 'unknown_type';
+      const errCode = errInfo.code || 'unknown_code';
+      const errParam = errInfo.param || '';
+      const errMessage = errInfo.message || msg.message || 'Realtime error';
+      console.error('[realtime:error] Full error payload:', JSON.stringify(msg, null, 2));
+      console.error(`[realtime:error] code=${errCode}, type=${errType}, param=${errParam}, message=${errMessage}`);
+      addDiagLog(`REALTIME_ERROR | sid=${state.sessionId || 'no_sid'} type=${errType} code=${errCode} param=${errParam} msg=${errMessage}`);
       addDiagLog(`REALTIME_ERROR_JSON: ${JSON.stringify(msg)}`);
+      setError(errMessage);
+      return;
     }
+
     if (type === 'conversation.item.input_audio_transcription.delta') {
       handleDelta(msg);
     } else if (type === 'conversation.item.input_audio_transcription.completed') {
       handleCompleted(msg);
-    } else if (type === 'error' || msg.error) {
-      setError(msg.error?.message || msg.message || 'Realtime error');
     }
   } catch (err) {
-    console.error('message parse', err);
+    console.error('[realtime:parse] message parse error:', err);
+    addDiagLog(`REALTIME_PARSE_ERROR | sid=${state.sessionId || 'no_sid'} error=${err.message}`);
   }
 };
 
@@ -2177,6 +3851,10 @@ const fetchToken = async () => {
 };
 
   const negotiate = async (clientSecret) => {
+  // Generate session ID for diagnostics
+  state.sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  addDiagLog(`Session started: sid=${state.sessionId} build=${state.buildVersion || 'unknown'}`);
+
   const pc = new RTCPeerConnection();
   state.pc = pc;
   state.dataChannel = pc.createDataChannel('oai-events');
@@ -2217,7 +3895,7 @@ const fetchToken = async () => {
   addDiagLog(`STEP5: before negotiate | offerSdpLen=${offerSdp?.length || 0}`);
 
   // デバッグ: SDP offer の検証
-  console.log('[negotiate] Realtime URL:', REALTIME_URL);
+  console.log('[negotiate] Realtime URL:', REALTIME_CALLS_URL);
   console.log('[negotiate] clientSecret prefix:', clientSecret ? `${clientSecret.substring(0, 10)}...` : 'missing');
   console.log('[negotiate] Offer SDP length:', offerSdp.length);
   if (!offerSdp.includes('v=0')) console.warn('[negotiate] SDP missing v=0');
@@ -2284,47 +3962,59 @@ const startConnectionAttempt = async () => {
 
 const start = async () => {
   addDiagLog('STEP1: start() entered');
-  addDiagLog('Start requested');
-  if (!firebaseState.initialized) {
-    setError('Firebase初期化に失敗しました。設定を確認してください。');
-    addDiagLog('Start blocked: Firebase not ready');
+
+  // ========== 二重発火防止: in-flight ガード ==========
+  if (state.startInFlight) {
+    addDiagLog('Start blocked: already in-flight (double-fire prevention)');
     return;
   }
-  if (!currentUser) {
-    setError('ログインが必要です');
-    addDiagLog('Start blocked: user not authenticated');
-    return;
-  }
+  state.startInFlight = true;
+  addDiagLog('Start requested | startInFlight=true');
 
-  // クールダウン中かチェック
-  if (getCooldownRemainingSeconds() > 0) {
-    addDiagLog('Start blocked: cooldown active');
-    return; // クールダウンタイマーがUIを更新中なのでここでは何もしない
-  }
+  try {
+    // Hide previous result card when starting new session
+    hideResultCard();
 
-  // クライアント側スロットルチェック（12秒に1回）
-  const throttle = checkClientThrottle();
-  if (!throttle.allowed) {
-    const waitSec = Math.ceil(throttle.waitMs / 1000);
-    addDiagLog(`Start throttled (client) | waitMs=${throttle.waitMs}`);
-    startCooldown(throttle.waitMs, 'client_throttle');
-    return;
-  }
+    if (!firebaseState.initialized) {
+      setError('Firebase初期化に失敗しました。設定を確認してください。');
+      addDiagLog('Start blocked: Firebase not ready');
+      return;
+    }
+    if (!currentUser) {
+      setError('ログインが必要です');
+      addDiagLog('Start blocked: user not authenticated');
+      return;
+    }
 
-  if (!state.quota.loaded) {
-    await refreshQuotaStatus();
-  }
-  if (!hasQuotaForStart()) {
-    els.start.disabled = false;
-    els.stop.disabled = true;
-    return;
-  }
+    // クールダウン中かチェック
+    if (getCooldownRemainingSeconds() > 0) {
+      addDiagLog('Start blocked: cooldown active');
+      return; // クールダウンタイマーがUIを更新中なのでここでは何もしない
+    }
 
-  // Update UI state
-  els.start.disabled = true;
-  els.stop.disabled = false;
+    // クライアント側スロットルチェック（12秒に1回）
+    const throttle = checkClientThrottle();
+    if (!throttle.allowed) {
+      const waitSec = Math.ceil(throttle.waitMs / 1000);
+      addDiagLog(`Start throttled (client) | waitMs=${throttle.waitMs}`);
+      startCooldown(throttle.waitMs, 'client_throttle');
+      return;
+    }
+
+    if (!state.quota.loaded) {
+      await refreshQuotaStatus();
+    }
+    if (!hasQuotaForStart()) {
+      els.start.disabled = false;
+      els.stop.disabled = true;
+      return;
+    }
+
+    // Update UI state
+    els.start.disabled = true;
+    els.stop.disabled = false;
   clearGapTimer();
-  resetDownloads();
+  // resetDownloads(); // Old UI removed
   clearLogs();
   state.logs = [];
   state.translations = [];
@@ -2333,6 +4023,9 @@ const start = async () => {
   state.committedItems = new Set();
   state.activeItemId = null;
   state.realtimeEventQueue = []; // Clear any stale queued events
+  state.sttSettings.wsAppliedOnce = false; // Reset STT settings applied flag for new connection
+  state.sttSettings.lockedLanguage = null;
+  state.sttSettings.autoLockApplied = false;
   updateLiveText();
   setError('');
 
@@ -2349,7 +4042,7 @@ const start = async () => {
       }
 
       await startConnectionAttempt();
-      return; // Success - exit the retry loop
+      return; // Success - exit the retry loop (finally will reset startInFlight)
 
     } catch (err) {
       logErrorDetails('start', err);
@@ -2416,6 +4109,11 @@ const start = async () => {
     addDiagLog(`COMPLETE because start failed: ${finalClassified.category}`);
     await completeCurrentJob(0);
   }
+  } finally {
+    // ========== in-flight ガード解除 ==========
+    state.startInFlight = false;
+    addDiagLog('start() exiting | startInFlight=false');
+  }
 };
 
 const stop = async () => {
@@ -2427,17 +4125,36 @@ const stop = async () => {
   closeRtc();
   setStatus('Standby');
 
+  // Initialize session result for this stop
+  const sessionId = `session_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const sessionTimestamp = Date.now();
+  state.currentSessionResult = {
+    id: sessionId,
+    timestamp: sessionTimestamp,
+    title: '',
+    originals: [...state.logs],
+    translations: [...state.translations],
+    summary: '',
+    audioUrl: null,
+    m4aUrl: null,
+    inputLang: state.inputLang,
+    outputLang: state.outputLang,
+  };
+
   if (state.recorder) {
     state.recorder.stop();
   }
   if (state.recordingChunks.length) {
     const blob = new Blob(state.recordingChunks, { type: 'audio/webm' });
     const url = URL.createObjectURL(blob);
-    appendDownload('webm', url);
+    state.currentSessionResult.audioUrl = url;
+    // appendDownload('webm', url); // Old UI removed - Result Card handles this
     try {
-      await uploadForM4A(blob);
+      const m4aUrl = await uploadForM4AAndGetUrl(blob);
+      state.currentSessionResult.m4aUrl = m4aUrl;
     } catch (err) {
       setError(err.message);
+      addDiagLog(`M4A conversion failed: ${err.message}`);
     }
   }
 
@@ -2448,7 +4165,23 @@ const stop = async () => {
   } else {
     addDiagLog('Stop: no active job to complete');
   }
-  await saveTextDownloads();
+
+  // Generate title from text (try LLM, fallback to simple extraction)
+  const titleSource = state.currentSessionResult.translations.join(' ') || state.currentSessionResult.originals.join(' ');
+  const llmTitle = await generateSessionTitleWithFallback(titleSource);
+  state.currentSessionResult.title = llmTitle || formatTimestampForFilename(sessionTimestamp);
+
+  // Save text downloads and attempt auto-summary
+  await saveTextDownloadsWithResultCard();
+
+  // Save to history (even if incomplete)
+  try {
+    await historyStorage.save(state.currentSessionResult);
+    addDiagLog(`History saved: ${sessionId}`);
+  } catch (err) {
+    addDiagLog(`History save failed: ${err.message}`);
+  }
+
   addDiagLog('Stop completed');
 };
 
@@ -2470,31 +4203,485 @@ const applyAuthUiState = (user) => {
 };
 
 document.addEventListener('DOMContentLoaded', () => {
-  addDiagLog('DOM ready');
-  cacheElements();
-  scrubDebugArtifacts();
-  setupDevPanel();
-  updateDevStatusSummary();
-  updateQuotaInfo();
+  // ============================================================
+  // APP INITIALIZATION - Structured for Resilience
+  // ============================================================
+  // initCritical(): Core functionality - login, main UI, auth
+  //   - Failures are logged but should not crash the app
+  // initNonCritical(): Optional features - SW, BUILD display, diagnostics
+  //   - Failures are silently caught and do not affect core functionality
+  // ============================================================
 
-  if (els.maxChars) els.maxChars.value = state.maxChars;
-  if (els.gapMs) els.gapMs.value = state.gapMs;
-  if (els.vadSilence) els.vadSilence.value = state.vadSilence;
-  if (els.uiLang) els.uiLang.value = state.uiLang;
-  if (els.inputLang) els.inputLang.value = state.inputLang;
-  if (els.outputLang) els.outputLang.value = state.outputLang;
-  // Glossary & Summary Settings
-  if (els.glossaryTextInput) els.glossaryTextInput.value = state.glossaryText;
-  if (els.summaryPromptInput) els.summaryPromptInput.value = state.summaryPrompt;
+  // ============================================================
+  // HOISTED FUNCTION DECLARATIONS (TDZ-safe)
+  // These MUST use `function` keyword (not const/let) to ensure hoisting.
+  // See docs/dev-guardrails.md for the full policy.
+  // ============================================================
 
-  // Apply i18n on load
-  applyI18n();
+  // SW Update Notification: Show banner and register update button
+  function showUpdateBanner(worker) {
+    if (!els.swUpdateBanner || !els.swUpdateBtn) return;
 
-  if (els.start) els.start.addEventListener('click', start);
-  if (els.stop) els.stop.addEventListener('click', stop);
+    els.swUpdateBanner.style.display = 'flex';
+
+    // Remove previous listeners to avoid duplicates
+    const newBtn = els.swUpdateBtn.cloneNode(true);
+    els.swUpdateBtn.replaceWith(newBtn);
+    els.swUpdateBtn = newBtn;
+
+    els.swUpdateBtn.addEventListener('click', () => {
+      console.log('[SW] User clicked update, sending SKIP_WAITING');
+      worker.postMessage({ type: 'SKIP_WAITING' });
+      els.swUpdateBanner.style.display = 'none';
+    });
+  }
+
+  // Fetch and display BUILD_SHA from /build.txt
+  async function fetchBuildSha() {
+    try {
+      const response = await fetch('/build.txt', { cache: 'no-cache' });
+      if (!response.ok) throw new Error('build.txt not found');
+      const text = await response.text();
+      const shaMatch = text.match(/BUILD_SHA=([^\s]+)/);
+      const timeMatch = text.match(/BUILD_TIME_UTC=([^\s]+)/);
+      const sha = shaMatch ? shaMatch[1] : 'unknown';
+      const time = timeMatch ? timeMatch[1] : '';
+      // Store in state for diagnostics
+      state.buildVersion = sha;
+      if (els.buildShaDisplay) {
+        els.buildShaDisplay.textContent = `BUILD_SHA: ${sha}${time ? ' (' + time + ')' : ''}`;
+      }
+    } catch (err) {
+      console.warn('[BUILD] Failed to fetch build.txt:', err);
+      state.buildVersion = 'fetch_failed';
+      if (els.buildShaDisplay) {
+        els.buildShaDisplay.textContent = 'BUILD_SHA: 取得失敗';
+      }
+    }
+  }
+
+  // ============================================================
+  // CRITICAL PATH - Core initialization
+  // Failures here are logged and shown, but we try to continue
+  // ============================================================
+  function initCritical() {
+    addDiagLog('DOM ready');
+    cacheElements();
+    scrubDebugArtifacts();
+
+    // Initialize form values from state
+    if (els.maxChars) els.maxChars.value = state.maxChars;
+    if (els.gapMs) els.gapMs.value = state.gapMs;
+    if (els.vadSilence) els.vadSilence.value = state.vadSilence;
+    if (els.uiLang) els.uiLang.value = state.uiLang;
+    if (els.inputLang) els.inputLang.value = state.inputLang;
+    if (els.outputLang) els.outputLang.value = state.outputLang;
+    if (els.glossaryTextInput) els.glossaryTextInput.value = state.glossaryText;
+    if (els.summaryPromptInput) els.summaryPromptInput.value = state.summaryPrompt;
+
+    applyI18n();
+
+    // ---- CRITICAL EVENT HANDLERS (login, main buttons) ----
+    // 二重登録防止: state.uiBound でガード
+    if (!state.uiBound) {
+      if (els.start) els.start.addEventListener('click', start);
+      if (els.stop) els.stop.addEventListener('click', stop);
+      state.uiBound = true;
+      addDiagLog('UI event handlers bound (start/stop)');
+    } else {
+      addDiagLog('UI event handlers already bound, skipping');
+    }
+
+    // Firebase initialization and auth
+    initFirebase();
+    applyAuthUiState(null);
+    addDiagLog(`Auth init: currentUser=${currentUser?.uid || 'null'}`);
+
+    // Login button - CRITICAL
+    if (els.loginBtn) {
+      els.loginBtn.addEventListener('click', async () => {
+        addDiagLog('Login requested');
+        if (!auth) {
+          setError('Firebase初期化に失敗しました。設定を確認してください。');
+          return;
+        }
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          await auth.signInWithPopup(provider);
+          addDiagLog('Login popup completed');
+        } catch (err) {
+          setError('ログインに失敗しました: ' + err.message);
+          addDiagLog(`Login failed: ${err.message}`);
+        }
+      });
+    }
+
+    // Logout button - CRITICAL
+    if (els.logoutBtn) {
+      els.logoutBtn.addEventListener('click', async () => {
+        addDiagLog('Logout requested');
+        if (!auth) {
+          setError('Firebase初期化に失敗しました。設定を確認してください。');
+          return;
+        }
+        try {
+          await auth.signOut();
+          setStatus('Standby');
+          addDiagLog('Logout completed');
+        } catch (err) {
+          setError('ログアウトに失敗しました: ' + err.message);
+          addDiagLog(`Logout failed: ${err.message}`);
+        }
+      });
+    }
+
+    // Auth state observer - CRITICAL
+    if (auth) {
+      auth.onAuthStateChanged((user) => {
+        currentUser = user;
+        applyAuthUiState(user);
+        addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
+        if (user) {
+          refreshQuotaStatus();
+          handleHashRoute();
+          loadCompanyProfile();
+          refreshBillingStatus();
+        } else {
+          resetQuotaState();
+        }
+      });
+    }
+
+    // Live text display
+    updateLiveText();
+  }
+
+  // ============================================================
+  // NON-CRITICAL PATH - Optional features
+  // Each block is wrapped in try/catch; failures do not stop the app
+  // ============================================================
+  function initNonCritical() {
+    // Dev panel & diagnostics
+    try {
+      setupDevPanel();
+      updateDevStatusSummary();
+      updateQuotaInfo();
+    } catch (err) {
+      console.warn('[INIT:non-critical] Dev panel setup failed:', err);
+    }
+
+    // BUILD_SHA display
+    try {
+      fetchBuildSha();
+    } catch (err) {
+      console.warn('[INIT:non-critical] fetchBuildSha failed:', err);
+    }
+
+    // Service Worker registration
+    try {
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', async () => {
+          if (isDebugMode()) {
+            console.log('[SW] Debug mode: skipping SW registration');
+            const registrations = await navigator.serviceWorker.getRegistrations();
+            for (const reg of registrations) {
+              await reg.unregister();
+              console.log('[SW] Unregistered:', reg.scope);
+            }
+            const cacheNames = await caches.keys();
+            for (const name of cacheNames) {
+              await caches.delete(name);
+              console.log('[SW] Cache deleted:', name);
+            }
+            console.log('[SW] Debug mode: SW disabled, caches cleared');
+            return;
+          }
+          try {
+            const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+            console.log('[SW] Registered:', registration.scope);
+
+            let refreshing = false;
+            let newWorker = null;
+
+            registration.addEventListener('updatefound', () => {
+              newWorker = registration.installing;
+              console.log('[SW] Update found, new worker installing');
+
+              newWorker.addEventListener('statechange', () => {
+                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  console.log('[SW] New worker installed, showing update banner');
+                  showUpdateBanner(newWorker);
+                }
+              });
+            });
+
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+              if (refreshing) return;
+              refreshing = true;
+              console.log('[SW] Controller changed, reloading page');
+              window.location.reload();
+            });
+
+            if (registration.waiting) {
+              console.log('[SW] Worker already waiting, showing update banner');
+              showUpdateBanner(registration.waiting);
+            }
+          } catch (err) {
+            console.error('[SW] Registration failed:', err);
+          }
+        });
+      }
+    } catch (err) {
+      console.warn('[INIT:non-critical] SW setup failed:', err);
+    }
+
+    // A2HS prompt
+    try {
+      let deferredPrompt = null;
+      window.addEventListener('beforeinstallprompt', (e) => {
+        if (state.hasShownA2HS) return;
+        if (!els.a2hs) return;
+        e.preventDefault();
+        deferredPrompt = e;
+        state.hasShownA2HS = true;
+        localStorage.setItem('a2hsShown', '1');
+        els.a2hs.classList.add('show');
+        setTimeout(async () => {
+          if (deferredPrompt) {
+            deferredPrompt.prompt();
+            deferredPrompt = null;
+          }
+        }, 1500);
+      });
+    } catch (err) {
+      console.warn('[INIT:non-critical] A2HS setup failed:', err);
+    }
+  }
+
+  // ============================================================
+  // MAIN INITIALIZATION ENTRY POINT
+  // ============================================================
+  try {
+    initCritical();
+  } catch (err) {
+    console.error('[INIT:critical] CRITICAL initialization failed:', err);
+    // Even if critical init fails, we try to show an error
+    try {
+      setError('アプリの初期化に失敗しました。ページを再読み込みしてください。');
+    } catch (_) {
+      // Last resort
+      alert('アプリの初期化に失敗しました。');
+    }
+  }
+
+  try {
+    initNonCritical();
+  } catch (err) {
+    console.warn('[INIT:non-critical] Non-critical initialization failed:', err);
+    // Non-critical failures are silently logged - app continues
+  }
+
+  // ============================================================
+  // ADDITIONAL UI EVENT HANDLERS
+  // These are registered after core init to ensure login works first
+  // ============================================================
 
   if (els.settingsBtn && els.settingsModal) {
-    els.settingsBtn.addEventListener('click', () => els.settingsModal.showModal());
+    els.settingsBtn.addEventListener('click', () => {
+      els.settingsModal.showModal();
+      if (currentUser) {
+        loadDictionaryList();
+      }
+      try {
+        fetchBuildSha();
+      } catch (err) {
+        console.warn('[SETTINGS] fetchBuildSha failed:', err);
+      }
+    });
+  }
+  if (els.saveSettings) {
+    els.saveSettings.addEventListener('click', (e) => {
+      e.preventDefault();
+      state.maxChars = Number(els.maxChars?.value) || 300;
+      state.gapMs = Number(els.gapMs?.value) || 1000;
+      state.vadSilence = Number(els.vadSilence?.value) || 400;
+      state.uiLang = els.uiLang?.value || 'ja';
+      state.inputLang = els.inputLang?.value || 'auto';
+      state.outputLang = els.outputLang?.value || 'ja';
+      localStorage.setItem('maxChars', state.maxChars);
+      localStorage.setItem('gapMs', state.gapMs);
+      localStorage.setItem('vadSilence', state.vadSilence);
+      localStorage.setItem('uiLang', state.uiLang);
+      localStorage.setItem('inputLang', state.inputLang);
+      localStorage.setItem('outputLang', state.outputLang);
+      const glossaryTextValue = els.glossaryTextInput?.value || '';
+      glossaryStorage.set(glossaryTextValue);
+      const glossaryEntries = parseGlossary(glossaryTextValue);
+      const summaryPromptValue = els.summaryPromptInput?.value || '';
+      summaryPromptStorage.set(summaryPromptValue);
+      applyI18n();
+      els.settingsModal?.close();
+      addDiagLog(
+        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang} glossary_entries=${glossaryEntries.length} summaryPrompt_len=${state.summaryPrompt.length}`
+      );
+      updateDevStatusSummary();
+    });
+  }
+
+  if (els.presetFast) {
+    els.presetFast.addEventListener('click', () => applyPreset('fast'));
+  }
+  if (els.presetBalanced) {
+    els.presetBalanced.addEventListener('click', () => applyPreset('balanced'));
+  }
+  if (els.presetStable) {
+    els.presetStable.addEventListener('click', () => applyPreset('stable'));
+  }
+
+  // ========== STT Settings Event Handlers ==========
+  // Initialize STT UI values from state
+  const initSttSettingsUI = () => {
+    const stt = state.sttSettings;
+    if (els.sttInputLang) els.sttInputLang.value = stt.inputLang;
+    if (els.sttVadPreset) els.sttVadPreset.value = stt.vadPreset;
+    if (els.sttVadThreshold) els.sttVadThreshold.value = stt.vadThreshold;
+    if (els.sttVadSilence) els.sttVadSilence.value = stt.vadSilence;
+    if (els.sttVadPrefix) els.sttVadPrefix.value = stt.vadPrefix;
+    if (els.sttNoiseReduction) els.sttNoiseReduction.value = stt.noiseReduction;
+    if (els.sttTranscriptionModel) els.sttTranscriptionModel.value = stt.transcriptionModel;
+    // Show/hide custom VAD inputs
+    if (els.sttVadCustom) {
+      els.sttVadCustom.style.display = stt.vadPreset === 'custom' ? 'block' : 'none';
+    }
+    // Show debug payload in debug mode
+    if (isDebugMode() && els.sttDebugPayload) {
+      els.sttDebugPayload.style.display = 'block';
+      if (els.sttDebugPayloadContent) {
+        const payload = buildSttPayload();
+        els.sttDebugPayloadContent.textContent = payload
+          ? JSON.stringify(payload, null, 2)
+          : '(no dirty settings)';
+      }
+    }
+  };
+
+  // Save STT settings to localStorage
+  const saveSttSettings = () => {
+    const stt = state.sttSettings;
+    localStorage.setItem('stt_input_lang', stt.inputLang);
+    localStorage.setItem('stt_vad_preset', stt.vadPreset);
+    localStorage.setItem('stt_vad_threshold', String(stt.vadThreshold));
+    localStorage.setItem('stt_vad_silence', String(stt.vadSilence));
+    localStorage.setItem('stt_vad_prefix', String(stt.vadPrefix));
+    localStorage.setItem('stt_noise_reduction', stt.noiseReduction);
+    localStorage.setItem('stt_transcription_model', stt.transcriptionModel);
+  };
+
+  // Update debug payload display
+  const updateSttDebugPayload = () => {
+    if (isDebugMode() && els.sttDebugPayload && els.sttDebugPayloadContent) {
+      els.sttDebugPayload.style.display = 'block';
+      const payload = buildSttPayload();
+      els.sttDebugPayloadContent.textContent = payload
+        ? JSON.stringify(payload, null, 2)
+        : '(no dirty settings)';
+    }
+  };
+
+  if (els.sttInputLang) {
+    els.sttInputLang.addEventListener('change', () => {
+      state.sttSettings.inputLang = els.sttInputLang.value;
+      state.sttSettings.dirty.inputLang = true;
+      state.sttSettings.lockedLanguage = null;
+      state.sttSettings.autoLockApplied = false;
+      saveSttSettings();
+      updateSttDebugPayload();
+      addDiagLog(`STT input lang changed: ${state.sttSettings.inputLang}`);
+      updateDevStatusSummary();
+    });
+  }
+
+  if (els.sttVadPreset) {
+    els.sttVadPreset.addEventListener('change', () => {
+      state.sttSettings.vadPreset = els.sttVadPreset.value;
+      state.sttSettings.dirty.vadPreset = true;
+      saveSttSettings();
+      // Show/hide custom inputs
+      if (els.sttVadCustom) {
+        els.sttVadCustom.style.display = state.sttSettings.vadPreset === 'custom' ? 'block' : 'none';
+      }
+      updateSttDebugPayload();
+      addDiagLog(`STT VAD preset changed: ${state.sttSettings.vadPreset}`);
+    });
+  }
+
+  // VAD custom inputs
+  const handleVadCustomChange = () => {
+    state.sttSettings.vadThreshold = Number(els.sttVadThreshold?.value) || 0.65;
+    state.sttSettings.vadSilence = Number(els.sttVadSilence?.value) || 800;
+    state.sttSettings.vadPrefix = Number(els.sttVadPrefix?.value) || 500;
+    state.sttSettings.dirty.vadPreset = true; // Mark as dirty when custom values change
+    saveSttSettings();
+    updateSttDebugPayload();
+  };
+
+  if (els.sttVadThreshold) {
+    els.sttVadThreshold.addEventListener('change', handleVadCustomChange);
+  }
+  if (els.sttVadSilence) {
+    els.sttVadSilence.addEventListener('change', handleVadCustomChange);
+  }
+  if (els.sttVadPrefix) {
+    els.sttVadPrefix.addEventListener('change', handleVadCustomChange);
+  }
+
+  if (els.sttNoiseReduction) {
+    els.sttNoiseReduction.addEventListener('change', () => {
+      state.sttSettings.noiseReduction = els.sttNoiseReduction.value;
+      state.sttSettings.dirty.noiseReduction = true;
+      saveSttSettings();
+      updateSttDebugPayload();
+      addDiagLog(`STT noise reduction changed: ${state.sttSettings.noiseReduction}`);
+    });
+  }
+
+  if (els.sttTranscriptionModel) {
+    els.sttTranscriptionModel.addEventListener('change', () => {
+      state.sttSettings.transcriptionModel = els.sttTranscriptionModel.value;
+      state.sttSettings.dirty.transcriptionModel = true;
+      saveSttSettings();
+      updateSttDebugPayload();
+      addDiagLog(`STT transcription model changed: ${state.sttSettings.transcriptionModel}`);
+    });
+  }
+
+  // Initialize STT UI on page load
+  initSttSettingsUI();
+
+  if (els.resetUserSettings) {
+    els.resetUserSettings.addEventListener('click', () => {
+      glossaryStorage.clear();
+      summaryPromptStorage.clear();
+      if (els.glossaryTextInput) els.glossaryTextInput.value = '';
+      if (els.summaryPromptInput) els.summaryPromptInput.value = '';
+      addDiagLog('User settings reset (glossary & summaryPrompt cleared)');
+    });
+  }
+
+  if (els.settingsBtn && els.settingsModal) {
+    els.settingsBtn.addEventListener('click', () => {
+      els.settingsModal.showModal();
+      // Load dictionary list when settings modal opens
+      if (currentUser) {
+        loadDictionaryList();
+      }
+      // Fetch latest BUILD_SHA when settings modal opens (non-critical)
+      try {
+        fetchBuildSha();
+      } catch (err) {
+        console.warn('[SETTINGS] fetchBuildSha failed:', err);
+      }
+    });
   }
   if (els.saveSettings) {
     els.saveSettings.addEventListener('click', (e) => {
@@ -2548,6 +4735,63 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Dictionary CSV Upload
+  if (els.uploadDictionaryCsv) {
+    els.uploadDictionaryCsv.addEventListener('click', async () => {
+      const fileInput = els.dictionaryCsvInput;
+      const resultDiv = els.dictionaryUploadResult;
+      if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+        if (resultDiv) resultDiv.textContent = 'CSVファイルを選択してください';
+        return;
+      }
+      const file = fileInput.files[0];
+      const fd = new FormData();
+      fd.append('file', file);
+
+      els.uploadDictionaryCsv.disabled = true;
+      els.uploadDictionaryCsv.textContent = 'アップロード中...';
+      if (resultDiv) resultDiv.textContent = '';
+
+      try {
+        const res = await authFetch('/api/v1/dictionary/upload', {
+          method: 'POST',
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) {
+          let msg = `${data.added || 0}件追加`;
+          if (data.duplicatesSkipped) msg += ` / 重複スキップ: ${data.duplicatesSkipped}件`;
+          if (data.truncatedByLimit) msg += ` / 上限超過: ${data.truncatedByLimit}件`;
+          if (data.warning) msg += `\n${data.warning}`;
+          if (resultDiv) {
+            resultDiv.textContent = msg;
+            resultDiv.className = 'upload-result success';
+          }
+          addDiagLog(`Dictionary CSV upload success: added=${data.added}`);
+          // Reload dictionary list
+          loadDictionaryList();
+        } else {
+          const reason = data.detail?.reason || data.detail || 'アップロード失敗';
+          if (resultDiv) {
+            resultDiv.textContent = `エラー: ${reason}`;
+            resultDiv.className = 'upload-result error';
+          }
+          addDiagLog(`Dictionary CSV upload failed: ${reason}`);
+        }
+      } catch (err) {
+        if (resultDiv) {
+          resultDiv.textContent = `エラー: ${err.message}`;
+          resultDiv.className = 'upload-result error';
+        }
+        addDiagLog(`Dictionary CSV upload error: ${err.message}`);
+      } finally {
+        els.uploadDictionaryCsv.disabled = false;
+        els.uploadDictionaryCsv.textContent = 'アップロード';
+        fileInput.value = '';
+      }
+    });
+  }
+
   // Run Summary button (manual summary generation after Stop)
   if (els.runSummary) {
     els.runSummary.addEventListener('click', async () => {
@@ -2561,22 +4805,34 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
+      // Validate inputs before sending
+      const validation = validateSummarizeInputs(bilingual, state.glossaryText, state.summaryPrompt);
+      if (!validation.valid) {
+        setError(validation.errors[0] || t('errorPromptInjection'));
+        return;
+      }
+
       els.runSummary.disabled = true;
       els.runSummary.textContent = t('generating') || '生成中...';
 
       try {
         const fd = new FormData();
-        // Use bilingual text (original + translation) for richer summary
-        fd.append('text', bilingual);
+        // Use validated and sanitized inputs
+        fd.append('text', validation.text);
         fd.append('output_lang', state.outputLang);
-        if (state.glossaryText) {
-          fd.append('glossary_text', state.glossaryText);
+        if (validation.glossaryText) {
+          fd.append('glossary_text', validation.glossaryText);
         }
-        if (state.summaryPrompt) {
-          fd.append('summary_prompt', state.summaryPrompt);
+        if (validation.summaryPrompt) {
+          fd.append('summary_prompt', validation.summaryPrompt);
         }
         const res = await authFetch('/summarize', { method: 'POST', body: fd });
         if (!res.ok) {
+          if (res.status === 413) {
+            throw new Error(
+              t('errorInputTooLong') || 'Input is too long (exceeded limit)'
+            );
+          }
           throw new Error(t('errorSummaryFailed') || 'Summary generation failed');
         }
         const data = await res.json();
@@ -2626,107 +4882,6 @@ document.addEventListener('DOMContentLoaded', () => {
     closeRtc();
   });
 
-  // Service Worker 登録（debug=1 時は無効化）
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', async () => {
-      if (isDebugMode()) {
-        // debug=1: SW を無効化し、既存の登録を解除
-        console.log('[SW] Debug mode: skipping SW registration');
-        const registrations = await navigator.serviceWorker.getRegistrations();
-        for (const reg of registrations) {
-          await reg.unregister();
-          console.log('[SW] Unregistered:', reg.scope);
-        }
-        // キャッシュもクリア
-        const cacheNames = await caches.keys();
-        for (const name of cacheNames) {
-          await caches.delete(name);
-          console.log('[SW] Cache deleted:', name);
-        }
-        console.log('[SW] Debug mode: SW disabled, caches cleared');
-        return;
-      }
-      // 通常モード: SW を登録
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
-    });
-  }
-
-  let deferredPrompt = null;
-  window.addEventListener('beforeinstallprompt', (e) => {
-    if (state.hasShownA2HS) return;
-    if (!els.a2hs) return;
-    e.preventDefault();
-    deferredPrompt = e;
-    state.hasShownA2HS = true;
-    localStorage.setItem('a2hsShown', '1');
-    els.a2hs.classList.add('show');
-    setTimeout(async () => {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        deferredPrompt = null;
-      }
-    }, 1500);
-  });
-
-  initFirebase();
-  applyAuthUiState(null);
-  addDiagLog(`Auth init: currentUser=${currentUser?.uid || 'null'}`);
-
-  if (els.loginBtn) {
-    els.loginBtn.addEventListener('click', async () => {
-      addDiagLog('Login requested');
-      if (!auth) {
-        setError('Firebase初期化に失敗しました。設定を確認してください。');
-        return;
-      }
-      try {
-        const provider = new firebase.auth.GoogleAuthProvider();
-        await auth.signInWithPopup(provider);
-        addDiagLog('Login popup completed');
-      } catch (err) {
-        setError('ログインに失敗しました: ' + err.message);
-        addDiagLog(`Login failed: ${err.message}`);
-      }
-    });
-  }
-
-  if (els.logoutBtn) {
-    els.logoutBtn.addEventListener('click', async () => {
-      addDiagLog('Logout requested');
-      if (!auth) {
-        setError('Firebase初期化に失敗しました。設定を確認してください。');
-        return;
-      }
-      try {
-        await auth.signOut();
-        setStatus('Standby');
-        addDiagLog('Logout completed');
-      } catch (err) {
-        setError('ログアウトに失敗しました: ' + err.message);
-        addDiagLog(`Logout failed: ${err.message}`);
-      }
-    });
-  }
-
-  if (auth) {
-    auth.onAuthStateChanged((user) => {
-      currentUser = user;
-      applyAuthUiState(user);
-      addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
-      if (user) {
-        refreshQuotaStatus();
-        // Handle billing route after auth is ready
-        handleBillingRoute();
-        // Load company profile for logged-in users
-        loadCompanyProfile();
-        // Refresh billing status
-        refreshBillingStatus();
-      } else {
-        resetQuotaState();
-      }
-    });
-  }
-
   // Upgrade Pro button click handler
   if (els.upgradeProBtn) {
     els.upgradeProBtn.addEventListener('click', startCheckout);
@@ -2737,9 +4892,95 @@ document.addEventListener('DOMContentLoaded', () => {
     els.manageBillingBtn.addEventListener('click', openManageSubscription);
   }
 
+  // Buy ticket button click handler - opens modal
+  if (els.buyTicketBtn) {
+    els.buyTicketBtn.addEventListener('click', openTicketModal);
+  }
+
+  // Ticket modal close button
+  if (els.ticketModalClose) {
+    els.ticketModalClose.addEventListener('click', closeTicketModal);
+  }
+
+  // Ticket modal backdrop click to close
+  if (els.ticketModal) {
+    els.ticketModal.addEventListener('click', (e) => {
+      if (e.target === els.ticketModal) {
+        closeTicketModal();
+      }
+    });
+
+    // Ticket pack selection handlers
+    els.ticketModal.querySelectorAll('.ticket-pack').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const packId = btn.dataset.packId;
+        if (packId) {
+          selectTicketPack(packId);
+        }
+      });
+    });
+  }
+
   // Save company profile button click handler
   if (els.saveCompanyBtn) {
     els.saveCompanyBtn.addEventListener('click', saveCompanyProfile);
+  }
+
+  // Edit company button -> open modal
+  if (els.editCompanyBtn) {
+    els.editCompanyBtn.addEventListener('click', openCompanyEditModal);
+  }
+
+  // Company edit modal close
+  if (els.companyEditClose) {
+    els.companyEditClose.addEventListener('click', closeCompanyEditModal);
+  }
+  if (els.companyEditModal) {
+    els.companyEditModal.addEventListener('click', (e) => {
+      if (e.target === els.companyEditModal) {
+        closeCompanyEditModal();
+      }
+    });
+  }
+
+  // Dictionary View navigation
+  if (els.openDictionaryBtn) {
+    els.openDictionaryBtn.addEventListener('click', navigateToDictionary);
+  }
+  if (els.dictionaryBackBtn) {
+    els.dictionaryBackBtn.addEventListener('click', navigateBackFromDictionary);
+  }
+
+  // Hash change listener for SPA routing
+  window.addEventListener('hashchange', handleHashRoute);
+
+  // Dictionary UI event handlers
+  if (els.downloadDictionaryTemplate) {
+    els.downloadDictionaryTemplate.addEventListener('click', downloadDictionaryTemplate);
+  }
+
+  if (els.dictAddBtn) {
+    els.dictAddBtn.addEventListener('click', addDictionaryEntry);
+  }
+
+  if (els.dictLoadMore) {
+    els.dictLoadMore.addEventListener('click', () => loadDictionaryList(true));
+  }
+
+  // Dictionary table edit/delete buttons (event delegation)
+  if (els.dictTableBody) {
+    els.dictTableBody.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn) return;
+      const id = btn.dataset.id;
+      if (!id) return;
+
+      if (btn.classList.contains('dict-edit-btn')) {
+        editDictionaryEntry(id);
+      } else if (btn.classList.contains('dict-delete-btn')) {
+        deleteDictionaryEntry(id);
+      }
+    });
   }
 
   // Refresh billing status when returning from Customer Portal
@@ -2748,6 +4989,115 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshBillingStatus();
     }
   });
+
+  // ========== History View Navigation ==========
+  if (els.openHistoryBtn) {
+    els.openHistoryBtn.addEventListener('click', navigateToHistory);
+  }
+  if (els.historyBackBtn) {
+    els.historyBackBtn.addEventListener('click', navigateBackFromHistory);
+  }
+  if (els.historyDetailBackBtn) {
+    els.historyDetailBackBtn.addEventListener('click', navigateBackFromHistoryDetail);
+  }
+
+  // ========== Result Card Summary Button ==========
+  if (els.runSummaryCard) {
+    els.runSummaryCard.addEventListener('click', async () => {
+      const session = state.currentSessionResult;
+      if (!session) return;
+
+      const originals = session.originals.join('\n');
+      const bilingual = session.originals
+        .map((orig, idx) => `${orig}\n${session.translations[idx] || ''}`)
+        .join('\n\n');
+
+      if (!originals.trim()) {
+        setError(t('errorNoTextToSummarize') || 'No text to summarize');
+        return;
+      }
+
+      // Validate inputs before sending
+      const validation = validateSummarizeInputs(bilingual || originals, state.glossaryText, state.summaryPrompt);
+      if (!validation.valid) {
+        setError(validation.errors[0] || t('errorPromptInjection'));
+        return;
+      }
+
+      els.runSummaryCard.disabled = true;
+      els.runSummaryCard.textContent = t('generating') || '生成中...';
+
+      try {
+        const fd = new FormData();
+        fd.append('text', validation.text);
+        fd.append('output_lang', state.outputLang);
+        if (validation.glossaryText) {
+          fd.append('glossary_text', validation.glossaryText);
+        }
+        if (validation.summaryPrompt) {
+          fd.append('summary_prompt', validation.summaryPrompt);
+        }
+        const res = await authFetch('/summarize', { method: 'POST', body: fd });
+        if (!res.ok) {
+          if (res.status === 413) {
+            throw new Error(
+              t('errorInputTooLong') || 'Input is too long (exceeded limit)'
+            );
+          }
+          throw new Error(t('errorSummaryFailed') || 'Summary generation failed');
+        }
+        const data = await res.json();
+        const summaryMd = data.summary || '';
+
+        // Update session and UI
+        session.summary = summaryMd;
+        if (els.summaryOutputCard) {
+          els.summaryOutputCard.textContent = summaryMd;
+        }
+        if (els.copySummaryCard && summaryMd) {
+          els.copySummaryCard.style.display = 'inline-block';
+        }
+
+        // Update history with new summary
+        try {
+          await historyStorage.save(session);
+          addDiagLog(`History updated with summary: ${session.id}`);
+        } catch (saveErr) {
+          addDiagLog(`History update failed: ${saveErr.message}`);
+        }
+
+        addDiagLog(`Summary (card) generated | length=${summaryMd.length}`);
+      } catch (err) {
+        const errorMsg = err.message || 'Summary failed';
+        setError(errorMsg);
+        if (els.summaryOutputCard) {
+          els.summaryOutputCard.textContent = `エラー: ${errorMsg}`;
+        }
+        addDiagLog(`Summary (card) error: ${errorMsg}`);
+      } finally {
+        els.runSummaryCard.disabled = false;
+        els.runSummaryCard.textContent = session.summary ? '要約を再生成' : '要約を生成';
+      }
+    });
+  }
+
+  // Copy Summary (card) button
+  if (els.copySummaryCard) {
+    els.copySummaryCard.addEventListener('click', async () => {
+      const text = els.summaryOutputCard?.textContent || '';
+      if (!text) return;
+      try {
+        await navigator.clipboard.writeText(text);
+        const original = els.copySummaryCard.textContent;
+        els.copySummaryCard.textContent = t('copied') || 'コピー完了';
+        setTimeout(() => {
+          els.copySummaryCard.textContent = original;
+        }, 1500);
+      } catch (err) {
+        setError(t('errorCopyFailed') || 'Copy failed');
+      }
+    });
+  }
 
   updateLiveText();
 });

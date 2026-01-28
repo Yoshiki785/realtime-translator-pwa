@@ -6,13 +6,19 @@
   <title>Realtime Translator</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="icon" href="/icon-192.png" />
-  <link rel="stylesheet" href="/styles.css" />
+  <link rel="stylesheet" href="/styles.css?v=20260125" />
   <meta name="theme-color" content="#0f172a" />
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 </head>
 <body>
+  <!-- SW Update Notification Banner -->
+  <div id="swUpdateBanner" class="sw-update-banner" style="display:none;">
+    <span>新しいバージョンがあります</span>
+    <button id="swUpdateBtn" class="sw-update-btn">更新</button>
+  </div>
+
   <div class="app-shell">
     <header class="top-bar">
       <div class="status-stack">
@@ -23,6 +29,7 @@
         <span id="userEmail" class="user-email"></span>
         <button id="loginBtn" class="icon-button" aria-label="login" data-i18n="login">ログイン</button>
         <button id="logoutBtn" class="icon-button" aria-label="logout" style="display:none;" data-i18n="logout">ログアウト</button>
+        <button id="openHistoryBtn" class="icon-button" aria-label="history" title="履歴">📋</button>
         <button class="icon-button" id="settingsBtn" aria-label="settings">⚙︎</button>
         <button class="icon-button dev-only" id="devPanelBtn" aria-label="developer" style="display:none;">Dev</button>
       </div>
@@ -51,14 +58,22 @@
       <button id="startBtn" class="cta">Start</button>
       <button id="stopBtn" class="cta secondary" disabled>Stop</button>
       <div class="error" id="error"></div>
-      <div class="downloads" id="downloads"></div>
-      <div class="summary-section" id="summarySection" style="display:none;">
-        <div class="summary-actions">
-          <button id="runSummary" class="secondary small" data-i18n="generateSummary">要約を生成</button>
-          <button id="copySummary" class="secondary small" data-i18n="copy" style="display:none;">コピー</button>
+      <!-- Result Card (shown after Stop) -->
+      <div id="resultCard" class="result-card" style="display:none;">
+        <div class="result-card-header">
+          <h3 id="resultCardTitle">セッション結果</h3>
+          <span id="resultCardTimestamp" class="result-card-timestamp"></span>
         </div>
-        <pre id="summaryOutput" class="summary-output"></pre>
+        <div class="result-card-files" id="resultCardFiles"></div>
+        <div class="result-card-summary" id="resultCardSummary">
+          <div class="summary-actions">
+            <button id="runSummaryCard" class="secondary small" data-i18n="generateSummary">要約を生成</button>
+            <button id="copySummaryCard" class="secondary small" style="display:none;">コピー</button>
+          </div>
+          <pre id="summaryOutputCard" class="summary-output"></pre>
+        </div>
       </div>
+      <!-- Old UI removed: downloads, summarySection (replaced by resultCard above) -->
       <div class="a2hs" id="a2hs">ホーム画面に追加してオフラインでも使えます</div>
     </footer>
   </div>
@@ -74,43 +89,15 @@
         <div id="billingSection" class="billing-section" style="display:none;">
           <button id="upgradeProBtn" class="cta small" data-i18n="upgradeToPro">Proにアップグレード</button>
           <button id="manageBillingBtn" class="cta small secondary" data-i18n="manageSubscription" style="display:none;">サブスク管理</button>
+          <button id="buyTicketBtn" class="cta small secondary" data-i18n="buyTicket">追加購入</button>
           <div id="billingStatus" class="billing-status"></div>
         </div>
       </section>
       <section id="companySection" class="company-section" style="display:none;">
         <h3 data-i18n="companyInfo">会社情報</h3>
         <p class="company-note" data-i18n="companyNote">※ Stripeの請求先情報・解約は「サブスク管理」から行えます</p>
-        <div class="company-form">
-          <label data-i18n="companyName">会社名
-            <input id="companyName" type="text" placeholder="" />
-          </label>
-          <label data-i18n="department">部署
-            <input id="companyDepartment" type="text" placeholder="" />
-          </label>
-          <label data-i18n="position">役職
-            <input id="companyPosition" type="text" placeholder="" />
-          </label>
-          <label data-i18n="companyAddress">住所
-            <input id="companyAddress" type="text" placeholder="" />
-          </label>
-          <label data-i18n="postalCode">郵便番号
-            <input id="companyPostalCode" type="text" placeholder="" />
-          </label>
-          <label data-i18n="country">国
-            <input id="companyCountry" type="text" placeholder="" />
-          </label>
-          <div class="tax-id-row">
-            <label data-i18n="taxIdLabel">税ID種別
-              <input id="companyTaxIdLabel" type="text" placeholder="例: 法人番号" />
-            </label>
-            <label data-i18n="taxIdValue">税ID値
-              <input id="companyTaxIdValue" type="text" placeholder="" />
-            </label>
-          </div>
-          <div class="company-actions">
-            <button id="saveCompanyBtn" class="cta small" data-i18n="saveCompany">保存</button>
-            <span id="companyStatus" class="company-status"></span>
-          </div>
+        <div class="company-actions-row">
+          <button id="editCompanyBtn" class="cta small secondary" data-i18n="editCompany">会社情報を編集</button>
         </div>
       </section>
       <hr class="settings-divider" />
@@ -153,14 +140,70 @@
         </select>
       </label>
       <hr class="settings-divider" />
-      <label data-i18n="glossaryLabel">辞書（要約用）
+      <details class="stt-settings-section">
+        <summary>STT詳細設定（Realtime API）</summary>
+        <label>STT入力言語
+          <select id="sttInputLang" class="settings-select">
+            <option value="auto">Auto（自動検出）</option>
+            <option value="ja">日本語</option>
+            <option value="en">English</option>
+            <option value="zh">中文</option>
+          </select>
+        </label>
+        <label>VADプリセット
+          <select id="sttVadPreset" class="settings-select">
+            <option value="stable">Stable（安定・長め発話向け）</option>
+            <option value="fast">Fast（素早い応答・短め発話向け）</option>
+            <option value="custom">Custom（手動設定）</option>
+          </select>
+        </label>
+        <div id="sttVadCustom" class="stt-vad-custom" style="display:none;">
+          <label>Threshold (0.0-1.0)
+            <input id="sttVadThreshold" type="number" min="0" max="1" step="0.05" value="0.65" />
+          </label>
+          <label>Silence (ms)
+            <input id="sttVadSilence" type="number" min="100" max="2000" step="50" value="800" />
+          </label>
+          <label>Prefix (ms)
+            <input id="sttVadPrefix" type="number" min="100" max="1000" step="50" value="500" />
+          </label>
+        </div>
+        <label>Noise Reduction
+          <select id="sttNoiseReduction" class="settings-select">
+            <option value="auto">Auto（API既定）</option>
+            <option value="near_field">Near Field（近距離マイク）</option>
+            <option value="far_field">Far Field（遠距離マイク）</option>
+            <option value="off">Off（無効）</option>
+          </select>
+        </label>
+        <label>Transcription Model
+          <select id="sttTranscriptionModel" class="settings-select">
+            <option value="auto">Auto（gpt-4o-mini-transcribe）</option>
+            <option value="gpt-4o-transcribe">gpt-4o-transcribe（高精度）</option>
+          </select>
+        </label>
+        <div id="sttDebugPayload" class="stt-debug-payload" style="display:none;">
+          <small>Effective Payload:</small>
+          <pre id="sttDebugPayloadContent"></pre>
+        </div>
+      </details>
+      <hr class="settings-divider" />
+      <label data-i18n="glossaryLabel">辞書（用語集）
         <textarea id="glossaryTextInput" class="settings-textarea" rows="4" placeholder="1行1エントリ: source=target 例）半導体=semiconductor"></textarea>
       </label>
+      <div class="dictionary-summary">
+        <span class="dictionary-count" id="dictionaryCountDisplay">辞書: 0/10</span>
+        <button type="button" id="openDictionaryBtn" class="cta small secondary">辞書を開く</button>
+      </div>
       <label data-i18n="summaryPromptLabel">要約カスタムプロンプト
         <textarea id="summaryPromptInput" class="settings-textarea" rows="3" placeholder="要約の指示を自由に書けます（例：決裁用に3行で、リスクと次アクション必須）"></textarea>
       </label>
       <div class="settings-actions-row">
         <button type="button" id="resetUserSettings" class="secondary small" data-i18n="reset">リセット</button>
+      </div>
+      <hr class="settings-divider" />
+      <div class="build-info">
+        <small id="buildShaDisplay" class="build-sha">BUILD_SHA: 読み込み中...</small>
       </div>
       <div class="modal-actions">
         <button value="cancel" class="secondary" data-i18n="close">閉じる</button>
@@ -206,6 +249,165 @@
       </div>
     </div>
   </dialog>
+
+  <!-- Ticket Purchase Modal -->
+  <dialog id="ticketModal">
+    <div class="modal ticket-modal">
+      <header>
+        <h2 data-i18n="ticketSelectTitle">追加チケットを選択</h2>
+        <button id="ticketModalClose" class="modal-close-btn" aria-label="Close">✕</button>
+      </header>
+      <div class="ticket-grid">
+        <button class="ticket-pack" data-pack-id="t120">
+          <span class="ticket-minutes">+120分</span>
+          <span class="ticket-price">¥1,440</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t240">
+          <span class="ticket-minutes">+240分</span>
+          <span class="ticket-price">¥2,440</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t360">
+          <span class="ticket-minutes">+360分</span>
+          <span class="ticket-price">¥3,240</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t1200">
+          <span class="ticket-minutes">+1200分</span>
+          <span class="ticket-price">¥9,600</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t1800">
+          <span class="ticket-minutes">+1800分</span>
+          <span class="ticket-price">¥12,600</span>
+        </button>
+        <button class="ticket-pack" data-pack-id="t3000">
+          <span class="ticket-minutes">+3000分</span>
+          <span class="ticket-price">¥21,000</span>
+        </button>
+      </div>
+      <div id="ticketModalStatus" class="billing-status"></div>
+    </div>
+  </dialog>
+
+  <!-- Company Edit Page -->
+  <dialog id="companyEditModal">
+    <div class="modal company-edit-modal">
+      <header>
+        <h2 data-i18n="companyInfo">会社情報</h2>
+        <button id="companyEditClose" class="modal-close-btn" aria-label="Close">✕</button>
+      </header>
+      <p class="company-note" data-i18n="companyNote">※ Stripeの請求先情報・解約は「サブスク管理」から行えます</p>
+      <div class="company-form">
+        <label data-i18n="companyName">会社名
+          <input id="companyName" type="text" placeholder="" />
+        </label>
+        <label data-i18n="department">部署
+          <input id="companyDepartment" type="text" placeholder="" />
+        </label>
+        <label data-i18n="position">役職
+          <input id="companyPosition" type="text" placeholder="" />
+        </label>
+        <label data-i18n="companyAddress">住所
+          <input id="companyAddress" type="text" placeholder="" />
+        </label>
+        <label data-i18n="postalCode">郵便番号
+          <input id="companyPostalCode" type="text" placeholder="" />
+        </label>
+        <label data-i18n="country">国
+          <input id="companyCountry" type="text" placeholder="" />
+        </label>
+        <div class="tax-id-row">
+          <label data-i18n="taxIdLabel">税ID種別
+            <input id="companyTaxIdLabel" type="text" placeholder="例: 法人番号" />
+          </label>
+          <label data-i18n="taxIdValue">税ID値
+            <input id="companyTaxIdValue" type="text" placeholder="" />
+          </label>
+        </div>
+        <div class="company-actions">
+          <button id="saveCompanyBtn" class="cta small" data-i18n="saveCompany">保存</button>
+          <span id="companyStatus" class="company-status"></span>
+        </div>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- History View (separate page via hash route #/history) -->
+  <section id="historyView" class="history-view" style="display:none;">
+    <div class="history-view-container">
+      <header class="history-view-header">
+        <button id="historyBackBtn" class="secondary small">← 戻る</button>
+        <h2>履歴</h2>
+      </header>
+      <div id="historyListLoading" class="hist-loading">読み込み中...</div>
+      <div id="historyListEmpty" class="hist-empty" style="display:none;">履歴はありません</div>
+      <div class="history-list" id="historyList" style="display:none;"></div>
+    </div>
+  </section>
+
+  <!-- History Detail View (separate page via hash route #/history/:id) -->
+  <section id="historyDetailView" class="history-detail-view" style="display:none;">
+    <div class="history-detail-container">
+      <header class="history-detail-header">
+        <button id="historyDetailBackBtn" class="secondary small">← 履歴へ</button>
+        <h2 id="historyDetailTitle">セッション詳細</h2>
+      </header>
+      <div id="historyDetailContent" class="history-detail-content"></div>
+    </div>
+  </section>
+
+  <!-- Dictionary View (separate page via hash route #/dictionary) -->
+  <section id="dictionaryView" class="dictionary-view" style="display:none;">
+    <div class="dictionary-view-container">
+      <header class="dictionary-view-header">
+        <button id="dictionaryBackBtn" class="secondary small">← 戻る</button>
+        <h2>辞書（用語集）</h2>
+      </header>
+      <div class="csv-format-hint">
+        <small>
+          CSVフォーマット: <code>source,target,note</code> (UTF-8、カンマ区切り、noteは任意)<br>
+          例: <code>半導体,semiconductor,電子部品</code>
+        </small>
+      </div>
+      <div class="dictionary-actions-row">
+        <button type="button" id="downloadDictionaryTemplate" class="secondary small">CSVエクスポート/テンプレDL</button>
+      </div>
+      <div class="dictionary-upload-section">
+        <label>CSVで一括登録
+          <input type="file" id="dictionaryCsvInput" accept=".csv,text/csv" class="settings-file-input" />
+        </label>
+        <button type="button" id="uploadDictionaryCsv" class="secondary small">アップロード</button>
+        <div id="dictionaryUploadResult" class="upload-result"></div>
+      </div>
+      <div class="dictionary-manual-add">
+        <h4>手動登録</h4>
+        <div class="dictionary-add-form">
+          <input type="text" id="dictAddSource" placeholder="source（元語）" maxlength="200" />
+          <input type="text" id="dictAddTarget" placeholder="target（訳語）" maxlength="500" />
+          <input type="text" id="dictAddNote" placeholder="note（メモ）" maxlength="500" />
+          <button type="button" id="dictAddBtn" class="cta small">追加</button>
+        </div>
+        <div id="dictAddResult" class="upload-result"></div>
+      </div>
+      <div class="dictionary-list">
+        <h4>登録済み一覧 <span id="dictListCount"></span></h4>
+        <div id="dictListLoading" class="dict-loading">読み込み中...</div>
+        <div id="dictListEmpty" class="dict-empty" style="display:none;">登録済みの単語はありません</div>
+        <div class="dict-table-wrapper">
+          <table id="dictTable" class="dict-table" style="display:none;">
+            <thead>
+              <tr>
+                <th>source</th>
+                <th>target</th>
+                <th>note</th>
+                <th>操作</th>
+              </tr>
+            </thead>
+            <tbody id="dictTableBody"></tbody>
+          </table>
+        </div>
+        <button type="button" id="dictLoadMore" class="secondary small" style="display:none;">もっと見る</button>
+      </div>
+    </div>
+  </section>
 
   <script src="/firebase-config.js"></script>
   <script src="/app.js" type="module"></script>

@@ -42,6 +42,7 @@
 - **POST /token**: OpenAI Realtime の client secret を代理発行。`vad_silence` を turn_detection.silence_duration_ms に反映。レスポンス形式は `{ "value": "..." }`（フラットな文字列のみ返却）。
 - **POST /translate**: Responses API で日本語訳のみ返却。
 - **POST /summarize**: Responses API で Markdown 要約を返却。
+- **POST /generate_title**: 先頭500文字のみを入力として短いタイトルを生成（長さ超過の 413 は返さない）。
 - **POST /audio_m4a**: webm を受け取り ffmpeg で m4a へ変換し、`/downloads/...` の URL を返却。
 - **POST /api/v1/jobs/create**: 認証済みユーザーの残量判定を行い、ジョブを作成。
 - **POST /api/v1/jobs/complete**: 確定秒数を月次集計し、ジョブを succeeded に更新。
@@ -89,6 +90,57 @@ server = subprocess.Popen(['uvicorn', 'app:app', '--host', '0.0.0.0', '--port', 
 !ngrok http 8000 --log=stdout &
 ```
 表示された URL（例: https://xxxx.ngrok.io）にスマホからアクセスして PWA をインストールできます。
+
+## テスト実行
+
+辞書CSVアップロード機能の回帰テストを実行できます。
+
+```bash
+# 開発依存のインストール（pytest含む）
+pip install -r requirements-dev.txt
+
+# テスト実行（Firestoreエミュレータ不要・MockFirestoreClientを使用）
+DEBUG_AUTH_BYPASS=1 ENV=development pytest tests/ -v
+```
+
+テストケース（ユニットテスト）:
+- **Case 1**: Freeプラン(limit=10)、CSV 20行 → 10件追加、truncated警告
+- **Case 2**: スロット枯渇時 → 0件追加、"No available slots"警告
+- **Case 3**: 全重複 → HTTP 400、reason="all_duplicates"
+- **Case 4**: トランザクション全失敗 → HTTP 500、reason="transaction_failed"
+
+### 統合テスト（Firestore Emulator）
+
+実際のFirestoreトランザクション動作を検証する統合テストも利用できます。
+
+**前提条件:**
+- Java Runtime (JRE 11+) がインストールされていること
+- Firebase CLI がインストールされていること
+- **gcloud ADC 設定は不要です**（Emulator 利用時は AnonymousCredentials を使用）
+
+```bash
+# 1. Firebase CLI をインストール（未インストールの場合）
+npm install -g firebase-tools
+
+# 2. Firestore エミュレータを起動（別ターミナルで実行）
+firebase emulators:start --only firestore --project demo-test
+
+# 3. 統合テスト実行（別ターミナルで）
+export FIRESTORE_EMULATOR_HOST="127.0.0.1:8080"
+export GCLOUD_PROJECT="demo-test"
+DEBUG_AUTH_BYPASS=1 ENV=development pytest tests/test_dictionary_upload_integration.py -v
+
+# または、firebase emulators:exec で一括実行
+firebase emulators:exec --only firestore --project demo-test \
+  "DEBUG_AUTH_BYPASS=1 ENV=development pytest tests/test_dictionary_upload_integration.py -v"
+```
+
+統合テストケース:
+- **IT-1**: limit truncation E2E（DB状態も検証）
+- **IT-2**: all_duplicates が実Firestoreでも400を返すことを確認
+- **IT-3**: sourceLower無しのレガシーデータでの重複検出フォールバック
+
+注意: エミュレータ未起動時は統合テストは自動スキップされます。
 
 ## よくあるエラーと対処
 - **token取得に失敗**: OPENAI_API_KEY が設定されているか確認。サーバログに OpenAI API のレスポンスが出ます。
