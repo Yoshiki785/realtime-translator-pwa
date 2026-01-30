@@ -1966,9 +1966,34 @@ const startRecorder = (stream) => {
 const uploadForM4A = async (blob) => {
   const fd = new FormData();
   fd.append('file', blob, 'audio.webm');
+  addDiagLog(`uploadForM4A: uploading ${blob.size} bytes`);
+
   const res = await authFetch('/audio_m4a', { method: 'POST', body: fd });
   if (!res.ok) throw new Error('m4a変換失敗');
   const data = await res.json();
+  addDiagLog(`uploadForM4A: server returned url=${data.url}`);
+
+  // Validate that the URL actually returns audio, not HTML (defense in depth)
+  const downloadUrl = data.url.startsWith('http') ? data.url : `${window.location.origin}${data.url}`;
+  try {
+    const headRes = await fetch(downloadUrl, { method: 'HEAD' });
+    const contentType = headRes.headers.get('content-type') || '';
+    const contentLength = headRes.headers.get('content-length') || '0';
+    addDiagLog(`uploadForM4A: HEAD ${downloadUrl} | type=${contentType} size=${contentLength}`);
+
+    if (contentType.includes('text/html')) {
+      console.error('[uploadForM4A] ERROR: Server returned HTML instead of audio. URL routing may be misconfigured.');
+      throw new Error('ダウンロードURLが不正です（HTML）。管理者に連絡してください。');
+    }
+    if (parseInt(contentLength, 10) < 1000 && parseInt(contentLength, 10) > 0) {
+      console.warn(`[uploadForM4A] WARNING: Audio file is unusually small (${contentLength} bytes)`);
+    }
+  } catch (headErr) {
+    // HEAD request failed - might be CORS or network issue, proceed anyway but log
+    addDiagLog(`uploadForM4A: HEAD validation failed: ${headErr.message}`);
+    console.warn('[uploadForM4A] Could not validate download URL:', headErr.message);
+  }
+
   appendDownload('m4a', data.url);
 };
 

@@ -97,6 +97,13 @@
         }
       },
       {
+        "source": "/downloads/**",
+        "run": {
+          "serviceId": "realtime-translator-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
