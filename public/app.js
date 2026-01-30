@@ -44,6 +44,8 @@ const STRINGS = {
     takeoverStart: 'この端末で開始（他を停止）',
     takeoverKeep: '別端末の継続を優先',
     upgradeToPro: 'Proにアップグレード',
+    upgradeToProBeta: 'Proにアップグレード <span class="beta-badge">β</span>',
+    betaNotice: '※ 現在テスト環境です。本番決済は準備中です。',
     upgrading: '処理中...',
     billingSuccess: 'アップグレード完了！',
     billingPending: 'プラン反映中...',
@@ -113,6 +115,8 @@ const STRINGS = {
     takeoverStart: 'Start on this device (stop others)',
     takeoverKeep: 'Keep the other session',
     upgradeToPro: 'Upgrade to Pro',
+    upgradeToProBeta: 'Upgrade to Pro <span class="beta-badge">β</span>',
+    betaNotice: '* Test environment. Live billing coming soon.',
     upgrading: 'Processing...',
     billingSuccess: 'Upgrade complete!',
     billingPending: 'Applying plan...',
@@ -182,6 +186,8 @@ const STRINGS = {
     takeoverStart: '在此设备开始（停止其他）',
     takeoverKeep: '优先保留其他设备',
     upgradeToPro: '升级到Pro',
+    upgradeToProBeta: '升级到Pro <span class="beta-badge">β</span>',
+    betaNotice: '※ 测试环境。正式付款即将上线。',
     upgrading: '处理中...',
     billingSuccess: '升级完成！',
     billingPending: '正在应用计划...',
@@ -1110,7 +1116,7 @@ const updateBillingSection = (show) => {
         els.upgradeProBtn.style.display = 'none';
       } else {
         els.upgradeProBtn.style.display = '';
-        els.upgradeProBtn.textContent = t('upgradeToPro');
+        els.upgradeProBtn.innerHTML = t('upgradeToProBeta');
         els.upgradeProBtn.disabled = false;
         els.upgradeProBtn.classList.remove('disabled');
       }
@@ -1263,7 +1269,7 @@ const startCheckout = async () => {
     }
     if (btn) {
       btn.disabled = false;
-      btn.textContent = t('upgradeToPro');
+      btn.innerHTML = t('upgradeToProBeta');
     }
   }
 };

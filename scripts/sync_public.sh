@@ -15,7 +15,7 @@ echo "Syncing static/ -> public/"
 echo "=========================================="
 
 # Files to sync
-FILES=("app.js" "index.html")
+FILES=("app.js" "index.html" "styles.css")
 
 # Check source files exist
 for f in "${FILES[@]}"; do
