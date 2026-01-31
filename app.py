@@ -1745,6 +1745,7 @@ async def stripe_webhook(request: Request) -> JSONResponse:
     """
     Stripe Webhook ハンドラー
     対応イベント:
+    - checkout.session.completed (subscription or ticket_purchase)
     - customer.subscription.created/updated/deleted
     - invoice.paid
     - invoice.payment_failed
@@ -1785,19 +1786,82 @@ async def stripe_webhook(request: Request) -> JSONResponse:
         session = event["data"]["object"]
         session_id = session.get("id")
         client_ref_id = session.get("client_reference_id")
-        metadata_uid = (session.get("metadata") or {}).get("uid")
+        metadata = session.get("metadata") or {}
+        metadata_uid = metadata.get("uid")
         uid = client_ref_id or metadata_uid
         customer_id = session.get("customer")
         subscription_id = session.get("subscription")
+        purchase_type = metadata.get("type")  # "ticket_purchase" or None (subscription)
 
         # 抽出した全フィールドをログ出力（デバッグ用）
-        logger.info(f"[stripe_webhook] checkout.session.completed extracted | {json.dumps({'sessionId': session_id, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid, 'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id})}")
-        print(f"[stripe_webhook] checkout.session.completed extracted | sessionId={session_id} clientReferenceId={client_ref_id} metadataUid={metadata_uid} uid={uid} customerId={customer_id} subscriptionId={subscription_id}")
+        logger.info(f"[stripe_webhook] checkout.session.completed extracted | {json.dumps({'sessionId': session_id, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid, 'uid': uid, 'customerId': customer_id, 'subscriptionId': subscription_id, 'type': purchase_type})}")
+        print(f"[stripe_webhook] checkout.session.completed | sessionId={session_id} uid={uid} type={purchase_type}")
 
         if not uid:
             logger.warning(f"[stripe_webhook] checkout.session.completed without uid | {json.dumps({'sessionId': session_id, 'customerId': customer_id, 'clientReferenceId': client_ref_id, 'metadataUid': metadata_uid})}")
             return JSONResponse({"received": True, "warning": "uid_not_found"})
 
+        # チケット購入の場合: ticketSecondsBalance を加算
+        if purchase_type == "ticket_purchase":
+            pack_id = metadata.get("packId")
+            minutes_str = metadata.get("minutes")
+            try:
+                minutes = int(minutes_str) if minutes_str else 0
+            except (ValueError, TypeError):
+                minutes = 0
+
+            if minutes <= 0:
+                logger.error(f"[stripe_webhook] ticket_purchase with invalid minutes | {json.dumps({'sessionId': session_id, 'uid': uid, 'minutes': minutes_str})}")
+                return JSONResponse({"received": True, "error": "invalid_minutes"}, status_code=400)
+
+            seconds_to_add = minutes * 60
+            user_ref = db.collection("users").document(uid)
+            purchase_ref = user_ref.collection("purchases").document(session_id)
+
+            # 二重計上防止: 既に処理済みかチェック
+            purchase_snap = purchase_ref.get()
+            if purchase_snap.exists:
+                logger.warning(f"[stripe_webhook] ticket_purchase already processed | {json.dumps({'sessionId': session_id, 'uid': uid})}")
+                return JSONResponse({"received": True, "warning": "already_processed"})
+
+            # トランザクションで加算
+            @firebase_firestore.transactional
+            def add_ticket_balance(transaction, user_ref, purchase_ref, seconds_to_add, session_id, pack_id, minutes):
+                user_snap = user_ref.get(transaction=transaction)
+                user_data = user_snap.to_dict() if user_snap.exists else {}
+                current_balance = safe_int(user_data.get("ticketSecondsBalance"), 0)
+                new_balance = current_balance + seconds_to_add
+
+                # Update user balance
+                transaction.set(user_ref, {
+                    "ticketSecondsBalance": new_balance,
+                    "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+                }, merge=True)
+
+                # Record purchase for idempotency
+                transaction.set(purchase_ref, {
+                    "sessionId": session_id,
+                    "packId": pack_id,
+                    "minutes": minutes,
+                    "secondsAdded": seconds_to_add,
+                    "balanceBefore": current_balance,
+                    "balanceAfter": new_balance,
+                    "createdAt": firebase_firestore.SERVER_TIMESTAMP,
+                })
+
+                return new_balance
+
+            try:
+                transaction = db.transaction()
+                new_balance = add_ticket_balance(transaction, user_ref, purchase_ref, seconds_to_add, session_id, pack_id, minutes)
+                logger.info(f"[stripe_webhook] ticket_purchase success | {json.dumps({'sessionId': session_id, 'uid': uid, 'packId': pack_id, 'minutes': minutes, 'secondsAdded': seconds_to_add, 'newBalance': new_balance})}")
+                print(f"[stripe_webhook] ticket_purchase success | uid={uid} packId={pack_id} minutes={minutes} newBalance={new_balance}")
+                return JSONResponse({"received": True, "ticketSecondsAdded": seconds_to_add})
+            except Exception as e:
+                logger.exception(f"[stripe_webhook] ticket_purchase FAILED | {json.dumps({'sessionId': session_id, 'uid': uid, 'error': str(e)})}")
+                return JSONResponse({"received": True, "error": "ticket_update_failed"}, status_code=500)
+
+        # サブスクリプション購入の場合: 既存処理
         user_updates = {
             "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
         }
