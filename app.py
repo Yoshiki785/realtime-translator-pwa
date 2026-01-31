@@ -1911,32 +1911,67 @@ async def stripe_webhook(request: Request) -> JSONResponse:
 
 # ========== Ticket Purchase API ==========
 # Allowed ticket minutes (UI options)
-ALLOWED_TICKET_MINUTES = [120, 240, 360, 1200, 1800, 3000]
+ALLOWED_TICKET_MINUTES = [120, 240, 300, 360, 1200, 1800, 3000]
 
 # Ticket pack definitions (packId -> minutes, JPY price)
-# Price ID is resolved from environment variable: price_T{minutes}
+# Price ID is resolved from STRIPE_TICKET_PRICE_MAP_JSON or price_T{minutes} env
 TICKET_PACKS = {
     "t120": {"minutes": 120, "price_jpy": 1440},
     "t240": {"minutes": 240, "price_jpy": 2440},
+    "t300": {"minutes": 300, "price_jpy": 2940},
     "t360": {"minutes": 360, "price_jpy": 3240},
     "t1200": {"minutes": 1200, "price_jpy": 9600},
     "t1800": {"minutes": 1800, "price_jpy": 12600},
     "t3000": {"minutes": 3000, "price_jpy": 21000},
 }
 
+# Cache for parsed JSON map
+_ticket_price_map_cache: dict | None = None
 
-def get_ticket_price_id(minutes: int) -> str | None:
+
+def _get_ticket_price_map() -> dict:
+    """Parse STRIPE_TICKET_PRICE_MAP_JSON and cache the result."""
+    global _ticket_price_map_cache
+    if _ticket_price_map_cache is not None:
+        return _ticket_price_map_cache
+
+    json_str = os.getenv("STRIPE_TICKET_PRICE_MAP_JSON")
+    if json_str:
+        try:
+            data = json.loads(json_str)
+            _ticket_price_map_cache = data.get("packs", {})
+            logger.info(f"Loaded STRIPE_TICKET_PRICE_MAP_JSON with {len(_ticket_price_map_cache)} packs")
+            return _ticket_price_map_cache
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse STRIPE_TICKET_PRICE_MAP_JSON: {e}")
+
+    _ticket_price_map_cache = {}
+    return _ticket_price_map_cache
+
+
+def get_ticket_price_id(pack_id: str, minutes: int) -> str | None:
     """
-    Get Stripe Price ID for ticket pack from environment variable.
-    Uses price_T{minutes} as the canonical key, with fallback to legacy STRIPE_TICKET_{minutes}_PRICE_ID.
+    Get Stripe Price ID for ticket pack.
+    Priority:
+    1. STRIPE_TICKET_PRICE_MAP_JSON (JSON map with packId -> priceId)
+    2. price_T{minutes} env var (canonical)
+    3. STRIPE_TICKET_{minutes}_PRICE_ID (legacy fallback)
     """
-    # Canonical key: price_T{minutes}
+    # 1. Try JSON map first (recommended)
+    price_map = _get_ticket_price_map()
+    if pack_id in price_map:
+        price_id = price_map[pack_id].get("priceId")
+        if price_id:
+            return price_id
+
+    # 2. Canonical env var: price_T{minutes}
     canonical_key = f"price_T{minutes}"
     price_id = os.getenv(canonical_key)
     if price_id:
+        logger.info(f"Using env var {canonical_key} for pack {pack_id}")
         return price_id
 
-    # Fallback to legacy key: STRIPE_TICKET_{minutes}_PRICE_ID
+    # 3. Legacy fallback: STRIPE_TICKET_{minutes}_PRICE_ID
     legacy_key = f"STRIPE_TICKET_{minutes}_PRICE_ID"
     price_id = os.getenv(legacy_key)
     if price_id:
@@ -1976,12 +2011,15 @@ async def create_ticket_checkout_session(request: Request) -> JSONResponse:
     if user_plan != "pro":
         raise HTTPException(status_code=403, detail="pro_required")
 
-    # Get Price ID from environment (price_T{minutes} or legacy fallback)
-    price_id = get_ticket_price_id(minutes)
+    # Get Price ID from JSON map or env var
+    price_id = get_ticket_price_id(pack_id, minutes)
     if not price_id:
         env_key = f"price_T{minutes}"
-        logger.error(f"Ticket price ID not configured | env_key={env_key} pack_id={pack_id}")
-        raise HTTPException(status_code=500, detail=f"ticket_price_not_configured: {env_key}")
+        logger.error(f"Ticket price ID not configured | pack_id={pack_id} env_key={env_key}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"ticket_price_not_configured: {pack_id} (env: {env_key})"
+        )
 
     secret_key = os.getenv("STRIPE_SECRET_KEY")
     if not secret_key:
