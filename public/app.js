@@ -3448,24 +3448,8 @@ const saveTextDownloadsWithResultCard = async () => {
     }
   }
 
-  const makeBlobLink = (label, content, type = 'text/plain') => {
-    const url = URL.createObjectURL(new Blob([content], { type }));
-    appendDownload(label, url);
-    return url;
-  };
-
-  makeBlobLink('原文.txt', originals);
-  makeBlobLink('原文+日本語.txt', bilingual);
-  if (summaryMd) makeBlobLink('要約.md', summaryMd, 'text/markdown');
-
-  // Show result card UI
+  // Show result card UI (replaces legacy downloads and summary section)
   showResultCard(summaryMd);
-
-  // Show summary section for manual summary generation (legacy)
-  if (originals.trim() && els.summarySection) {
-    els.summarySection.style.display = 'block';
-    if (els.runSummary) els.runSummary.disabled = false;
-  }
 };
 
 // Show result card after stop
@@ -3474,6 +3458,15 @@ const showResultCard = (summaryMd = '') => {
 
   const session = state.currentSessionResult;
   if (!session) return;
+
+  // Hide legacy downloads and summary section (replaced by result card)
+  if (els.downloads) {
+    els.downloads.innerHTML = '';
+    els.downloads.style.display = 'none';
+  }
+  if (els.summarySection) {
+    els.summarySection.style.display = 'none';
+  }
 
   // Set title and timestamp
   if (els.resultCardTitle) {
