@@ -639,6 +639,8 @@ const cacheElements = () => {
     companyTaxIdValue: document.getElementById('companyTaxIdValue'),
     saveCompanyBtn: document.getElementById('saveCompanyBtn'),
     companyStatus: document.getElementById('companyStatus'),
+    // History button (feature not yet implemented)
+    openHistoryBtn: document.getElementById('openHistoryBtn'),
   };
 };
 
@@ -2819,6 +2821,13 @@ document.addEventListener('DOMContentLoaded', () => {
       refreshBillingStatus();
     }
   });
+
+  // History button click handler (feature not yet implemented)
+  if (els.openHistoryBtn) {
+    els.openHistoryBtn.addEventListener('click', () => {
+      alert('履歴機能は準備中です');
+    });
+  }
 
   updateLiveText();
 });
