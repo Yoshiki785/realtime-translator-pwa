@@ -1,5 +1,7 @@
-// Service Worker v6: Network-first for critical files
-const CACHE = 'rt-translator-v6';
+// Service Worker v7: Network-first for critical files + update banner support
+// BUILD_TIME is replaced by sync_public.sh at deploy time
+const BUILD_TIME = '20260131093010';
+const CACHE = `rt-translator-v7-${BUILD_TIME}`;
 
 // 常にネットワークから取得するファイル（最新版を優先）
 const NETWORK_FIRST = ['/', '/index.html', '/app.js', '/sw.js', '/firebase-config.js'];
@@ -17,20 +19,28 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', (event) => {
-  console.log('[SW] Installing v6');
+  console.log('[SW] Installing v7, build:', BUILD_TIME);
   event.waitUntil(
     caches.open(CACHE).then((cache) => cache.addAll(ASSETS)).then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener('activate', (event) => {
-  console.log('[SW] Activating v6');
+  console.log('[SW] Activating v7, build:', BUILD_TIME);
   event.waitUntil(
     caches
       .keys()
       .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+// Listen for SKIP_WAITING message from client (update banner)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW] SKIP_WAITING received, calling skipWaiting()');
+    self.skipWaiting();
+  }
 });
 
 self.addEventListener('fetch', (event) => {
