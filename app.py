@@ -1811,34 +1811,35 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                 minutes = 0
 
             if minutes <= 0:
-                logger.error(f"[stripe_webhook] ticket_purchase with invalid minutes | {json.dumps({'sessionId': session_id, 'uid': uid, 'minutes': minutes_str})}")
+                logger.error(f"[stripe_webhook] ticket_purchase invalid_minutes | {json.dumps({'sessionId': session_id, 'uid': uid, 'minutes': minutes_str})}")
                 return JSONResponse({"received": True, "error": "invalid_minutes"}, status_code=400)
 
             seconds_to_add = minutes * 60
             user_ref = db.collection("users").document(uid)
             purchase_ref = user_ref.collection("purchases").document(session_id)
 
-            # 二重計上防止: 既に処理済みかチェック
-            purchase_snap = purchase_ref.get()
-            if purchase_snap.exists:
-                logger.warning(f"[stripe_webhook] ticket_purchase already processed | {json.dumps({'sessionId': session_id, 'uid': uid})}")
-                return JSONResponse({"received": True, "warning": "already_processed"})
-
-            # トランザクションで加算
+            # トランザクション内で冪等性チェック + 加算を行う
             @firebase_firestore.transactional
-            def add_ticket_balance(transaction, user_ref, purchase_ref, seconds_to_add, session_id, pack_id, minutes):
+            def add_ticket_balance_idempotent(transaction, user_ref, purchase_ref, seconds_to_add, session_id, pack_id, minutes):
+                # 1. 既処理チェック（トランザクション内で読み取り）
+                purchase_snap = purchase_ref.get(transaction=transaction)
+                if purchase_snap.exists:
+                    # 既に処理済み - 何もせず None を返す
+                    return None
+
+                # 2. ユーザー残高を読み取り
                 user_snap = user_ref.get(transaction=transaction)
                 user_data = user_snap.to_dict() if user_snap.exists else {}
                 current_balance = safe_int(user_data.get("ticketSecondsBalance"), 0)
                 new_balance = current_balance + seconds_to_add
 
-                # Update user balance
+                # 3. ユーザー残高を更新
                 transaction.set(user_ref, {
                     "ticketSecondsBalance": new_balance,
                     "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
                 }, merge=True)
 
-                # Record purchase for idempotency
+                # 4. 購入履歴を記録（冪等性キー）
                 transaction.set(purchase_ref, {
                     "sessionId": session_id,
                     "packId": pack_id,
@@ -1849,13 +1850,20 @@ async def stripe_webhook(request: Request) -> JSONResponse:
                     "createdAt": firebase_firestore.SERVER_TIMESTAMP,
                 })
 
-                return new_balance
+                return {"balanceBefore": current_balance, "balanceAfter": new_balance}
 
             try:
                 transaction = db.transaction()
-                new_balance = add_ticket_balance(transaction, user_ref, purchase_ref, seconds_to_add, session_id, pack_id, minutes)
-                logger.info(f"[stripe_webhook] ticket_purchase success | {json.dumps({'sessionId': session_id, 'uid': uid, 'packId': pack_id, 'minutes': minutes, 'secondsAdded': seconds_to_add, 'newBalance': new_balance})}")
-                print(f"[stripe_webhook] ticket_purchase success | uid={uid} packId={pack_id} minutes={minutes} newBalance={new_balance}")
+                result = add_ticket_balance_idempotent(transaction, user_ref, purchase_ref, seconds_to_add, session_id, pack_id, minutes)
+
+                if result is None:
+                    # 既処理（トランザクション内で検出）
+                    logger.warning(f"[stripe_webhook] ticket_purchase already_processed | {json.dumps({'sessionId': session_id, 'uid': uid})}")
+                    return JSONResponse({"received": True, "warning": "already_processed"})
+
+                # 成功
+                logger.info(f"[stripe_webhook] ticket_purchase success | {json.dumps({'sessionId': session_id, 'uid': uid, 'packId': pack_id, 'minutes': minutes, 'secondsAdded': seconds_to_add, 'balanceBefore': result['balanceBefore'], 'balanceAfter': result['balanceAfter']})}")
+                print(f"[stripe_webhook] ticket_purchase success | uid={uid} packId={pack_id} minutes={minutes} balanceBefore={result['balanceBefore']} balanceAfter={result['balanceAfter']}")
                 return JSONResponse({"received": True, "ticketSecondsAdded": seconds_to_add})
             except Exception as e:
                 logger.exception(f"[stripe_webhook] ticket_purchase FAILED | {json.dumps({'sessionId': session_id, 'uid': uid, 'error': str(e)})}")
