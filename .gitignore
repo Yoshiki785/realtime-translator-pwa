@@ -30,3 +30,13 @@ public/build.txt
 
 # Runbooks (managed in separate branch)
 runbooks/
+
+# Firebase local cache
+.firebase/
+
+# local logs
+ops/logs/
+
+# local helper scripts (do not commit)
+scripts/get_firebase_id_token.sh
+scripts/poll_plan.sh
