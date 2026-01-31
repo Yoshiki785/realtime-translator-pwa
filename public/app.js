@@ -2211,7 +2211,8 @@ const loadDictionaryList = async (append = false) => {
   if (els.dictLoadMore) els.dictLoadMore.style.display = 'none';
 
   try {
-    let url = '/api/v1/dictionary?limit=100';
+    const dictLimit = getDictionaryLimit();
+    let url = `/api/v1/dictionary?limit=${dictLimit}`;
     if (append && dictNextCursor) {
       url += `&cursor=${encodeURIComponent(dictNextCursor)}`;
     }

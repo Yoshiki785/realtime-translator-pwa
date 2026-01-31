@@ -1909,6 +1909,287 @@ async def stripe_webhook(request: Request) -> JSONResponse:
     return JSONResponse({"received": True})
 
 
+# ========== Ticket Purchase API ==========
+# Ticket pack definitions (packId -> minutes, JPY price, Stripe Price ID env var)
+TICKET_PACKS = {
+    "t120": {"minutes": 120, "price_jpy": 1440, "env_var": "STRIPE_TICKET_120_PRICE_ID"},
+    "t240": {"minutes": 240, "price_jpy": 2440, "env_var": "STRIPE_TICKET_240_PRICE_ID"},
+    "t360": {"minutes": 360, "price_jpy": 3240, "env_var": "STRIPE_TICKET_360_PRICE_ID"},
+    "t1200": {"minutes": 1200, "price_jpy": 9600, "env_var": "STRIPE_TICKET_1200_PRICE_ID"},
+    "t1800": {"minutes": 1800, "price_jpy": 12600, "env_var": "STRIPE_TICKET_1800_PRICE_ID"},
+    "t3000": {"minutes": 3000, "price_jpy": 21000, "env_var": "STRIPE_TICKET_3000_PRICE_ID"},
+}
+
+
+@app.post("/api/v1/billing/stripe/tickets/checkout")
+async def create_ticket_checkout_session(request: Request) -> JSONResponse:
+    """Stripe Checkout Session for ticket purchase (one-time payment)"""
+    uid = get_uid_from_request(request)
+    body = await request.json()
+    pack_id = body.get("packId")
+    success_url = body.get("successUrl", "https://example.com/success")
+    cancel_url = body.get("cancelUrl", "https://example.com/cancel")
+
+    if pack_id not in TICKET_PACKS:
+        raise HTTPException(status_code=400, detail="invalid_pack_id")
+
+    # Check if user is Pro (only Pro users can buy tickets)
+    db = get_firestore_client()
+    user_ref = db.collection("users").document(uid)
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    user_plan = user_data.get("plan", "free")
+
+    if user_plan != "pro":
+        raise HTTPException(status_code=403, detail="pro_required")
+
+    pack = TICKET_PACKS[pack_id]
+    price_id = os.getenv(pack["env_var"])
+    if not price_id:
+        logger.error(f"Ticket price ID not configured for pack {pack_id}")
+        raise HTTPException(status_code=500, detail="ticket_price_not_configured")
+
+    secret_key = os.getenv("STRIPE_SECRET_KEY")
+    if not secret_key:
+        raise HTTPException(status_code=500, detail="stripe_not_configured")
+
+    stripe.api_key = secret_key
+
+    try:
+        session = stripe.checkout.Session.create(
+            mode="payment",
+            payment_method_types=["card"],
+            line_items=[{"price": price_id, "quantity": 1}],
+            client_reference_id=uid,
+            metadata={
+                "uid": uid,
+                "packId": pack_id,
+                "minutes": pack["minutes"],
+                "type": "ticket_purchase",
+            },
+            success_url=success_url,
+            cancel_url=cancel_url,
+        )
+        logger.info(f"Ticket checkout session created | uid={uid} packId={pack_id} sessionId={session.id}")
+        return JSONResponse({"sessionId": session.id, "url": session.url})
+    except Exception as e:
+        logger.error(f"Ticket checkout session creation failed: {e}")
+        raise HTTPException(status_code=500, detail=f"checkout_failed: {str(e)}")
+
+
+# ========== Dictionary API ==========
+DICTIONARY_LIMIT_FREE = 10
+DICTIONARY_LIMIT_PRO = 1000
+
+
+def get_user_dictionary_limit(uid: str) -> int:
+    """Get dictionary limit based on user plan"""
+    db = get_firestore_client()
+    user_ref = db.collection("users").document(uid)
+    user_snap = user_ref.get()
+    user_data = user_snap.to_dict() if user_snap.exists else {}
+    plan = user_data.get("plan", "free")
+    return DICTIONARY_LIMIT_PRO if plan == "pro" else DICTIONARY_LIMIT_FREE
+
+
+@app.get("/api/v1/dictionary")
+async def get_dictionary(request: Request, limit: int = 100, cursor: str = None) -> JSONResponse:
+    """Get user's dictionary entries with pagination"""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+
+    dict_ref = db.collection("users").document(uid).collection("dictionary")
+    query = dict_ref.order_by("createdAt", direction=firebase_firestore.Query.DESCENDING).limit(limit + 1)
+
+    if cursor:
+        # Decode cursor (base64 encoded document ID)
+        try:
+            cursor_doc_id = base64.b64decode(cursor).decode("utf-8")
+            cursor_doc = dict_ref.document(cursor_doc_id).get()
+            if cursor_doc.exists:
+                query = query.start_after(cursor_doc)
+        except Exception:
+            pass  # Invalid cursor, ignore
+
+    docs = list(query.stream())
+    has_more = len(docs) > limit
+    if has_more:
+        docs = docs[:limit]
+
+    items = []
+    for doc in docs:
+        data = doc.to_dict()
+        items.append({
+            "id": doc.id,
+            "source": data.get("source", ""),
+            "target": data.get("target", ""),
+            "note": data.get("note", ""),
+            "createdAt": data.get("createdAt").isoformat() if data.get("createdAt") else None,
+        })
+
+    next_cursor = None
+    if has_more and docs:
+        next_cursor = base64.b64encode(docs[-1].id.encode("utf-8")).decode("utf-8")
+
+    user_limit = get_user_dictionary_limit(uid)
+    total_count = len(list(dict_ref.stream()))
+
+    return JSONResponse({
+        "items": items,
+        "nextCursor": next_cursor,
+        "limit": user_limit,
+        "count": total_count,
+    })
+
+
+@app.post("/api/v1/dictionary/entry")
+async def add_dictionary_entry(request: Request) -> JSONResponse:
+    """Add a new dictionary entry"""
+    uid = get_uid_from_request(request)
+    body = await request.json()
+    source = (body.get("source") or "").strip()
+    target = (body.get("target") or "").strip()
+    note = (body.get("note") or "").strip()
+
+    if not source or not target:
+        raise HTTPException(status_code=400, detail={"reason": "source and target are required"})
+
+    db = get_firestore_client()
+    dict_ref = db.collection("users").document(uid).collection("dictionary")
+
+    # Check limit
+    user_limit = get_user_dictionary_limit(uid)
+    current_count = len(list(dict_ref.stream()))
+    if current_count >= user_limit:
+        raise HTTPException(status_code=400, detail={"reason": f"Dictionary limit reached ({user_limit})"})
+
+    # Add entry
+    new_entry = {
+        "source": source,
+        "target": target,
+        "note": note,
+        "createdAt": firebase_firestore.SERVER_TIMESTAMP,
+    }
+    doc_ref = dict_ref.add(new_entry)
+    logger.info(f"Dictionary entry added | uid={uid} id={doc_ref[1].id}")
+
+    return JSONResponse({"id": doc_ref[1].id, "count": current_count + 1, "limit": user_limit})
+
+
+@app.put("/api/v1/dictionary/entry/{entry_id}")
+async def update_dictionary_entry(request: Request, entry_id: str) -> JSONResponse:
+    """Update a dictionary entry"""
+    uid = get_uid_from_request(request)
+    body = await request.json()
+    source = (body.get("source") or "").strip()
+    target = (body.get("target") or "").strip()
+    note = (body.get("note") or "").strip()
+
+    if not source or not target:
+        raise HTTPException(status_code=400, detail={"reason": "source and target are required"})
+
+    db = get_firestore_client()
+    entry_ref = db.collection("users").document(uid).collection("dictionary").document(entry_id)
+    entry_snap = entry_ref.get()
+
+    if not entry_snap.exists:
+        raise HTTPException(status_code=404, detail={"reason": "Entry not found"})
+
+    entry_ref.update({
+        "source": source,
+        "target": target,
+        "note": note,
+        "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+    })
+    logger.info(f"Dictionary entry updated | uid={uid} id={entry_id}")
+
+    return JSONResponse({"id": entry_id, "updated": True})
+
+
+@app.delete("/api/v1/dictionary/entry/{entry_id}")
+async def delete_dictionary_entry(request: Request, entry_id: str) -> JSONResponse:
+    """Delete a dictionary entry"""
+    uid = get_uid_from_request(request)
+    db = get_firestore_client()
+    entry_ref = db.collection("users").document(uid).collection("dictionary").document(entry_id)
+    entry_snap = entry_ref.get()
+
+    if not entry_snap.exists:
+        raise HTTPException(status_code=404, detail={"reason": "Entry not found"})
+
+    entry_ref.delete()
+    logger.info(f"Dictionary entry deleted | uid={uid} id={entry_id}")
+
+    user_limit = get_user_dictionary_limit(uid)
+    dict_ref = db.collection("users").document(uid).collection("dictionary")
+    current_count = len(list(dict_ref.stream()))
+
+    return JSONResponse({"deleted": True, "count": current_count, "limit": user_limit})
+
+
+@app.get("/api/v1/dictionary/template.csv")
+async def get_dictionary_template(request: Request) -> JSONResponse:
+    """Get CSV template for dictionary upload"""
+    get_uid_from_request(request)  # Require auth
+    csv_content = "source,target,note\n半導体,semiconductor,電子部品\n人工知能,AI,artificial intelligence"
+    return JSONResponse({"csv": csv_content, "filename": "dictionary_template.csv"})
+
+
+@app.post("/api/v1/dictionary/upload")
+async def upload_dictionary_csv(request: Request) -> JSONResponse:
+    """Upload dictionary entries from CSV"""
+    uid = get_uid_from_request(request)
+    body = await request.json()
+    csv_content = body.get("csv", "")
+
+    if not csv_content:
+        raise HTTPException(status_code=400, detail={"reason": "CSV content is required"})
+
+    db = get_firestore_client()
+    dict_ref = db.collection("users").document(uid).collection("dictionary")
+    user_limit = get_user_dictionary_limit(uid)
+    current_count = len(list(dict_ref.stream()))
+
+    lines = csv_content.strip().split("\n")
+    if len(lines) < 2:
+        raise HTTPException(status_code=400, detail={"reason": "CSV must have header and at least one data row"})
+
+    # Skip header
+    added = 0
+    skipped = 0
+    for line in lines[1:]:
+        if current_count + added >= user_limit:
+            skipped += 1
+            continue
+
+        parts = line.split(",")
+        if len(parts) < 2:
+            skipped += 1
+            continue
+
+        source = parts[0].strip()
+        target = parts[1].strip()
+        note = parts[2].strip() if len(parts) > 2 else ""
+
+        if not source or not target:
+            skipped += 1
+            continue
+
+        dict_ref.add({
+            "source": source,
+            "target": target,
+            "note": note,
+            "createdAt": firebase_firestore.SERVER_TIMESTAMP,
+        })
+        added += 1
+
+    logger.info(f"Dictionary CSV uploaded | uid={uid} added={added} skipped={skipped}")
+    return JSONResponse({
+        "added": added,
+        "skipped": skipped,
+        "count": current_count + added,
+        "limit": user_limit,
+    })
 
 
 # Language code to display name mapping for translation prompts
