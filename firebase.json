@@ -62,6 +62,27 @@
     ],
     "rewrites": [
       {
+        "source": "/openapi.json",
+        "run": {
+          "serviceId": "realtime-translator-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/docs",
+        "run": {
+          "serviceId": "realtime-translator-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/health",
+        "run": {
+          "serviceId": "realtime-translator-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
         "source": "/audio_m4a",
         "run": {
           "serviceId": "realtime-translator-api",
