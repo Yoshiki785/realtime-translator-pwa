@@ -224,6 +224,29 @@ body {
   display: block;
 }
 
+/* SW Update Banner */
+.sw-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  margin-top: 10px;
+  background: rgba(56, 189, 248, 0.15);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.sw-update-banner[hidden] {
+  display: none;
+}
+
+.sw-update-banner button {
+  flex-shrink: 0;
+}
+
 .modal {
   background: var(--bg);
   color: var(--fg);

@@ -43,6 +43,8 @@ const STRINGS = {
     takeoverMessage: '別端末で翻訳が開始されています。この端末で開始すると他端末のセッションは停止扱いになります。',
     takeoverStart: 'この端末で開始（他を停止）',
     takeoverKeep: '別端末の継続を優先',
+    swUpdateAvailable: '新しいバージョンがあります',
+    swUpdate: '更新',
     upgradeToPro: 'Proにアップグレード',
     upgradeToProBeta: 'Proにアップグレード <span class="beta-badge">β</span>',
     betaNotice: '※ 現在テスト環境です。本番決済は準備中です。',
@@ -114,6 +116,8 @@ const STRINGS = {
     takeoverMessage: 'Another device is already translating. Starting here will stop the other session.',
     takeoverStart: 'Start on this device (stop others)',
     takeoverKeep: 'Keep the other session',
+    swUpdateAvailable: 'New version available',
+    swUpdate: 'Update',
     upgradeToPro: 'Upgrade to Pro',
     upgradeToProBeta: 'Upgrade to Pro <span class="beta-badge">β</span>',
     betaNotice: '* Test environment. Live billing coming soon.',
@@ -185,6 +189,8 @@ const STRINGS = {
     takeoverMessage: '另一台设备正在翻译。若在此设备开始，将停止其他会话。',
     takeoverStart: '在此设备开始（停止其他）',
     takeoverKeep: '优先保留其他设备',
+    swUpdateAvailable: '有新版本可用',
+    swUpdate: '更新',
     upgradeToPro: '升级到Pro',
     upgradeToProBeta: '升级到Pro <span class="beta-badge">β</span>',
     betaNotice: '※ 测试环境。正式付款即将上线。',
@@ -2635,6 +2641,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Service Worker 登録（debug=1 時は無効化）
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', async () => {
+      // 診断ログ出力
+      const swController = navigator.serviceWorker.controller;
+      console.info('[SW診断] controller:', swController ? swController.scriptURL : 'none');
+
       if (isDebugMode()) {
         // debug=1: SW を無効化し、既存の登録を解除
         console.log('[SW] Debug mode: skipping SW registration');
@@ -2652,8 +2662,53 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('[SW] Debug mode: SW disabled, caches cleared');
         return;
       }
+
       // 通常モード: SW を登録
-      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
+      try {
+        const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+        console.info('[SW診断] registered:', registration.scope);
+
+        // 更新バナー表示関数
+        const showUpdateBanner = (waitingWorker) => {
+          const banner = document.getElementById('swUpdateBanner');
+          const btn = document.getElementById('swUpdateBtn');
+          if (!banner || !btn) return;
+
+          banner.hidden = false;
+          btn.onclick = () => {
+            waitingWorker.postMessage({ type: 'SKIP_WAITING' });
+            banner.hidden = true;
+          };
+        };
+
+        // 既にwaitingがいる場合（ページロード時点で新SWが待機中）
+        if (registration.waiting) {
+          console.info('[SW診断] waiting SW found at load');
+          showUpdateBanner(registration.waiting);
+        }
+
+        // 新しいSWがインストールされた時
+        registration.addEventListener('updatefound', () => {
+          const newWorker = registration.installing;
+          console.info('[SW診断] updatefound, installing new SW');
+
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // 新SWがinstalled状態でcontrollerがいる＝更新待ち
+              console.info('[SW診断] new SW installed, showing update banner');
+              showUpdateBanner(newWorker);
+            }
+          });
+        });
+
+        // controllerchanged: 新SWがアクティブになった
+        navigator.serviceWorker.addEventListener('controllerchange', () => {
+          console.info('[SW診断] controllerchange, reloading page');
+          window.location.reload();
+        });
+      } catch (err) {
+        console.warn('[SW] Registration failed:', err);
+      }
     });
   }
 
