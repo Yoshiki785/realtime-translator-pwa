@@ -338,6 +338,16 @@ const createDefaultQuotaState = () => ({
 
 const API_BASE_URL = window.location.origin;
 const REALTIME_CALLS_URL = 'https://api.openai.com/v1/realtime/calls';
+
+// Configuration validation - catch missing settings early
+const CONFIG_ERRORS = [];
+if (!API_BASE_URL) CONFIG_ERRORS.push('API_BASE_URL is not defined');
+if (!REALTIME_CALLS_URL) CONFIG_ERRORS.push('REALTIME_CALLS_URL is not defined');
+if (!window.FIREBASE_CONFIG) CONFIG_ERRORS.push('FIREBASE_CONFIG is not defined (check firebase-config.js loading order)');
+if (CONFIG_ERRORS.length > 0) {
+  console.error('[Config] Critical configuration errors:', CONFIG_ERRORS);
+}
+
 const LANGUAGE_SETTINGS = {
   input: 'Auto (mic)',
   output: 'Japanese',
@@ -2229,7 +2239,7 @@ const fetchToken = async () => {
   addDiagLog(`STEP5: before negotiate | offerSdpLen=${offerSdp?.length || 0}`);
 
   // デバッグ: SDP offer の検証
-  console.log('[negotiate] Realtime URL:', REALTIME_URL);
+  console.log('[negotiate] Realtime URL:', REALTIME_CALLS_URL);
   console.log('[negotiate] clientSecret prefix:', clientSecret ? `${clientSecret.substring(0, 10)}...` : 'missing');
   console.log('[negotiate] Offer SDP length:', offerSdp.length);
   if (!offerSdp.includes('v=0')) console.warn('[negotiate] SDP missing v=0');
