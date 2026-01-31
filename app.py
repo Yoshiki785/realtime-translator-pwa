@@ -1952,24 +1952,28 @@ def _get_ticket_price_map() -> dict:
 def get_ticket_price_id(pack_id: str, minutes: int) -> str | None:
     """
     Get Stripe Price ID for ticket pack.
-    Priority:
-    1. STRIPE_TICKET_PRICE_MAP_JSON (JSON map with packId -> priceId)
-    2. price_T{minutes} env var (canonical)
+    Priority (canonical first):
+    1. price_T{minutes} env var (canonical - highest priority)
+    2. STRIPE_TICKET_PRICE_MAP_JSON (JSON map fallback)
     3. STRIPE_TICKET_{minutes}_PRICE_ID (legacy fallback)
     """
-    # 1. Try JSON map first (recommended)
+    canonical_key = f"price_T{minutes}"
+
+    # 1. Canonical env var: price_T{minutes} (highest priority)
+    price_id = os.getenv(canonical_key)
+    if price_id:
+        return price_id
+
+    # 2. Fallback: STRIPE_TICKET_PRICE_MAP_JSON
     price_map = _get_ticket_price_map()
     if pack_id in price_map:
         price_id = price_map[pack_id].get("priceId")
         if price_id:
+            logger.warning(
+                f"Using STRIPE_TICKET_PRICE_MAP_JSON for {pack_id}, "
+                f"please migrate to env var {canonical_key}"
+            )
             return price_id
-
-    # 2. Canonical env var: price_T{minutes}
-    canonical_key = f"price_T{minutes}"
-    price_id = os.getenv(canonical_key)
-    if price_id:
-        logger.info(f"Using env var {canonical_key} for pack {pack_id}")
-        return price_id
 
     # 3. Legacy fallback: STRIPE_TICKET_{minutes}_PRICE_ID
     legacy_key = f"STRIPE_TICKET_{minutes}_PRICE_ID"
