@@ -1,6 +1,6 @@
 // Service Worker v7: Network-first for critical files + update banner support
 // BUILD_TIME is replaced by sync_public.sh at deploy time
-const BUILD_TIME = '20260131093010';
+const BUILD_TIME = '20260131221010';
 const CACHE = `rt-translator-v7-${BUILD_TIME}`;
 
 // 常にネットワークから取得するファイル（最新版を優先）

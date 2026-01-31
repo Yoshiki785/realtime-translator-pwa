@@ -1371,6 +1371,7 @@ async def get_me(request: Request) -> JSONResponse:
         "usedBaseSecondsThisMonth": snapshot["usedBaseSecondsThisMonth"],
         "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
         "ticketSecondsBalance": snapshot["ticketSecondsBalance"],
+        "creditSeconds": snapshot["ticketSecondsBalance"],  # フロント互換性のため追加
         "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
         "maxSessionSeconds": plan_config.get("maxSessionSeconds"),
         "activeJob": bool(user_state.get("activeJobId")),

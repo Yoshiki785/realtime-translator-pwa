@@ -2884,7 +2884,7 @@ const refreshQuotaStatus = async () => {
     return null;
   }
   try {
-    const res = await authFetch('/api/v1/me');
+    const res = await authFetch('/api/v1/me', { cache: 'no-store' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       const message = extractErrorMessage(data, '利用残量の取得に失敗しました。');
@@ -4859,10 +4859,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Refresh billing status when returning from Customer Portal
+  // Refresh billing status and quota when returning from Customer Portal or Stripe Checkout
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && currentUser) {
       refreshBillingStatus();
+      refreshQuotaStatus();
+    }
+  });
+
+  // Refresh quota on pageshow (bfcache handling)
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted && currentUser) {
+      refreshQuotaStatus();
     }
   });
 
