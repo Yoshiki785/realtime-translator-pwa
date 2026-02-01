@@ -85,6 +85,9 @@ const STRINGS = {
     errorNoTextToSummarize: '要約するテキストがありません',
     errorSummaryFailed: '要約の生成に失敗しました',
     errorInputTooLong: '入力が長すぎます（上限を超えました）',
+    networkDisconnected: '接続が切れました。テキストは保存されています。ネットワーク復帰後に再度 Start してください。',
+    errorRateLimit: 'リクエスト制限中です。しばらく待ってから再試行してください。',
+    errorServerError: 'サーバーエラーが発生しました。時間をおいて再試行してください。',
   },
   en: {
     login: 'Login',
@@ -168,6 +171,9 @@ const STRINGS = {
     errorNoTextToSummarize: 'No text to summarize',
     errorSummaryFailed: 'Failed to generate summary',
     errorInputTooLong: 'Input is too long (exceeded limit)',
+    networkDisconnected: 'Connection lost. Your text is saved. Please reconnect and press Start again.',
+    errorRateLimit: 'Rate limited. Please wait and try again.',
+    errorServerError: 'Server error. Please try again later.',
   },
   'zh-Hans': {
     login: '登录',
@@ -251,6 +257,13 @@ const STRINGS = {
     errorNoTextToSummarize: '没有可摘要的文本',
     errorInputTooLong: '输入过长（超过上限）',
     errorSummaryFailed: '摘要生成失败',
+    // 拼音: Liánjiē yǐ duànkāi. Wénběn yǐ bǎocún. Qǐng huīfù wǎngluò hòu chóngxīn diǎnjī kāishǐ.
+    // 日本語訳: 接続が切れました。テキストは保存されています。ネットワーク復帰後に再度開始してください。
+    networkDisconnected: '连接已断开。文本已保存。请恢复网络后重新点击开始。',
+    // 拼音: Qǐngqiú shòuxiàn. Qǐng shāoděng hòu chóngshì.
+    errorRateLimit: '请求受限。请稍等后重试。',
+    // 拼音: Fúwùqì cuòwù. Qǐng shāohòu chóngshì.
+    errorServerError: '服务器错误。请稍后重试。',
   },
 };
 
@@ -579,15 +592,15 @@ const authFetch = async (url, options = {}, _retried = false) => {
       // ignore parse error
     }
     if (isTokenExpiredError(body)) {
-      addDiagLog(`authFetch 401 detected, retrying with forceRefresh | url=${url}`);
+      addDiagLog(`[auth] 401 detected, retrying with forceRefresh | url=${url}`);
       return authFetch(url, options, true);
     }
   }
 
   // If still 401 after retry, sign out and show session expired message
   if (res.status === 401 && _retried) {
-    addDiagLog(`authFetch 401 after retry, signing out | url=${url}`);
-    setError('セッション期限切れ。再ログインしてください。');
+    addDiagLog(`[auth] 401 after retry, signing out | url=${url}`);
+    setError(t('errorLoginRequired'));
     if (auth) {
       try {
         await auth.signOut();
@@ -2845,6 +2858,21 @@ const showBillingBanner = (status) => {
   }
 };
 
+// P0-2: ネットワーク断のUI通知バナー
+const showNetworkDisconnectBanner = () => {
+  const existing = document.querySelector('.network-disconnect-banner');
+  if (existing) return; // 二重表示防止
+
+  const banner = document.createElement('div');
+  banner.className = 'network-disconnect-banner';
+  banner.innerHTML = `
+    <span>${t('networkDisconnected')}</span>
+    <button onclick="this.parentElement.remove()">✕</button>
+  `;
+  document.body.prepend(banner);
+  addDiagLog('[net] Network disconnect banner shown');
+};
+
 const applyQuotaFromPayload = (payload = {}) => {
   const next = {
     plan: payload.plan || state.quota.plan || 'free',
@@ -2929,17 +2957,52 @@ const ERROR_CATEGORY = {
   ICE_FAILED: 'ice_failed',
   CONNECTION_TIMEOUT: 'connection_timeout',
   NETWORK: 'network',
+  RATE_LIMIT: 'rate_limit',
+  SERVER_ERROR: 'server_error',
   UNKNOWN: 'unknown',
 };
 
+// P0-1: 多言語対応エラーメッセージ
 const ERROR_MESSAGES = {
-  [ERROR_CATEGORY.MIC_PERMISSION]: 'マイクの使用が許可されていません。ブラウザの設定でマイクへのアクセスを許可してください。',
-  [ERROR_CATEGORY.TOKEN_AUTH]: '認証エラーが発生しました。再ログインしてください。',
-  [ERROR_CATEGORY.REALTIME_NEGOTIATE]: 'リアルタイム接続の確立に失敗しました。しばらくしてから再試行してください。',
-  [ERROR_CATEGORY.ICE_FAILED]: '通信経路の確立に失敗しました。ネットワーク接続を確認してください。',
-  [ERROR_CATEGORY.CONNECTION_TIMEOUT]: '接続がタイムアウトしました。ネットワーク状況を確認して再試行してください。',
-  [ERROR_CATEGORY.NETWORK]: 'ネットワークエラーが発生しました。インターネット接続を確認してください。',
-  [ERROR_CATEGORY.UNKNOWN]: '予期しないエラーが発生しました。再試行してください。',
+  ja: {
+    [ERROR_CATEGORY.MIC_PERMISSION]: 'マイクの使用が許可されていません。ブラウザの設定でマイクへのアクセスを許可してください。',
+    [ERROR_CATEGORY.TOKEN_AUTH]: '認証エラーが発生しました。再ログインしてください。',
+    [ERROR_CATEGORY.REALTIME_NEGOTIATE]: 'リアルタイム接続の確立に失敗しました。しばらくしてから再試行してください。',
+    [ERROR_CATEGORY.ICE_FAILED]: '通信経路の確立に失敗しました。ネットワーク接続を確認してください。',
+    [ERROR_CATEGORY.CONNECTION_TIMEOUT]: '接続がタイムアウトしました。ネットワーク状況を確認して再試行してください。',
+    [ERROR_CATEGORY.NETWORK]: 'ネットワークエラーが発生しました。インターネット接続を確認してください。',
+    [ERROR_CATEGORY.RATE_LIMIT]: 'リクエスト制限中です。しばらく待ってから再試行してください。',
+    [ERROR_CATEGORY.SERVER_ERROR]: 'サーバーエラーが発生しました。時間をおいて再試行してください。',
+    [ERROR_CATEGORY.UNKNOWN]: '予期しないエラーが発生しました。再試行してください。',
+  },
+  en: {
+    [ERROR_CATEGORY.MIC_PERMISSION]: 'Microphone access denied. Please allow microphone access in browser settings.',
+    [ERROR_CATEGORY.TOKEN_AUTH]: 'Authentication error. Please log in again.',
+    [ERROR_CATEGORY.REALTIME_NEGOTIATE]: 'Failed to establish realtime connection. Please try again later.',
+    [ERROR_CATEGORY.ICE_FAILED]: 'Failed to establish communication path. Please check your network.',
+    [ERROR_CATEGORY.CONNECTION_TIMEOUT]: 'Connection timed out. Please check your network and try again.',
+    [ERROR_CATEGORY.NETWORK]: 'Network error. Please check your internet connection.',
+    [ERROR_CATEGORY.RATE_LIMIT]: 'Rate limited. Please wait and try again.',
+    [ERROR_CATEGORY.SERVER_ERROR]: 'Server error. Please try again later.',
+    [ERROR_CATEGORY.UNKNOWN]: 'Unexpected error. Please try again.',
+  },
+  'zh-Hans': {
+    [ERROR_CATEGORY.MIC_PERMISSION]: '麦克风权限被拒绝。请在浏览器设置中允许麦克风访问。',
+    [ERROR_CATEGORY.TOKEN_AUTH]: '认证错误。请重新登录。',
+    [ERROR_CATEGORY.REALTIME_NEGOTIATE]: '无法建立实时连接。请稍后重试。',
+    [ERROR_CATEGORY.ICE_FAILED]: '无法建立通信路径。请检查网络连接。',
+    [ERROR_CATEGORY.CONNECTION_TIMEOUT]: '连接超时。请检查网络后重试。',
+    [ERROR_CATEGORY.NETWORK]: '网络错误。请检查您的互联网连接。',
+    [ERROR_CATEGORY.RATE_LIMIT]: '请求受限。请稍等后重试。',
+    [ERROR_CATEGORY.SERVER_ERROR]: '服务器错误。请稍后重试。',
+    [ERROR_CATEGORY.UNKNOWN]: '发生意外错误。请重试。',
+  },
+};
+
+// 言語に応じたエラーメッセージを取得
+const getErrorMessage = (category) => {
+  const lang = getUiLang();
+  return ERROR_MESSAGES[lang]?.[category] || ERROR_MESSAGES.ja[category] || ERROR_MESSAGES.ja[ERROR_CATEGORY.UNKNOWN];
 };
 
 const CONNECTION_TIMEOUT_MS = 10000; // 10秒でタイムアウト
@@ -3033,38 +3096,48 @@ const classifyError = (err, context = '') => {
 
   // マイク許可エラー
   if (errName === 'notallowederror' || errMsg.includes('permission denied') || errMsg.includes('not allowed')) {
-    return { category: ERROR_CATEGORY.MIC_PERMISSION, message: ERROR_MESSAGES[ERROR_CATEGORY.MIC_PERMISSION], retryable: false };
+    return { category: ERROR_CATEGORY.MIC_PERMISSION, message: getErrorMessage(ERROR_CATEGORY.MIC_PERMISSION), retryable: false };
   }
 
   // トークン認証エラー（/token 401, invalid_auth）
   if (context === 'token' || errMsg.includes('401') || errMsg.includes('invalid_auth') || errMsg.includes('token') && errMsg.includes('expired')) {
-    return { category: ERROR_CATEGORY.TOKEN_AUTH, message: ERROR_MESSAGES[ERROR_CATEGORY.TOKEN_AUTH], retryable: false };
+    return { category: ERROR_CATEGORY.TOKEN_AUTH, message: getErrorMessage(ERROR_CATEGORY.TOKEN_AUTH), retryable: false };
+  }
+
+  // 429 Rate Limit エラー
+  if (errMsg.includes('429') || errMsg.includes('rate_limit') || errMsg.includes('too many requests')) {
+    return { category: ERROR_CATEGORY.RATE_LIMIT, message: getErrorMessage(ERROR_CATEGORY.RATE_LIMIT), retryable: false };
+  }
+
+  // 5xx サーバーエラー
+  if (errMsg.includes('500') || errMsg.includes('502') || errMsg.includes('503') || errMsg.includes('504') || errMsg.includes('server error')) {
+    return { category: ERROR_CATEGORY.SERVER_ERROR, message: getErrorMessage(ERROR_CATEGORY.SERVER_ERROR), retryable: true };
   }
 
   // Realtime negotiate エラー（400, 401）
   if (context === 'negotiate' || errMsg.includes('negotiate') || errMsg.includes('realtime')) {
     if (errMsg.includes('401') || errMsg.includes('unauthorized')) {
-      return { category: ERROR_CATEGORY.TOKEN_AUTH, message: ERROR_MESSAGES[ERROR_CATEGORY.TOKEN_AUTH], retryable: false };
+      return { category: ERROR_CATEGORY.TOKEN_AUTH, message: getErrorMessage(ERROR_CATEGORY.TOKEN_AUTH), retryable: false };
     }
-    return { category: ERROR_CATEGORY.REALTIME_NEGOTIATE, message: ERROR_MESSAGES[ERROR_CATEGORY.REALTIME_NEGOTIATE], retryable: true };
+    return { category: ERROR_CATEGORY.REALTIME_NEGOTIATE, message: getErrorMessage(ERROR_CATEGORY.REALTIME_NEGOTIATE), retryable: true };
   }
 
   // ICE接続失敗
   if (errMsg.includes('ice') || errMsg.includes('connection failed') || errMsg.includes('ice failed')) {
-    return { category: ERROR_CATEGORY.ICE_FAILED, message: ERROR_MESSAGES[ERROR_CATEGORY.ICE_FAILED], retryable: true };
+    return { category: ERROR_CATEGORY.ICE_FAILED, message: getErrorMessage(ERROR_CATEGORY.ICE_FAILED), retryable: true };
   }
 
   // タイムアウト
   if (errMsg.includes('timeout') || errMsg.includes('timed out')) {
-    return { category: ERROR_CATEGORY.CONNECTION_TIMEOUT, message: ERROR_MESSAGES[ERROR_CATEGORY.CONNECTION_TIMEOUT], retryable: true };
+    return { category: ERROR_CATEGORY.CONNECTION_TIMEOUT, message: getErrorMessage(ERROR_CATEGORY.CONNECTION_TIMEOUT), retryable: true };
   }
 
   // ネットワークエラー
   if (errMsg.includes('network') || errMsg.includes('fetch') || errName === 'typeerror') {
-    return { category: ERROR_CATEGORY.NETWORK, message: ERROR_MESSAGES[ERROR_CATEGORY.NETWORK], retryable: true };
+    return { category: ERROR_CATEGORY.NETWORK, message: getErrorMessage(ERROR_CATEGORY.NETWORK), retryable: true };
   }
 
-  return { category: ERROR_CATEGORY.UNKNOWN, message: ERROR_MESSAGES[ERROR_CATEGORY.UNKNOWN], retryable: true };
+  return { category: ERROR_CATEGORY.UNKNOWN, message: getErrorMessage(ERROR_CATEGORY.UNKNOWN), retryable: true };
 };
 
 const hasQuotaForStart = () => {
@@ -3104,7 +3177,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
 
   // client_request_id を生成（観測用）
   const clientRequestId = generateUUID();
-  addDiagLog(`Requesting job reservation | clientRequestId=${clientRequestId}`);
+  addDiagLog(`[job] Requesting reservation | clientRequestId=${clientRequestId}`);
 
   // 呼び出し時刻を記録（スロットル用）
   state.lastJobCreateAt = Date.now();
@@ -3125,7 +3198,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   if (res.status === 409 && errorCode === 'active_job_in_progress') {
     // 409 detail から activeSince を取得
     const activeSince = (typeof detail === 'object' && detail?.activeSince) ? detail.activeSince : null;
-    addDiagLog(`Job create blocked: active_job_in_progress | clientRequestId=${clientRequestId} | activeSince=${activeSince}`);
+    addDiagLog(`[job] Blocked: active_job_in_progress | clientRequestId=${clientRequestId} | activeSince=${activeSince}`);
 
     // B案: takeover ダイアログを表示（閉じるのみ）して必ず中断
     await showTakeoverDialog(activeSince);
@@ -3725,21 +3798,33 @@ const fetchToken = async () => {
   state.pc = pc;
 
   pc.onconnectionstatechange = () => {
-    addDiagLog(`RTC connectionState: ${pc.connectionState}`);
+    addDiagLog(`[rtc] connectionState: ${pc.connectionState}`);
     if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-      addDiagLog(`Network disconnect detected | state=${pc.connectionState} | sid=${state.sessionId}`);
+      addDiagLog(`[net] Network disconnect detected | state=${pc.connectionState} | sid=${state.sessionId}`);
+      showNetworkDisconnectBanner();
+      setStatus('Standby');
+      // ジョブがあれば完了させる
+      if (state.currentJob) {
+        completeCurrentJob(getJobElapsedSeconds()).catch((err) => {
+          addDiagLog(`[job] Failed to complete job on disconnect: ${err.message}`);
+        });
+      }
     }
   };
 
   pc.oniceconnectionstatechange = () => {
-    addDiagLog(`RTC iceConnectionState: ${pc.iceConnectionState}`);
+    addDiagLog(`[rtc] iceConnectionState: ${pc.iceConnectionState}`);
   };
 
   state.dataChannel = pc.createDataChannel('oai-events');
   state.dataChannel.onmessage = handleDataMessage;
-  state.dataChannel.onclose = () => setStatus('Closed');
+  state.dataChannel.onclose = () => {
+    addDiagLog('[rtc] DataChannel closed');
+    showNetworkDisconnectBanner();
+    setStatus('Closed');
+  };
   state.dataChannel.onopen = () => {
-    addDiagLog('STEP7: RTC connected / datachannel opened');
+    addDiagLog('[rtc] STEP7: RTC connected / datachannel opened');
     setStatus('Listening');
     flushRealtimeEventQueue();
     try {
