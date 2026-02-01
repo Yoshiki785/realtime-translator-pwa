@@ -659,13 +659,29 @@ def _create_job_core(
                 should_block = elapsed <= grace_window
             if should_block and force_takeover:
                 if force_takeover_used:
-                    raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
+                    raise HTTPException(
+                        status_code=409,
+                        detail={
+                            "error": "active_job_in_progress",
+                            "activeJobId": active_job_id,
+                            "activeSince": active_job_started_at.isoformat() if active_job_started_at else None,
+                            "deviceLabel": None,
+                        },
+                    )
                 job_ref = db.collection("jobs").document(active_job_id)
                 _complete_job_core(db, job_ref, uid, None, current_jst, now_utc, transaction)
                 force_takeover_used = True
                 continue
             if should_block:
-                raise HTTPException(status_code=409, detail={"error": "active_job_in_progress"})
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "error": "active_job_in_progress",
+                        "activeJobId": active_job_id,
+                        "activeSince": active_job_started_at.isoformat() if active_job_started_at else None,
+                        "deviceLabel": None,
+                    },
+                )
         break
 
     reserved_seconds = min(total_available, max_session)

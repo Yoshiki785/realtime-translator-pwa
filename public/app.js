@@ -3109,8 +3109,10 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   });
   const data = await res.json().catch(() => ({}));
 
-  // 409 active_job_in_progress の処理
-  if (res.status === 409 && data?.error === 'active_job_in_progress') {
+  // 409 active_job_in_progress の処理（複数形式対応）
+  const detail = data?.detail;
+  const errorCode = (typeof detail === 'string' ? detail : detail?.error) || data?.error;
+  if (res.status === 409 && errorCode === 'active_job_in_progress') {
     addDiagLog(`Job create blocked: active_job_in_progress | clientRequestId=${clientRequestId}`);
     // 409 はリトライしない（UIはRETRYINGにしない）
     // /jobs/active を叩いて復帰導線を出す
@@ -3738,6 +3740,18 @@ const fetchToken = async () => {
 
   const pc = new RTCPeerConnection();
   state.pc = pc;
+
+  pc.onconnectionstatechange = () => {
+    addDiagLog(`RTC connectionState: ${pc.connectionState}`);
+    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      addDiagLog(`Network disconnect detected | state=${pc.connectionState} | sid=${state.sessionId}`);
+    }
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    addDiagLog(`RTC iceConnectionState: ${pc.iceConnectionState}`);
+  };
+
   state.dataChannel = pc.createDataChannel('oai-events');
   state.dataChannel.onmessage = handleDataMessage;
   state.dataChannel.onclose = () => setStatus('Closed');
