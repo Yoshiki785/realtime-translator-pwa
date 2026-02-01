@@ -40,9 +40,9 @@ const STRINGS = {
     glossaryLabel: '辞書（用語集）',
     glossaryHint: '1行1エントリ：source=target',
     takeoverTitle: '別端末で使用中です',
-    takeoverMessage: '別端末で翻訳が開始されています。この端末で開始すると他端末のセッションは停止扱いになります。',
+    takeoverMessage: '別端末で翻訳が実行中です。別端末でStopしてから、この端末でStartしてください。',
     takeoverStart: 'この端末で開始（他を停止）',
-    takeoverKeep: '別端末の継続を優先',
+    takeoverKeep: '閉じる',
     upgradeToPro: 'Proにアップグレード',
     upgrading: '処理中...',
     billingSuccess: 'アップグレード完了！',
@@ -123,9 +123,9 @@ const STRINGS = {
     glossaryLabel: 'Glossary',
     glossaryHint: 'One per line: source=target',
     takeoverTitle: 'Translation is active elsewhere',
-    takeoverMessage: 'Another device is already translating. Starting here will stop the other session.',
+    takeoverMessage: 'Another device is translating. Please stop it there, then start here.',
     takeoverStart: 'Start on this device (stop others)',
-    takeoverKeep: 'Keep the other session',
+    takeoverKeep: 'Close',
     upgradeToPro: 'Upgrade to Pro',
     upgrading: 'Processing...',
     billingSuccess: 'Upgrade complete!',
@@ -206,9 +206,9 @@ const STRINGS = {
     glossaryLabel: '词汇表',
     glossaryHint: '每行一条：source=target',
     takeoverTitle: '其他设备正在使用',
-    takeoverMessage: '另一台设备正在翻译。若在此设备开始，将停止其他会话。',
+    takeoverMessage: '另一台设备正在翻译。请在那里停止，然后在这里开始。',
     takeoverStart: '在此设备开始（停止其他）',
-    takeoverKeep: '优先保留其他设备',
+    takeoverKeep: '关闭',
     upgradeToPro: '升级到Pro',
     upgrading: '处理中...',
     billingSuccess: '升级完成！',
@@ -324,23 +324,19 @@ const showTakeoverDialog = (activeSince = null) => {
     } catch (_) { /* ignore parse errors */ }
   }
   if (message) message.textContent = messageText;
-  if (confirmBtn) confirmBtn.textContent = t('takeoverStart');
+  // B案: confirmBtn（この端末で開始）は非表示にする
+  if (confirmBtn) confirmBtn.style.display = 'none';
   if (cancelBtn) cancelBtn.textContent = t('takeoverKeep');
 
   return new Promise((resolve) => {
-    const onConfirm = () => {
-      dialog.close();
-      resolve(true);
-    };
-    const onCancel = (event) => {
+    const onClose = (event) => {
       if (event) event.preventDefault();
       dialog.close();
       resolve(false);
     };
 
-    confirmBtn?.addEventListener('click', onConfirm, { once: true });
-    cancelBtn?.addEventListener('click', onCancel, { once: true });
-    dialog.addEventListener('cancel', onCancel, { once: true });
+    cancelBtn?.addEventListener('click', onClose, { once: true });
+    dialog.addEventListener('cancel', onClose, { once: true });
 
     if (!dialog.open) {
       dialog.showModal();
@@ -2781,7 +2777,13 @@ const handleHashRoute = async () => {
     showBillingBanner('ticket-success');
     addDiagLog('Tickets: Purchase successful');
     // Refresh quota to show updated ticket balance
-    refreshQuotaAndPlan();
+    if (typeof refreshQuotaAndPlan === 'function') {
+      refreshQuotaAndPlan();
+    } else if (typeof refreshQuotaStatus === 'function') {
+      refreshQuotaStatus();
+    } else {
+      addDiagLog('refreshQuota* function not found');
+    }
     history.replaceState(null, '', window.location.pathname);
   } else if (hash === '#/tickets/cancel') {
     showBillingBanner('ticket-cancelled');
@@ -3125,22 +3127,12 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
     const activeSince = (typeof detail === 'object' && detail?.activeSince) ? detail.activeSince : null;
     addDiagLog(`Job create blocked: active_job_in_progress | clientRequestId=${clientRequestId} | activeSince=${activeSince}`);
 
-    // force_takeover=true でも再度 409 が返った場合は明確なメッセージで中断
-    if (forceTakeover) {
-      const takeoverErr = new Error('他端末のセッション停止が反映されていません。数秒待ってから再試行、または他端末でStopしてください。');
-      takeoverErr._context = 'job_create';
-      takeoverErr._abortStart = true;  // リトライ無し終了
-      throw takeoverErr;
-    }
-
-    // takeover ダイアログを表示（activeSince 付き）
-    const shouldTakeover = await showTakeoverDialog(activeSince);
-    if (!shouldTakeover) {
-      const cancelErr = new Error('takeover_declined');
-      cancelErr._abortStart = true;
-      throw cancelErr;
-    }
-    return reserveJobSlot({ forceTakeover: true });
+    // B案: takeover ダイアログを表示（閉じるのみ）して必ず中断
+    await showTakeoverDialog(activeSince);
+    const abortErr = new Error('active_job_in_progress');
+    abortErr._context = 'job_create';
+    abortErr._abortStart = true;
+    throw abortErr;
   }
 
   // 429 Too Many Requests の処理
