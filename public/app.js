@@ -3740,6 +3740,18 @@ const fetchToken = async () => {
 
   const pc = new RTCPeerConnection();
   state.pc = pc;
+
+  pc.onconnectionstatechange = () => {
+    addDiagLog(`RTC connectionState: ${pc.connectionState}`);
+    if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+      addDiagLog(`Network disconnect detected | state=${pc.connectionState} | sid=${state.sessionId}`);
+    }
+  };
+
+  pc.oniceconnectionstatechange = () => {
+    addDiagLog(`RTC iceConnectionState: ${pc.iceConnectionState}`);
+  };
+
   state.dataChannel = pc.createDataChannel('oai-events');
   state.dataChannel.onmessage = handleDataMessage;
   state.dataChannel.onclose = () => setStatus('Closed');
