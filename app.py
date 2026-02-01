@@ -541,11 +541,8 @@ def read_user_state(
         snap = user_ref.get(transaction=transaction)
     else:
         snap = user_ref.get()
-    raw_data = snap.to_dict() if snap.exists else {}
-    # DEBUG: Firestore raw data for ticketSecondsBalance
-    logger.info(f"[read_user_state] raw | uid={uid} ticketSecondsBalance={raw_data.get('ticketSecondsBalance')} exists={snap.exists}")
     state, updates, plan, plan_config = normalize_user_usage_data(
-        raw_data,
+        snap.to_dict() if snap.exists else {},
         current_jst,
         not snap.exists,
     )
