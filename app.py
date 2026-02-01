@@ -1366,6 +1366,7 @@ async def get_me(request: Request) -> JSONResponse:
         blocked_reason = "daily_limit_reached"
 
     response = {
+        "uid": uid,
         "plan": plan,
         "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
         "usedBaseSecondsThisMonth": snapshot["usedBaseSecondsThisMonth"],
