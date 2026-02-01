@@ -307,7 +307,7 @@ const ensureTakeoverDialog = () => {
   return dialog;
 };
 
-const showTakeoverDialog = () => {
+const showTakeoverDialog = (activeSince = null) => {
   const dialog = ensureTakeoverDialog();
   const title = dialog.querySelector('[data-takeover="title"]');
   const message = dialog.querySelector('[data-takeover="message"]');
@@ -315,7 +315,15 @@ const showTakeoverDialog = () => {
   const cancelBtn = dialog.querySelector('[data-takeover="cancel"]');
 
   if (title) title.textContent = t('takeoverTitle');
-  if (message) message.textContent = t('takeoverMessage');
+  let messageText = t('takeoverMessage');
+  if (activeSince) {
+    try {
+      const sinceDate = new Date(activeSince);
+      const timeStr = sinceDate.toLocaleTimeString(getUiLang() === 'ja' ? 'ja-JP' : getUiLang() === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+      messageText += `\n（開始時刻: ${timeStr}）`;
+    } catch (_) { /* ignore parse errors */ }
+  }
+  if (message) message.textContent = messageText;
   if (confirmBtn) confirmBtn.textContent = t('takeoverStart');
   if (cancelBtn) cancelBtn.textContent = t('takeoverKeep');
 
@@ -3113,37 +3121,20 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   const detail = data?.detail;
   const errorCode = (typeof detail === 'string' ? detail : detail?.error) || data?.error;
   if (res.status === 409 && errorCode === 'active_job_in_progress') {
-    addDiagLog(`Job create blocked: active_job_in_progress | clientRequestId=${clientRequestId}`);
-    // 409 はリトライしない（UIはRETRYINGにしない）
-    // /jobs/active を叩いて復帰導線を出す
-    try {
-      const activeRes = await authFetch('/api/v1/jobs/active', { method: 'GET' });
-      if (activeRes.ok) {
-        const activeData = await activeRes.json();
-        addDiagLog(`Active job found via /jobs/active | jobId=${activeData.jobId} | recovering...`);
-        // 既存ジョブで復帰
-        state.currentJob = {
-          jobId: activeData.jobId,
-          reservedSeconds: activeData.reservedSeconds,
-          reservedBaseSeconds: activeData.reservedBaseSeconds,
-          reservedTicketSeconds: activeData.reservedTicketSeconds,
-        };
-        state.jobStartedAt = Date.now();
-        state.jobActive = true;
-        applyQuotaFromPayload(activeData);
-        addDiagLog(`Job recovered from /jobs/active | jobId=${activeData.jobId} | jobActive=true`);
-        return activeData;
-      }
-    } catch (activeErr) {
-      addDiagLog(`Failed to fetch /jobs/active: ${activeErr.message}`);
-    }
-    // /jobs/active も失敗した場合は takeover ダイアログを表示
+    // 409 detail から activeSince を取得
+    const activeSince = (typeof detail === 'object' && detail?.activeSince) ? detail.activeSince : null;
+    addDiagLog(`Job create blocked: active_job_in_progress | clientRequestId=${clientRequestId} | activeSince=${activeSince}`);
+
+    // force_takeover=true でも再度 409 が返った場合は明確なメッセージで中断
     if (forceTakeover) {
-      const takeoverErr = new Error('active_job_in_progress');
+      const takeoverErr = new Error('他端末のセッション停止が反映されていません。数秒待ってから再試行、または他端末でStopしてください。');
       takeoverErr._context = 'job_create';
+      takeoverErr._abortStart = true;  // リトライ無し終了
       throw takeoverErr;
     }
-    const shouldTakeover = await showTakeoverDialog();
+
+    // takeover ダイアログを表示（activeSince 付き）
+    const shouldTakeover = await showTakeoverDialog(activeSince);
     if (!shouldTakeover) {
       const cancelErr = new Error('takeover_declined');
       cancelErr._abortStart = true;
