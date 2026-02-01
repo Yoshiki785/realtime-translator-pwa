@@ -2858,19 +2858,127 @@ const showBillingBanner = (status) => {
   }
 };
 
-// P0-2: ネットワーク断のUI通知バナー
+// P0-2: ネットワーク断のUI通知バナー（XSS対策: innerHTML不使用）
 const showNetworkDisconnectBanner = () => {
   const existing = document.querySelector('.network-disconnect-banner');
   if (existing) return; // 二重表示防止
 
   const banner = document.createElement('div');
   banner.className = 'network-disconnect-banner';
-  banner.innerHTML = `
-    <span>${t('networkDisconnected')}</span>
-    <button onclick="this.parentElement.remove()">✕</button>
-  `;
+
+  const span = document.createElement('span');
+  span.textContent = t('networkDisconnected');
+
+  const btn = document.createElement('button');
+  btn.textContent = '✕';
+  btn.addEventListener('click', () => banner.remove());
+
+  banner.append(span, btn);
   document.body.prepend(banner);
   addDiagLog('[net] Network disconnect banner shown');
+};
+
+const hideNetworkDisconnectBanner = () => {
+  const banner = document.querySelector('.network-disconnect-banner');
+  if (banner) {
+    banner.remove();
+    addDiagLog('[net] Network disconnect banner hidden');
+  }
+};
+
+// ネットワーク切断処理のデバウンス
+const DISCONNECT_DEBOUNCE_MS = 500;
+let _disconnectDebounceTimer = null;
+let _disconnectHandled = false;
+
+const handleNetworkDisconnectOnce = (reason) => {
+  if (_disconnectHandled) {
+    addDiagLog(`[net] Disconnect already handled, ignoring: ${reason}`);
+    return;
+  }
+  if (_disconnectDebounceTimer) {
+    clearTimeout(_disconnectDebounceTimer);
+  }
+  _disconnectDebounceTimer = setTimeout(() => {
+    _disconnectHandled = true;
+    addDiagLog(`[net] Disconnect handled: ${reason}`);
+    showNetworkDisconnectBanner();
+    setStatus('Standby');
+
+    // ジョブがあれば pending finalize に保存（即実行しない）
+    // state.currentJob は保持し、jobActive=false にするだけ
+    if (state.currentJob && state.jobActive) {
+      state._pendingJobFinalize = {
+        jobId: state.currentJob.jobId,
+        audioSeconds: getJobElapsedSeconds(),
+      };
+      addDiagLog(`[job] Pending finalize saved: jobId=${state._pendingJobFinalize.jobId}`);
+      state.jobActive = false; // ジョブを非アクティブに
+    }
+  }, DISCONNECT_DEBOUNCE_MS);
+};
+
+const resetDisconnectState = () => {
+  _disconnectHandled = false;
+  if (_disconnectDebounceTimer) {
+    clearTimeout(_disconnectDebounceTimer);
+    _disconnectDebounceTimer = null;
+  }
+};
+
+// online復帰時のpending job finalize
+const tryFinalizePendingJob = async () => {
+  if (!state._pendingJobFinalize) return;
+  if (!navigator.onLine) {
+    addDiagLog('[job] Skipping finalize: still offline');
+    return;
+  }
+
+  const pending = state._pendingJobFinalize;
+  const attempts = pending._attempts || 0;
+
+  // 最大1回再試行（2回目以降は破棄）
+  if (attempts >= 1) {
+    addDiagLog(`[job] Pending finalize max attempts reached, discarding: jobId=${pending.jobId}`);
+    state.currentJob = null;
+    state.jobStartedAt = null;
+    state._pendingJobFinalize = null;
+    return;
+  }
+
+  const { jobId, audioSeconds } = pending;
+  addDiagLog(`[job] Attempting pending finalize: jobId=${jobId} attempt=${attempts + 1}`);
+
+  // completeCurrentJob と同じ形式でpayloadを構築
+  const payload = { jobId };
+  if (typeof audioSeconds === 'number' && Number.isFinite(audioSeconds)) {
+    payload.audioSeconds = Math.max(0, Math.round(audioSeconds));
+  }
+
+  try {
+    const res = await authFetch('/api/v1/jobs/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      applyQuotaFromPayload(data);
+      addDiagLog(`[job] Pending finalize success: jobId=${jobId} billed=${data.billedSeconds ?? 'n/a'}s`);
+      // 成功時のみstateクリア
+      state.currentJob = null;
+      state.jobStartedAt = null;
+      state._pendingJobFinalize = null;
+    } else {
+      addDiagLog(`[job] Pending finalize failed: jobId=${jobId} status=${res.status}`);
+      // 失敗時は保持、attemptsをインクリメント
+      state._pendingJobFinalize._attempts = attempts + 1;
+    }
+  } catch (err) {
+    addDiagLog(`[job] Pending finalize error: ${err.message}`);
+    // エラー時も保持、attemptsをインクリメント
+    state._pendingJobFinalize._attempts = attempts + 1;
+  }
 };
 
 const applyQuotaFromPayload = (payload = {}) => {
@@ -3800,15 +3908,10 @@ const fetchToken = async () => {
   pc.onconnectionstatechange = () => {
     addDiagLog(`[rtc] connectionState: ${pc.connectionState}`);
     if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-      addDiagLog(`[net] Network disconnect detected | state=${pc.connectionState} | sid=${state.sessionId}`);
-      showNetworkDisconnectBanner();
-      setStatus('Standby');
-      // ジョブがあれば完了させる
-      if (state.currentJob) {
-        completeCurrentJob(getJobElapsedSeconds()).catch((err) => {
-          addDiagLog(`[job] Failed to complete job on disconnect: ${err.message}`);
-        });
-      }
+      handleNetworkDisconnectOnce(`pc:${pc.connectionState}`);
+    }
+    if (pc.connectionState === 'connected') {
+      resetDisconnectState();
     }
   };
 
@@ -3820,8 +3923,7 @@ const fetchToken = async () => {
   state.dataChannel.onmessage = handleDataMessage;
   state.dataChannel.onclose = () => {
     addDiagLog('[rtc] DataChannel closed');
-    showNetworkDisconnectBanner();
-    setStatus('Closed');
+    handleNetworkDisconnectOnce('datachannel:close');
   };
   state.dataChannel.onopen = () => {
     addDiagLog('[rtc] STEP7: RTC connected / datachannel opened');
@@ -4336,6 +4438,21 @@ document.addEventListener('DOMContentLoaded', () => {
       fetchBuildSha();
     } catch (err) {
       console.warn('[INIT:non-critical] fetchBuildSha failed:', err);
+    }
+
+    // Online/Offline event handlers
+    try {
+      window.addEventListener('online', () => {
+        addDiagLog('[net] Browser online event');
+        hideNetworkDisconnectBanner();
+        resetDisconnectState();
+        tryFinalizePendingJob();
+      });
+      window.addEventListener('offline', () => {
+        addDiagLog('[net] Browser offline event');
+      });
+    } catch (err) {
+      console.warn('[INIT:non-critical] Online/offline handlers failed:', err);
     }
 
     // Service Worker registration
