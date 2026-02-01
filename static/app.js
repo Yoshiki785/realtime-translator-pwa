@@ -12,6 +12,14 @@ const STRINGS = {
     close: '閉じる',
     transcriptLog: '原文ログ',
     translationLog: '翻訳ログ',
+    historyCreatedLabel: '作成日時: ',
+    historyLangLabel: '言語: ',
+    historyDurationLabel: '所要: ',
+    historyUtterancesLabel: '発話数: ',
+    historyExpired: '期限切れのため表示できません',
+    historyEmptyFiltered: '期限切れの履歴は非表示です',
+    historyNoOriginal: '（原文なし）',
+    historyNoTranslation: '（翻訳なし）',
     preset: 'プリセット:',
     presetFast: '速い',
     presetBalanced: 'バランス',
@@ -47,6 +55,7 @@ const STRINGS = {
     upgrading: '処理中...',
     billingSuccess: 'アップグレード完了！',
     billingPending: 'プラン反映中...',
+    billingSyncDelayed: '反映に時間がかかっています。しばらくして再読込してください。',
     billingCancelled: 'キャンセルしました',
     billingError: 'エラーが発生しました',
     alreadyPro: 'Proプラン利用中',
@@ -98,6 +107,14 @@ const STRINGS = {
     close: 'Close',
     transcriptLog: 'Transcript',
     translationLog: 'Translation',
+    historyCreatedLabel: 'Created: ',
+    historyLangLabel: 'Languages: ',
+    historyDurationLabel: 'Duration: ',
+    historyUtterancesLabel: 'Utterances: ',
+    historyExpired: 'This entry has expired and cannot be displayed.',
+    historyEmptyFiltered: 'Expired history entries are hidden.',
+    historyNoOriginal: '(no original)',
+    historyNoTranslation: '(no translation)',
     preset: 'Preset:',
     presetFast: 'Fast',
     presetBalanced: 'Balanced',
@@ -133,6 +150,7 @@ const STRINGS = {
     upgrading: 'Processing...',
     billingSuccess: 'Upgrade complete!',
     billingPending: 'Applying plan...',
+    billingSyncDelayed: 'Sync is taking longer. Please reload in a moment.',
     billingCancelled: 'Cancelled',
     billingError: 'An error occurred',
     alreadyPro: 'Pro plan active',
@@ -184,6 +202,30 @@ const STRINGS = {
     close: '关闭',
     transcriptLog: '原文日志',
     translationLog: '翻译日志',
+    // 拼音: Chuàngjiàn shíjiān：
+    // 日本語訳: 作成日時:
+    historyCreatedLabel: '创建时间：',
+    // 拼音: Yǔyán：
+    // 日本語訳: 言語:
+    historyLangLabel: '语言：',
+    // 拼音: Shícháng：
+    // 日本語訳: 所要:
+    historyDurationLabel: '时长：',
+    // 拼音: Fāhuà shù：
+    // 日本語訳: 発話数:
+    historyUtterancesLabel: '发话数：',
+    // 拼音: Lìshǐ yǐ guòqí, wúfǎ xiǎnshì.
+    // 日本語訳: 期限切れのため表示できません。
+    historyExpired: '历史已过期，无法显示。',
+    // 拼音: Guòqí jìlù yǐ yǐncáng.
+    // 日本語訳: 期限切れの履歴は非表示です。
+    historyEmptyFiltered: '过期记录已隐藏。',
+    // 拼音: （Wú yuánwén）
+    // 日本語訳: （原文なし）
+    historyNoOriginal: '（无原文）',
+    // 拼音: （Wú fānyì）
+    // 日本語訳: （翻訳なし）
+    historyNoTranslation: '（无翻译）',
     preset: '预设:',
     presetFast: '快速',
     presetBalanced: '平衡',
@@ -219,6 +261,9 @@ const STRINGS = {
     upgrading: '处理中...',
     billingSuccess: '升级完成！',
     billingPending: '正在应用计划...',
+    // 拼音: Tóngbù xūyào yìxiē shíjiān. Qǐng shāohòu shuāxīn.
+    // 日本語訳: 反映に時間がかかっています。しばらくして再読込してください。
+    billingSyncDelayed: '同步需要一些时间。请稍后刷新。',
     billingCancelled: '已取消',
     billingError: '发生错误',
     alreadyPro: 'Pro计划使用中',
@@ -747,6 +792,9 @@ const cacheElements = () => {
     historyDetailTitle: document.getElementById('historyDetailTitle'),
     historyDetailContent: document.getElementById('historyDetailContent'),
   };
+  if (els.historyListEmpty && !state.historyEmptyDefault) {
+    state.historyEmptyDefault = els.historyListEmpty.textContent || '';
+  }
 };
 
 const state = {
@@ -777,6 +825,9 @@ const state = {
   jobActive: false, // ジョブが有効（予約済み〜完了前）かどうか
   startInFlight: false, // Start処理がin-flight中かどうか（二重発火防止）
   uiBound: false, // UIイベントハンドラが登録済みか（二重登録防止）
+  historyListBound: false, // 履歴一覧クリックハンドラの二重登録防止
+  historyEmptyDefault: '',
+  serverTimeOffsetMs: null, // サーバ時刻との差分（ms）
   // スロットル/クールダウン管理
   lastJobCreateAt: 0, // 最後にjobs/createを呼んだ時刻（Date.now()）
   cooldownUntil: 0, // クールダウン終了時刻（Date.now()）
@@ -1652,9 +1703,36 @@ const setError = (text) => {
 
 const numberOrNull = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
+const parseServerTimeMs = (serverTime) => {
+  if (!serverTime) return null;
+  const ms = Date.parse(serverTime);
+  return Number.isFinite(ms) ? ms : null;
+};
+
+const updateServerTimeOffset = (serverTime) => {
+  const serverMs = parseServerTimeMs(serverTime);
+  if (serverMs == null) return;
+  state.serverTimeOffsetMs = serverMs - Date.now();
+};
+
+const getServerNowMs = () => {
+  if (typeof state.serverTimeOffsetMs !== 'number' || !Number.isFinite(state.serverTimeOffsetMs)) {
+    return null;
+  }
+  return Date.now() + state.serverTimeOffsetMs;
+};
+
 const formatMinutes = (seconds) => {
   if (typeof seconds !== 'number' || Number.isNaN(seconds)) return '–';
   return Math.max(0, Math.floor(seconds / 60));
+};
+
+const formatDuration = (seconds) => {
+  if (typeof seconds !== 'number' || Number.isNaN(seconds)) return '–';
+  const total = Math.max(0, Math.round(seconds));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
 };
 
 const updateQuotaInfo = () => {
@@ -2477,6 +2555,30 @@ const pollForPlanUpdate = async (maxAttempts = 12, intervalMs = 5000) => {
   return false;
 };
 
+const pollForQuotaUpdate = async (maxAttempts = 5, intervalMs = 5000) => {
+  const initialPlan = state.quota.plan;
+  const initialCredit = typeof state.quota.creditSeconds === 'number' ? state.quota.creditSeconds : null;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const data = await refreshQuotaStatus();
+    if (data) {
+      const nextPlan = data.plan || state.quota.plan;
+      const nextCredit = typeof data.creditSeconds === 'number' ? data.creditSeconds : null;
+      const planChanged = initialPlan && nextPlan && nextPlan !== initialPlan;
+      const creditIncreased =
+        typeof initialCredit === 'number' && typeof nextCredit === 'number' && nextCredit > initialCredit;
+      const creditNowAvailable = initialCredit == null && typeof nextCredit === 'number' && nextCredit > 0;
+      if (planChanged || creditIncreased || creditNowAvailable) {
+        return true;
+      }
+    }
+    if (i < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+  return false;
+};
+
 // ========== Dictionary View (Hash Route #/dictionary) ==========
 const showDictionaryView = () => {
   if (els.dictionaryView && els.appShell) {
@@ -2518,6 +2620,37 @@ const navigateBackFromDictionary = () => {
   }
 };
 
+const clearElement = (el) => {
+  if (!el) return;
+  while (el.firstChild) {
+    el.removeChild(el.firstChild);
+  }
+};
+
+const getRetentionDays = () => (state.quota?.plan === 'pro' ? 30 : 7);
+
+const getSessionTimestampInfo = (session) => {
+  if (!session) return null;
+  if (typeof session.serverTimestampMs === 'number' && Number.isFinite(session.serverTimestampMs)) {
+    return { ts: session.serverTimestampMs, confidence: 'high' };
+  }
+  if (typeof session.timestamp === 'number' && Number.isFinite(session.timestamp)) {
+    return { ts: session.timestamp, confidence: 'low' };
+  }
+  return null;
+};
+
+const isSessionExpired = (session) => {
+  const nowMs = getServerNowMs();
+  if (!nowMs) return false;
+  const tsInfo = getSessionTimestampInfo(session);
+  if (!tsInfo) return false;
+  // クライアント時刻のみの場合は誤判定を避けるため表示側に倒す
+  if (tsInfo.confidence !== 'high') return false;
+  const retentionMs = getRetentionDays() * 24 * 60 * 60 * 1000;
+  return nowMs - tsInfo.ts >= retentionMs;
+};
+
 // ========== History View Navigation ==========
 const navigateToHistory = () => {
   window.location.hash = '#/history';
@@ -2530,6 +2663,36 @@ const navigateBackFromHistory = () => {
 
 const navigateBackFromHistoryDetail = () => {
   window.location.hash = '#/history';
+};
+
+const buildHistoryMetaText = (session) => {
+  const parts = [];
+  if (session?.timestamp != null) {
+    parts.push(`${t('historyCreatedLabel')}${formatTimestamp(session.timestamp)}`);
+  }
+  const inputLang = session?.inputLang || 'auto';
+  const outputLang = session?.outputLang || 'ja';
+  parts.push(`${t('historyLangLabel')}${inputLang} → ${outputLang}`);
+  const durationText = formatDuration(session?.durationSeconds);
+  if (durationText !== '–') {
+    parts.push(`${t('historyDurationLabel')}${durationText}`);
+  }
+  const utterances = Array.isArray(session?.originals) ? session.originals.length : 0;
+  parts.push(`${t('historyUtterancesLabel')}${utterances}`);
+  return parts.join(' • ');
+};
+
+const handleHistoryListClick = (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (!id) return;
+
+  if (btn.classList.contains('hist-detail-btn')) {
+    window.location.hash = `#/history/${id}`;
+  } else if (btn.classList.contains('hist-delete-btn')) {
+    deleteHistoryEntry(id);
+  }
 };
 
 const showHistoryView = async () => {
@@ -2554,44 +2717,67 @@ const loadHistoryList = async () => {
 
   try {
     const sessions = await historyStorage.getAll();
+    const visibleSessions = sessions.filter((session) => !isSessionExpired(session));
 
     els.historyListLoading.style.display = 'none';
 
     if (sessions.length === 0) {
+      if (state.historyEmptyDefault) {
+        els.historyListEmpty.textContent = state.historyEmptyDefault;
+      }
       els.historyListEmpty.style.display = 'block';
       return;
     }
 
-    els.historyList.innerHTML = '';
-    sessions.forEach((session) => {
+    if (visibleSessions.length === 0) {
+      els.historyListEmpty.textContent = t('historyEmptyFiltered');
+      els.historyListEmpty.style.display = 'block';
+      return;
+    }
+
+    clearElement(els.historyList);
+    visibleSessions.forEach((session) => {
       const item = document.createElement('div');
       item.className = 'history-item';
-      item.innerHTML = `
-        <div class="history-item-info">
-          <div class="history-item-title">${escapeHtml(session.title || 'Untitled')}</div>
-          <div class="history-item-meta">${formatTimestamp(session.timestamp)} • ${(session.originals || []).length} 発話</div>
-        </div>
-        <div class="history-item-actions">
-          <button class="secondary small hist-detail-btn" data-id="${session.id}">詳細</button>
-          <button class="secondary small danger hist-delete-btn" data-id="${session.id}">削除</button>
-        </div>
-      `;
+      const info = document.createElement('div');
+      info.className = 'history-item-info';
+
+      const title = document.createElement('div');
+      title.className = 'history-item-title';
+      title.textContent = session.title || 'Untitled';
+
+      const meta = document.createElement('div');
+      meta.className = 'history-item-meta';
+      meta.textContent = buildHistoryMetaText(session);
+
+      info.appendChild(title);
+      info.appendChild(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'history-item-actions';
+
+      const detailBtn = document.createElement('button');
+      detailBtn.className = 'secondary small hist-detail-btn';
+      detailBtn.dataset.id = session.id;
+      detailBtn.textContent = '詳細';
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'secondary small danger hist-delete-btn';
+      deleteBtn.dataset.id = session.id;
+      deleteBtn.textContent = '削除';
+
+      actions.appendChild(detailBtn);
+      actions.appendChild(deleteBtn);
+
+      item.appendChild(info);
+      item.appendChild(actions);
       els.historyList.appendChild(item);
     });
 
-    // Event delegation for history list
-    els.historyList.onclick = (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      const id = btn.dataset.id;
-      if (!id) return;
-
-      if (btn.classList.contains('hist-detail-btn')) {
-        window.location.hash = `#/history/${id}`;
-      } else if (btn.classList.contains('hist-delete-btn')) {
-        deleteHistoryEntry(id);
-      }
-    };
+    if (!state.historyListBound) {
+      els.historyList.addEventListener('click', handleHistoryListClick);
+      state.historyListBound = true;
+    }
 
     els.historyList.style.display = 'flex';
   } catch (err) {
@@ -2622,7 +2808,24 @@ const showHistoryDetailView = async (sessionId) => {
   try {
     const session = await historyStorage.get(sessionId);
     if (!session) {
-      els.historyDetailContent.innerHTML = '<p>セッションが見つかりません</p>';
+      if (els.historyDetailTitle) {
+        els.historyDetailTitle.textContent = 'セッション詳細';
+      }
+      clearElement(els.historyDetailContent);
+      const notFound = document.createElement('p');
+      notFound.textContent = 'セッションが見つかりません';
+      els.historyDetailContent.appendChild(notFound);
+      return;
+    }
+
+    if (isSessionExpired(session)) {
+      if (els.historyDetailTitle) {
+        els.historyDetailTitle.textContent = 'セッション詳細';
+      }
+      clearElement(els.historyDetailContent);
+      const expired = document.createElement('p');
+      expired.textContent = t('historyExpired');
+      els.historyDetailContent.appendChild(expired);
       return;
     }
 
@@ -2636,42 +2839,60 @@ const showHistoryDetailView = async (sessionId) => {
       .map((orig, idx) => `${orig}\n${(session.translations || [])[idx] || ''}`)
       .join('\n\n');
 
-    els.historyDetailContent.innerHTML = `
-      <div class="history-detail-section">
-        <h4>情報</h4>
-        <div class="history-detail-text">
-          日時: ${formatTimestamp(session.timestamp)}<br>
-          入力言語: ${session.inputLang || 'auto'}<br>
-          出力言語: ${session.outputLang || 'ja'}<br>
-          発話数: ${(session.originals || []).length}
-        </div>
-      </div>
-      ${originals ? `
-      <div class="history-detail-section">
-        <h4>原文</h4>
-        <div class="history-detail-text">${escapeHtml(originals)}</div>
-      </div>
-      ` : ''}
-      ${translations ? `
-      <div class="history-detail-section">
-        <h4>翻訳</h4>
-        <div class="history-detail-text">${escapeHtml(translations)}</div>
-      </div>
-      ` : ''}
-      ${session.summary ? `
-      <div class="history-detail-section">
-        <h4>要約</h4>
-        <div class="history-detail-text">${escapeHtml(session.summary)}</div>
-      </div>
-      ` : ''}
-      <div class="history-detail-section">
-        <h4>ダウンロード</h4>
-        <div class="history-detail-downloads" id="historyDetailDownloads"></div>
-      </div>
-    `;
+    clearElement(els.historyDetailContent);
+
+    const appendSection = (titleText, bodyEl) => {
+      const section = document.createElement('div');
+      section.className = 'history-detail-section';
+      const heading = document.createElement('h4');
+      heading.textContent = titleText;
+      section.appendChild(heading);
+      if (bodyEl) section.appendChild(bodyEl);
+      els.historyDetailContent.appendChild(section);
+    };
+
+    const infoText = document.createElement('div');
+    infoText.className = 'history-detail-text';
+    const durationText = formatDuration(session.durationSeconds);
+    const utterances = Array.isArray(session.originals) ? session.originals.length : 0;
+    infoText.textContent = [
+      `${t('historyCreatedLabel')}${formatTimestamp(session.timestamp)}`,
+      `${t('inputLangLabel')}: ${session.inputLang || 'auto'}`,
+      `${t('outputLangLabel')}: ${session.outputLang || 'ja'}`,
+      `${t('historyDurationLabel')}${durationText}`,
+      `${t('historyUtterancesLabel')}${utterances}`,
+    ].join('\n');
+    appendSection('情報', infoText);
+
+    const originalText = document.createElement('div');
+    originalText.className = 'history-detail-text';
+    originalText.textContent = originals ? originals : t('historyNoOriginal');
+    appendSection('原文', originalText);
+
+    const translationText = document.createElement('div');
+    translationText.className = 'history-detail-text';
+    translationText.textContent = translations ? translations : t('historyNoTranslation');
+    appendSection('翻訳', translationText);
+
+    if (session.summary) {
+      const summaryText = document.createElement('div');
+      summaryText.className = 'history-detail-text';
+      summaryText.textContent = session.summary;
+      appendSection('要約', summaryText);
+    }
+
+    const downloadSection = document.createElement('div');
+    downloadSection.className = 'history-detail-section';
+    const downloadHeading = document.createElement('h4');
+    downloadHeading.textContent = 'ダウンロード';
+    const downloadContainer = document.createElement('div');
+    downloadContainer.className = 'history-detail-downloads';
+    downloadContainer.id = 'historyDetailDownloads';
+    downloadSection.appendChild(downloadHeading);
+    downloadSection.appendChild(downloadContainer);
+    els.historyDetailContent.appendChild(downloadSection);
 
     // Add download buttons
-    const downloadContainer = document.getElementById('historyDetailDownloads');
     if (downloadContainer) {
       const files = [];
       const tsFilename = formatTimestampForFilename(session.timestamp);
@@ -2705,7 +2926,10 @@ const showHistoryDetailView = async (sessionId) => {
       });
     }
   } catch (err) {
-    els.historyDetailContent.innerHTML = `<p>エラー: ${escapeHtml(err.message)}</p>`;
+    clearElement(els.historyDetailContent);
+    const errorMsg = document.createElement('p');
+    errorMsg.textContent = `エラー: ${err.message}`;
+    els.historyDetailContent.appendChild(errorMsg);
     addDiagLog(`History detail error: ${err.message}`);
   }
 };
@@ -2775,6 +2999,8 @@ const handleHashRoute = async () => {
     if (upgraded) {
       showBillingBanner('success');
       addDiagLog('Billing: Plan upgraded to Pro');
+      await refreshQuotaStatus();
+      refreshBillingStatus();
     } else {
       showBillingBanner('pending-timeout');
       addDiagLog('Billing: Polling timeout, plan not yet updated');
@@ -2789,13 +3015,10 @@ const handleHashRoute = async () => {
     // Ticket purchase success - refresh quota to show new balance
     showBillingBanner('ticket-success');
     addDiagLog('Tickets: Purchase successful');
-    // Refresh quota to show updated ticket balance
-    if (typeof refreshQuotaAndPlan === 'function') {
-      refreshQuotaAndPlan();
-    } else if (typeof refreshQuotaStatus === 'function') {
-      refreshQuotaStatus();
-    } else {
-      addDiagLog('refreshQuota* function not found');
+    const updated = await pollForQuotaUpdate();
+    if (!updated) {
+      showBillingBanner('pending-timeout');
+      addDiagLog('Tickets: Polling timeout, quota not yet updated');
     }
     history.replaceState(null, '', window.location.pathname);
   } else if (hash === '#/tickets/cancel') {
@@ -2829,7 +3052,7 @@ const showBillingBanner = (status) => {
       showClose = false;
       break;
     case 'pending-timeout':
-      message = t('billingPending') + ' (確認中...)';
+      message = t('billingSyncDelayed');
       banner.classList.add('pending');
       break;
     case 'cancelled':
@@ -2845,10 +3068,16 @@ const showBillingBanner = (status) => {
       message = status;
   }
 
-  banner.innerHTML = `
-    <span>${message}</span>
-    ${showClose ? '<button onclick="this.parentElement.remove()">✕</button>' : ''}
-  `;
+  const messageEl = document.createElement('span');
+  messageEl.textContent = message;
+  banner.appendChild(messageEl);
+
+  if (showClose) {
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', () => banner.remove());
+    banner.appendChild(closeBtn);
+  }
 
   document.body.prepend(banner);
 
@@ -2982,6 +3211,7 @@ const tryFinalizePendingJob = async () => {
 };
 
 const applyQuotaFromPayload = (payload = {}) => {
+  updateServerTimeOffset(payload.serverTime);
   const next = {
     plan: payload.plan || state.quota.plan || 'free',
     baseRemainingThisMonth: numberOrNull(payload.baseRemainingThisMonth),
@@ -3006,6 +3236,7 @@ const resetQuotaState = () => {
   state.quota = createDefaultQuotaState();
   state.currentJob = null;
   state.jobStartedAt = null;
+  state.serverTimeOffsetMs = null;
   updateQuotaInfo();
   updateQuotaBreakdown();
   updateDevStatusSummary();
@@ -4200,6 +4431,8 @@ const stop = async () => {
     summary: '',
     audioUrl: null,
     m4aUrl: null,
+    durationSeconds: null,
+    serverTimestampMs: null,
     inputLang: state.inputLang,
     outputLang: state.outputLang,
   };
@@ -4221,12 +4454,28 @@ const stop = async () => {
     }
   }
 
+  let completionData = null;
+  let elapsedSeconds = null;
+
   // jobActiveがtrueの場合のみジョブを完了させる
   if (state.jobActive) {
-    const elapsedSeconds = getJobElapsedSeconds();
-    await completeCurrentJob(elapsedSeconds);
+    elapsedSeconds = getJobElapsedSeconds();
+    completionData = await completeCurrentJob(elapsedSeconds);
   } else {
     addDiagLog('Stop: no active job to complete');
+  }
+
+  if (completionData && typeof completionData.actualSeconds === 'number') {
+    state.currentSessionResult.durationSeconds = completionData.actualSeconds;
+  } else if (typeof elapsedSeconds === 'number') {
+    state.currentSessionResult.durationSeconds = elapsedSeconds;
+  }
+
+  if (completionData?.serverTime) {
+    const serverMs = parseServerTimeMs(completionData.serverTime);
+    if (serverMs != null) {
+      state.currentSessionResult.serverTimestampMs = serverMs;
+    }
   }
 
   // Generate title from text (try LLM, fallback to simple extraction)

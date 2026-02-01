@@ -1319,6 +1319,8 @@ async def complete_job(request: Request) -> JSONResponse:
             transaction, db, job_ref, uid, audio_seconds, current_jst, now_utc
         )
 
+    result["serverTime"] = now_utc.isoformat()
+
     log_payload = {
         "uid": uid,
         "jobId": job_id,
@@ -1366,6 +1368,7 @@ async def get_me(request: Request) -> JSONResponse:
     uid = get_uid_from_request(request)
     db = get_firestore_client()
     current_jst = now_jst()
+    now_utc = datetime.now(timezone.utc)
     _, user_state, plan, plan_config = read_user_state(db, uid, current_jst)
     snapshot = build_quota_snapshot(user_state, plan_config)
 
@@ -1395,6 +1398,7 @@ async def get_me(request: Request) -> JSONResponse:
         "monthKey": user_state.get("monthKey"),
         "dayKey": user_state.get("dayKey"),
         "nextResetAt": next_reset.isoformat(),
+        "serverTime": now_utc.isoformat(),
     }
 
     if blocked_reason:
