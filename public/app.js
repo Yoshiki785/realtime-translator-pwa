@@ -1731,9 +1731,10 @@ const getServerNowMs = () => {
   return Date.now() + state.serverTimeOffsetMs;
 };
 
+// UI表示専用: 常に文字列を返す（数値 or '–'）
 const formatMinutes = (seconds) => {
   if (typeof seconds !== 'number' || Number.isNaN(seconds)) return '–';
-  return Math.max(0, Math.floor(seconds / 60));
+  return String(Math.max(0, Math.floor(seconds / 60)));
 };
 
 const formatDuration = (seconds) => {
@@ -1789,7 +1790,7 @@ const updateQuotaBreakdown = () => {
   els.quotaBreakdown.innerHTML = '';
 
   const planLabel = q.plan === 'pro' ? 'Pro' : 'Free';
-  const dayMin = formatMinutes(q.dailyRemainingSeconds);
+  const dayMin = q.plan === 'free' ? formatMinutes(q.dailyRemainingSeconds) : null;
   const jobUsed = q.dayJobUsed ?? 0;
   const jobLimit = q.dayJobLimit ?? '∞';
   const monthlyMin = formatMinutes(q.baseRemainingThisMonth);
