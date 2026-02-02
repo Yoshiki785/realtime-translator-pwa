@@ -65,13 +65,14 @@ JST = ZoneInfo("Asia/Tokyo")
 
 PLANS = {
     "free": {
-        "quotaSeconds": 1800,
+        "quotaSeconds": 1200,  # 20分/月
         "retentionDays": 7,
-        "baseMonthlyQuotaSeconds": 1800,
-        "baseDailyQuotaSeconds": 600,
-        "maxSessionSeconds": 600,
+        "baseMonthlyQuotaSeconds": 1200,  # 20分/月
+        "baseDailyQuotaSeconds": 600,  # 10分/日
+        "maxSessionSeconds": 600,  # 10分/セッション
         "maxConcurrentJobs": 1,
         "createRateLimitPerMin": 6,
+        "dailyJobLimit": 10,  # 10ジョブ/日
     },
     "pro": {
         "quotaSeconds": 7200,
@@ -81,6 +82,7 @@ PLANS = {
         "maxSessionSeconds": 7200,
         "maxConcurrentJobs": 1,
         "createRateLimitPerMin": 12,
+        "dailyJobLimit": None,  # 無制限
     },
 }
 
@@ -469,13 +471,20 @@ def normalize_user_usage_data(
     if state.get("dayKey") != today:
         updates["dayKey"] = today
         updates["usedSecondsToday"] = 0
+        updates["jobCountToday"] = 0  # 日次ジョブカウントもリセット
         state["dayKey"] = today
         state["usedSecondsToday"] = 0
+        state["jobCountToday"] = 0
     else:
         used_today = max(0, safe_int(state.get("usedSecondsToday"), 0))
         if state.get("usedSecondsToday") != used_today:
             updates["usedSecondsToday"] = used_today
         state["usedSecondsToday"] = used_today
+        # jobCountToday の正規化
+        job_count = max(0, safe_int(state.get("jobCountToday"), 0))
+        if state.get("jobCountToday") != job_count:
+            updates["jobCountToday"] = job_count
+        state["jobCountToday"] = job_count
 
     month = month_key(current_jst)
     if state.get("monthKey") != month:
@@ -612,11 +621,8 @@ def _create_job_core(
 
         if total_available <= 0:
             raise HTTPException(
-                status_code=402,
-                detail={
-                    "error": "no_remaining_minutes",
-                    "message": "No remaining minutes (monthly base + tickets exhausted)",
-                },
+                status_code=429,
+                detail="monthly_quota_exhausted",
             )
 
         daily_cap = plan_config.get("baseDailyQuotaSeconds")
@@ -624,10 +630,16 @@ def _create_job_core(
         if daily_cap is not None and (daily_remaining is None or daily_remaining <= 0):
             raise HTTPException(
                 status_code=429,
-                detail={
-                    "error": "daily_limit_reached",
-                    "message": "Daily limit reached (10 min/day)",
-                },
+                detail="daily_limit_reached",
+            )
+
+        # 日次ジョブ数制限チェック
+        daily_job_limit = plan_config.get("dailyJobLimit")
+        job_count_today = user_state.get("jobCountToday", 0)
+        if daily_job_limit is not None and job_count_today >= daily_job_limit:
+            raise HTTPException(
+                status_code=429,
+                detail="daily_job_limit_reached",
             )
 
         minute_key = current_jst.strftime("%Y-%m-%dT%H:%M")
@@ -640,10 +652,7 @@ def _create_job_core(
         if create_limit and create_count >= create_limit:
             raise HTTPException(
                 status_code=429,
-                detail={
-                    "error": "rate_limited",
-                    "message": "Too many job requests this minute",
-                },
+                detail="rate_limited",
             )
 
         max_session = plan_config.get("maxSessionSeconds", 600)
@@ -690,8 +699,8 @@ def _create_job_core(
     reserved_seconds = max(0, int(reserved_seconds))
     if reserved_seconds <= 0:
         raise HTTPException(
-            status_code=402,
-            detail={"error": "no_reservable_minutes", "message": "No minutes available for reservation"},
+            status_code=429,
+            detail="monthly_quota_exhausted",
         )
 
     retention_days = plan_config.get("retentionDays", 7)
@@ -709,6 +718,7 @@ def _create_job_core(
         "activeJobStartedAt": firebase_firestore.SERVER_TIMESTAMP,
         "jobCreateMinuteKey": stored_minute,
         "jobCreateCount": create_count,
+        "jobCountToday": firebase_firestore.Increment(1),  # アトミックにインクリメント
     }
     apply_user_updates(user_ref, user_updates, transaction)
 
@@ -1379,37 +1389,80 @@ async def get_me(request: Request) -> JSONResponse:
     blocked_reason = None
     total_available = snapshot["totalAvailableThisMonth"]
     daily_remaining = snapshot["dailyRemainingSeconds"]
+    daily_job_limit = plan_config.get("dailyJobLimit")
+    job_count_today = user_state.get("jobCountToday", 0)
+
     if total_available <= 0:
         blocked_reason = "monthly_quota_exhausted"
     elif plan == "free" and daily_remaining is not None and daily_remaining <= 0:
         blocked_reason = "daily_limit_reached"
+    elif daily_job_limit is not None and job_count_today >= daily_job_limit:
+        blocked_reason = "daily_job_limit_reached"
+
+    # 日次ジョブ残り計算
+    day_job_remaining = None
+    if daily_job_limit is not None:
+        day_job_remaining = max(0, daily_job_limit - job_count_today)
+
+    # 分単位変換ヘルパー
+    def to_min(seconds):
+        return seconds // 60 if seconds is not None else None
 
     response = {
         "uid": uid,
         "plan": plan,
+        "serverTime": now_utc.isoformat(),
+
+        # 月次 (秒単位 + 分単位)
         "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
         "usedBaseSecondsThisMonth": snapshot["usedBaseSecondsThisMonth"],
         "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
+        "monthLimitMin": to_min(snapshot["baseMonthlyQuotaSeconds"]),
+        "monthUsedMin": to_min(snapshot["usedBaseSecondsThisMonth"]),
+        "monthRemainingMin": to_min(snapshot["baseRemainingThisMonth"]),
+
+        # チケット/合計
         "ticketSecondsBalance": snapshot["ticketSecondsBalance"],
-        "creditSeconds": snapshot["ticketSecondsBalance"],  # フロント互換性のため追加
+        "creditSeconds": snapshot["ticketSecondsBalance"],  # フロント互換性
         "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
+
+        # 日次ジョブ数
+        "dayJobLimit": daily_job_limit,
+        "dayJobUsed": job_count_today,
+        "dayJobRemaining": day_job_remaining,
+
+        # 同時接続
+        "concurrentLimit": plan_config.get("maxConcurrentJobs", 1),
+        "concurrentActive": 1 if user_state.get("activeJobId") else 0,
+
+        # セッション/保持
         "maxSessionSeconds": plan_config.get("maxSessionSeconds"),
+        "retentionDays": plan_config.get("retentionDays", 7),
+
+        # 状態
         "activeJob": bool(user_state.get("activeJobId")),
         "monthKey": user_state.get("monthKey"),
         "dayKey": user_state.get("dayKey"),
         "nextResetAt": next_reset.isoformat(),
-        "serverTime": now_utc.isoformat(),
+
+        # Billing
+        "billingEnabled": True,
+        "purchaseAvailable": True,
     }
 
     if blocked_reason:
         response["blockedReason"] = blocked_reason
 
+    # 日次制限がある場合（freeプラン）
     if snapshot["baseDailyQuotaSeconds"] is not None:
         response.update(
             {
                 "baseDailyQuotaSeconds": snapshot["baseDailyQuotaSeconds"],
                 "usedSecondsToday": snapshot["usedSecondsToday"],
                 "dailyRemainingSeconds": snapshot["dailyRemainingSeconds"],
+                "dayLimitMin": to_min(snapshot["baseDailyQuotaSeconds"]),
+                "dayUsedMin": to_min(snapshot["usedSecondsToday"]),
+                "dayRemainingMin": to_min(snapshot["dailyRemainingSeconds"]),
             }
         )
 

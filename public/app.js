@@ -425,6 +425,15 @@ const createDefaultQuotaState = () => ({
   maxSessionSeconds: null,
   nextResetAt: null,
   blockedReason: null,
+  // 新規フィールド
+  dayJobLimit: null,
+  dayJobUsed: 0,
+  dayJobRemaining: null,
+  retentionDays: 7,
+  concurrentLimit: 1,
+  concurrentActive: 0,
+  billingEnabled: true,
+  purchaseAvailable: true,
   loaded: false,
 });
 
@@ -1747,7 +1756,11 @@ const updateQuotaInfo = () => {
       : '–分';
   if (state.quota.plan === 'free' && typeof state.quota.dailyRemainingSeconds === 'number') {
     const dailyText = `${formatMinutes(state.quota.dailyRemainingSeconds)}分`;
-    els.quotaInfo.textContent = `本日: ${dailyText} / 今月: ${totalText}`;
+    // ジョブ数表示を追加
+    const jobUsed = state.quota.dayJobUsed ?? 0;
+    const jobLimit = state.quota.dayJobLimit ?? 10;
+    const jobText = `ジョブ: ${jobUsed}/${jobLimit}回`;
+    els.quotaInfo.textContent = `本日: ${dailyText} ${jobText} / 今月: ${totalText}`;
   } else {
     els.quotaInfo.textContent = `残り: ${totalText}`;
   }
@@ -1771,18 +1784,43 @@ const updateQuotaBreakdown = () => {
     updateBillingSection(false);
     return;
   }
+
+  // XSS安全: createElement + textContent で構築
+  els.quotaBreakdown.innerHTML = '';
+
   const planLabel = q.plan === 'pro' ? 'Pro' : 'Free';
+  const dayMin = formatMinutes(q.dailyRemainingSeconds);
+  const jobUsed = q.dayJobUsed ?? 0;
+  const jobLimit = q.dayJobLimit ?? '∞';
   const monthlyMin = formatMinutes(q.baseRemainingThisMonth);
   const ticketMin = formatMinutes(q.creditSeconds);
   const totalMin = formatMinutes(q.totalAvailableThisMonth);
+  const retentionDays = q.retentionDays ?? 7;
   const nextReset = formatNextReset(q.nextResetAt);
-  els.quotaBreakdown.innerHTML = `
-    <div class="breakdown-row"><span>プラン:</span><span>${planLabel}</span></div>
-    <div class="breakdown-row"><span>月間残り:</span><span>${monthlyMin}分</span></div>
-    <div class="breakdown-row"><span>チケット残高:</span><span>${ticketMin}分</span></div>
-    <div class="breakdown-row total"><span>合計:</span><span>${totalMin}分</span></div>
-    <div class="breakdown-row reset"><span>次回リセット:</span><span>${nextReset}</span></div>
-  `;
+
+  const rows = [
+    ['プラン:', planLabel],
+    ['本日残り:', q.plan === 'free' ? `${dayMin}分` : '制限なし'],
+    ['今日のジョブ:', q.plan === 'free' ? `${jobUsed}/${jobLimit}回` : '制限なし'],
+    ['月間残り:', `${monthlyMin}分`],
+    ['チケット残高:', `${ticketMin}分`],
+    ['合計:', `${totalMin}分`, 'total'],
+    ['保持期間:', `${retentionDays}日`],
+    ['次回リセット:', nextReset, 'reset'],
+  ];
+
+  rows.forEach(([label, value, extraClass]) => {
+    const row = document.createElement('div');
+    row.className = 'breakdown-row' + (extraClass ? ` ${extraClass}` : '');
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = label;
+    const valueSpan = document.createElement('span');
+    valueSpan.textContent = value;
+    row.appendChild(labelSpan);
+    row.appendChild(valueSpan);
+    els.quotaBreakdown.appendChild(row);
+  });
+
   // Show billing section for logged-in users
   updateBillingSection(currentUser != null);
 };
@@ -3224,6 +3262,15 @@ const applyQuotaFromPayload = (payload = {}) => {
     ),
     nextResetAt: payload.nextResetAt || null,
     blockedReason: payload.blockedReason || null,
+    // 新規フィールド
+    dayJobLimit: payload.dayJobLimit ?? null,
+    dayJobUsed: payload.dayJobUsed ?? 0,
+    dayJobRemaining: payload.dayJobRemaining ?? null,
+    retentionDays: payload.retentionDays ?? 7,
+    concurrentLimit: payload.concurrentLimit ?? 1,
+    concurrentActive: payload.concurrentActive ?? 0,
+    billingEnabled: payload.billingEnabled ?? true,
+    purchaseAvailable: payload.purchaseAvailable ?? true,
     loaded: true,
   };
   state.quota = next;
@@ -3286,6 +3333,7 @@ const refreshQuotaStatus = async () => {
 const blockedReasonMessages = {
   monthly_quota_exhausted: '今月の利用可能時間が残っていません。',
   daily_limit_reached: 'Freeプランの本日の利用上限(10分)に達しました。',
+  daily_job_limit_reached: 'Freeプランの本日のジョブ作成上限(10回)に達しました。',
 };
 
 // ========== Connection Error Categories ==========
@@ -3547,8 +3595,20 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
     throw abortErr;
   }
 
-  // 429 Too Many Requests の処理
+  // 429 Too Many Requests の処理 (quota制限含む)
   if (res.status === 429) {
+    const errorCode = data?.detail || 'rate_limited';
+    addDiagLog(`429 | errorCode=${errorCode} | clientRequestId=${clientRequestId}`);
+
+    // quota関連のエラーはブロック理由メッセージを表示
+    if (blockedReasonMessages[errorCode]) {
+      const quotaErr = new Error(blockedReasonMessages[errorCode]);
+      quotaErr._isQuotaLimit = true;
+      quotaErr._errorCode = errorCode;
+      throw quotaErr;
+    }
+
+    // レート制限の場合はクールダウン処理
     const retryAfterHeader = res.headers.get('Retry-After');
     let waitMs = DEFAULT_RATE_LIMIT_WAIT_MS;
     if (retryAfterHeader) {
@@ -3557,9 +3617,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
         waitMs = retryAfterSec * 1000;
       }
     }
-    addDiagLog(`429 Too Many Requests | Retry-After=${retryAfterHeader || 'none'} | waitMs=${waitMs} | clientRequestId=${clientRequestId}`);
 
-    // 特別なエラーをthrowして、呼び出し元でクールダウン処理を行う
     const rateLimitErr = new Error('rate_limit');
     rateLimitErr._isRateLimit = true;
     rateLimitErr._waitMs = waitMs;
