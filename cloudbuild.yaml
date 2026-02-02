@@ -34,7 +34,7 @@ steps:
       - '--set-env-vars'
       - 'ENV=${_ENV}'
       - '--set-secrets'
-      - 'OPENAI_API_KEY=OPENAI_API_KEY:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,GOOGLE_APPLICATION_CREDENTIALS_JSON=GOOGLE_APPLICATION_CREDENTIALS_JSON:latest'
+      - 'OPENAI_API_KEY=OPENAI_API_KEY:latest,STRIPE_SECRET_KEY=STRIPE_SECRET_KEY:latest,STRIPE_WEBHOOK_SECRET=STRIPE_WEBHOOK_SECRET:latest,GOOGLE_APPLICATION_CREDENTIALS_JSON=GOOGLE_APPLICATION_CREDENTIALS_JSON:latest,STRIPE_PRO_PRICE_ID=STRIPE_PRO_PRICE_ID:latest,price_T120=price_T120:latest,price_T240=price_T240:latest,price_T360=price_T360:latest,price_T1200=price_T1200:latest,price_T1800=price_T1800:latest,price_T3000=price_T3000:latest'
       - '--max-instances'
       - '10'
       - '--min-instances'
