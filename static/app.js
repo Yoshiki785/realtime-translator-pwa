@@ -62,6 +62,9 @@ const STRINGS = {
     manageSubscription: 'サブスク管理',
     buyTicket: '追加購入',
     buyTicketProOnly: '追加購入（Pro限定）',
+    resyncQuota: '再同期',
+    resyncInProgress: '再同期中…',
+    resyncFailed: '再同期に失敗しました',
     proRequiredHint: 'Proプランのみ購入可能です。アップグレードしてください。',
     purchasing: '購入中...',
     ticketSuccess: 'チケット購入完了！',
@@ -157,6 +160,9 @@ const STRINGS = {
     manageSubscription: 'Manage Subscription',
     buyTicket: 'Buy Add-on',
     buyTicketProOnly: 'Buy Add-on (Pro only)',
+    resyncQuota: 'Resync',
+    resyncInProgress: 'Resyncing…',
+    resyncFailed: 'Resync failed',
     proRequiredHint: 'Available for Pro plans only. Please upgrade.',
     purchasing: 'Purchasing...',
     ticketSuccess: 'Ticket purchased!',
@@ -270,6 +276,9 @@ const STRINGS = {
     manageSubscription: '管理订阅',
     buyTicket: '追加购买',
     buyTicketProOnly: '追加购买（仅Pro）',
+    resyncQuota: '重新同步',
+    resyncInProgress: '同步中…',
+    resyncFailed: '重新同步失败',
     proRequiredHint: '仅限Pro计划购买，请升级。',
     purchasing: '购买中...',
     ticketSuccess: '购买成功！',
@@ -736,6 +745,7 @@ const cacheElements = () => {
     upgradeProBtn: document.getElementById('upgradeProBtn'),
     manageBillingBtn: document.getElementById('manageBillingBtn'),
     buyTicketBtn: document.getElementById('buyTicketBtn'),
+    resyncQuotaBtn: document.getElementById('resyncQuotaBtn'),
     billingStatus: document.getElementById('billingStatus'),
     // Ticket Modal
     ticketModal: document.getElementById('ticketModal'),
@@ -1870,6 +1880,12 @@ const updateBillingSection = (show) => {
         els.buyTicketBtn.disabled = true;
         els.buyTicketBtn.classList.add('disabled');
       }
+    }
+
+    // Resync button: visible for all logged-in users
+    if (els.resyncQuotaBtn) {
+      els.resyncQuotaBtn.style.display = '';
+      els.resyncQuotaBtn.textContent = t('resyncQuota');
     }
   }
 
@@ -3103,6 +3119,9 @@ const showBillingBanner = (status) => {
     case 'ticket-cancelled':
       message = t('ticketCancelled');
       break;
+    case 'error':
+      message = t('resyncFailed');
+      break;
     default:
       message = status;
   }
@@ -3328,6 +3347,27 @@ const refreshQuotaStatus = async () => {
   } catch (err) {
     addDiagLog(`Quota fetch failed: ${err.message || err}`);
     return null;
+  }
+};
+
+const resyncQuota = async () => {
+  const btn = els.resyncQuotaBtn;
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = t('resyncInProgress');
+  try {
+    const res = await authFetch('/api/v1/me', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    applyQuotaFromPayload(data);
+    showBillingBanner('success');
+    addDiagLog('[resync] quota refreshed');
+  } catch (err) {
+    addDiagLog(`[resync] error: ${err.message}`);
+    showBillingBanner('error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('resyncQuota');
   }
 };
 
@@ -5278,6 +5318,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Buy ticket button click handler - opens modal
   if (els.buyTicketBtn) {
     els.buyTicketBtn.addEventListener('click', openTicketModal);
+  }
+
+  // Resync quota button click handler
+  if (els.resyncQuotaBtn) {
+    els.resyncQuotaBtn.addEventListener('click', resyncQuota);
   }
 
   // Ticket modal close button
