@@ -19,7 +19,7 @@ BUILD_TIME=$(date +%Y%m%d%H%M%S)
 echo "Build timestamp: $BUILD_TIME"
 
 # Files to sync (simple copy)
-FILES=("app.js" "index.html" "styles.css")
+FILES=("app.js" "index.html" "styles.css" "privacy.html" "terms.html" "firebase-config.js" "manifest.json")
 
 # Files that need BUILD_TIME replacement
 FILES_WITH_BUILD_TIME=("sw.js")
@@ -37,6 +37,14 @@ copied=0
 for f in "${FILES[@]}"; do
   cp "static/$f" "public/$f"
   echo "  Copied: static/$f -> public/$f"
+  ((copied++))
+done
+
+# Copy binary assets (icons)
+for icon in static/icon-*.png; do
+  name=$(basename "$icon")
+  cp "$icon" "public/$name"
+  echo "  Copied: $icon -> public/$name"
   ((copied++))
 done
 

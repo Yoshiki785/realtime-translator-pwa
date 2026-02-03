@@ -15,7 +15,7 @@ echo "Checking static/ <-> public/ sync"
 echo "=========================================="
 
 # Files to check
-FILES=("app.js" "index.html")
+FILES=("app.js" "index.html" "styles.css" "privacy.html" "terms.html" "firebase-config.js" "manifest.json")
 
 drift_found=0
 
