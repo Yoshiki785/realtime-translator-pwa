@@ -1364,6 +1364,15 @@ button.disabled {
   gap: 8px;
   margin-top: 8px;
 }
+.footer-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+.footer-nav span {
+  color: var(--muted);
+  font-size: 13px;
+}
 
 /* ========== STT Settings Section ========== */
 .stt-settings-section {

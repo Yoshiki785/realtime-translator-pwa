@@ -101,6 +101,9 @@ const STRINGS = {
     networkDisconnected: '接続が切れました。テキストは保存されています。ネットワーク復帰後に再度 Start してください。',
     errorRateLimit: 'リクエスト制限中です。しばらく待ってから再試行してください。',
     errorServerError: 'サーバーエラーが発生しました。時間をおいて再試行してください。',
+    privacyPolicy: 'プライバシーポリシー',
+    termsOfService: '利用規約',
+    contact: 'お問い合わせ',
   },
   en: {
     login: 'Login',
@@ -200,6 +203,9 @@ const STRINGS = {
     networkDisconnected: 'Connection lost. Your text is saved. Please reconnect and press Start again.',
     errorRateLimit: 'Rate limited. Please wait and try again.',
     errorServerError: 'Server error. Please try again later.',
+    privacyPolicy: 'Privacy Policy',
+    termsOfService: 'Terms of Service',
+    contact: 'Contact',
   },
   'zh-Hans': {
     login: '登录',
@@ -321,6 +327,9 @@ const STRINGS = {
     errorRateLimit: '请求受限。请稍等后重试。',
     // 拼音: Fúwùqì cuòwù. Qǐng shāohòu chóngshì.
     errorServerError: '服务器错误。请稍后重试。',
+    privacyPolicy: '隐私政策',
+    termsOfService: '服务条款',
+    contact: '联系我们',
   },
 };
 
