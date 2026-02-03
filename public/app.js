@@ -65,6 +65,7 @@ const STRINGS = {
     resyncQuota: '再同期',
     resyncInProgress: '再同期中…',
     resyncFailed: '再同期に失敗しました',
+    resyncSuccess: 'クオータ情報を更新しました',
     proRequiredHint: 'Proプランのみ購入可能です。アップグレードしてください。',
     purchasing: '購入中...',
     ticketSuccess: 'チケット購入完了！',
@@ -163,6 +164,7 @@ const STRINGS = {
     resyncQuota: 'Resync',
     resyncInProgress: 'Resyncing…',
     resyncFailed: 'Resync failed',
+    resyncSuccess: 'Quota info updated',
     proRequiredHint: 'Available for Pro plans only. Please upgrade.',
     purchasing: 'Purchasing...',
     ticketSuccess: 'Ticket purchased!',
@@ -279,6 +281,7 @@ const STRINGS = {
     resyncQuota: '重新同步',
     resyncInProgress: '同步中…',
     resyncFailed: '重新同步失败',
+    resyncSuccess: '配额信息已更新',
     proRequiredHint: '仅限Pro计划购买，请升级。',
     purchasing: '购买中...',
     ticketSuccess: '购买成功！',
@@ -3005,6 +3008,18 @@ const hideHistoryDetailView = () => {
   }
 };
 
+// Delayed one-shot retry after purchase polling timeout (guarded against stacking)
+let _postPurchaseRetryTimer = null;
+const schedulePostPurchaseRetry = () => {
+  if (_postPurchaseRetryTimer) clearTimeout(_postPurchaseRetryTimer);
+  _postPurchaseRetryTimer = setTimeout(async () => {
+    _postPurchaseRetryTimer = null;
+    await refreshQuotaStatus();
+    refreshBillingStatus();
+    addDiagLog('[billing] post-purchase delayed retry completed');
+  }, 10000);
+};
+
 // Handle hash routes (#/dictionary, #/history, #/history/:id, #/billing/*, #/tickets/*)
 // ルーティング: #/ or '' => メイン, #/history => 履歴一覧, #/history/<id> => 履歴詳細
 const handleHashRoute = async () => {
@@ -3059,6 +3074,7 @@ const handleHashRoute = async () => {
     } else {
       showBillingBanner('pending-timeout');
       addDiagLog('Billing: Polling timeout, plan not yet updated');
+      schedulePostPurchaseRetry();
     }
     // Clean up hash
     history.replaceState(null, '', window.location.pathname);
@@ -3071,9 +3087,12 @@ const handleHashRoute = async () => {
     showBillingBanner('ticket-success');
     addDiagLog('Tickets: Purchase successful');
     const updated = await pollForQuotaUpdate();
-    if (!updated) {
+    if (updated) {
+      refreshBillingStatus();
+    } else {
       showBillingBanner('pending-timeout');
       addDiagLog('Tickets: Polling timeout, quota not yet updated');
+      schedulePostPurchaseRetry();
     }
     history.replaceState(null, '', window.location.pathname);
   } else if (hash === '#/tickets/cancel') {
@@ -3121,6 +3140,9 @@ const showBillingBanner = (status) => {
       break;
     case 'error':
       message = t('resyncFailed');
+      break;
+    case 'resync-success':
+      message = t('resyncSuccess');
       break;
     default:
       message = status;
@@ -3360,7 +3382,7 @@ const resyncQuota = async () => {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     applyQuotaFromPayload(data);
-    showBillingBanner('success');
+    showBillingBanner('resync-success');
     addDiagLog('[resync] quota refreshed');
   } catch (err) {
     addDiagLog(`[resync] error: ${err.message}`);
