@@ -105,6 +105,9 @@ const STRINGS = {
     termsOfService: '利用規約',
     contact: 'お問い合わせ',
     buildLabel: 'ビルド',
+    forceUpdate: '最新版を取得',
+    forceUpdateRunning: '更新中…',
+    forceUpdateFailed: '更新失敗',
   },
   en: {
     login: 'Login',
@@ -208,6 +211,9 @@ const STRINGS = {
     termsOfService: 'Terms of Service',
     contact: 'Contact',
     buildLabel: 'Build',
+    forceUpdate: 'Get Latest',
+    forceUpdateRunning: 'Updating…',
+    forceUpdateFailed: 'Update Failed',
   },
   'zh-Hans': {
     login: '登录',
@@ -333,6 +339,9 @@ const STRINGS = {
     termsOfService: '服务条款',
     contact: '联系我们',
     buildLabel: '构建',
+    forceUpdate: '获取最新版',
+    forceUpdateRunning: '更新中…',
+    forceUpdateFailed: '更新失败',
   },
 };
 
@@ -804,6 +813,7 @@ const cacheElements = () => {
     swUpdateBanner: document.getElementById('swUpdateBanner'),
     swUpdateBtn: document.getElementById('swUpdateBtn'),
     buildShaDisplay: document.getElementById('buildShaDisplay'),
+    forceUpdateBtn: document.getElementById('forceUpdateBtn'),
     // Result Card (after Stop)
     resultCard: document.getElementById('resultCard'),
     resultCardTitle: document.getElementById('resultCardTitle'),
@@ -4681,6 +4691,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Format YYYYMMDDHHMMSS to human-readable UTC string
+  function formatBuildTime(raw) {
+    if (!raw || raw.length < 14) return raw;
+    return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)} ${raw.slice(8, 10)}:${raw.slice(10, 12)}:${raw.slice(12, 14)} UTC`;
+  }
+
   // Fetch and display BUILD_SHA from /build.txt
   async function fetchBuildSha() {
     try {
@@ -4695,7 +4711,7 @@ document.addEventListener('DOMContentLoaded', () => {
       state.buildVersion = sha;
       if (els.buildShaDisplay) {
         const label = t('buildLabel');
-        els.buildShaDisplay.textContent = `${label}: ${sha}${time ? ' (' + time + ')' : ''}`;
+        els.buildShaDisplay.textContent = `${label}: ${sha}${time ? ' (' + formatBuildTime(time) + ')' : ''}`;
       }
     } catch (err) {
       console.warn('[BUILD] Failed to fetch build.txt:', err);
@@ -4958,8 +4974,44 @@ document.addEventListener('DOMContentLoaded', () => {
       } catch (err) {
         console.warn('[SETTINGS] fetchBuildSha failed:', err);
       }
+      if (els.forceUpdateBtn) {
+        els.forceUpdateBtn.disabled = false;
+        els.forceUpdateBtn.textContent = t('forceUpdate');
+      }
     });
   }
+
+  if (els.forceUpdateBtn) {
+    els.forceUpdateBtn.addEventListener('click', async () => {
+      els.forceUpdateBtn.disabled = true;
+      els.forceUpdateBtn.textContent = t('forceUpdateRunning');
+      try {
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) {
+            await reg.update();
+            if (reg.waiting) {
+              reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            }
+          }
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          const appKeys = keys.filter((k) => k.startsWith('rt-translator'));
+          await Promise.all(appKeys.map((k) => caches.delete(k)));
+        }
+        window.location.reload();
+      } catch (err) {
+        console.warn('[FORCE_UPDATE] failed:', err);
+        els.forceUpdateBtn.disabled = false;
+        els.forceUpdateBtn.textContent = t('forceUpdateFailed');
+        setTimeout(() => {
+          els.forceUpdateBtn.textContent = t('forceUpdate');
+        }, 3000);
+      }
+    });
+  }
+
   if (els.saveSettings) {
     els.saveSettings.addEventListener('click', (e) => {
       e.preventDefault();
@@ -5116,73 +5168,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize STT UI on page load
   initSttSettingsUI();
 
-  if (els.resetUserSettings) {
-    els.resetUserSettings.addEventListener('click', () => {
-      glossaryStorage.clear();
-      summaryPromptStorage.clear();
-      if (els.glossaryTextInput) els.glossaryTextInput.value = '';
-      if (els.summaryPromptInput) els.summaryPromptInput.value = '';
-      addDiagLog('User settings reset (glossary & summaryPrompt cleared)');
-    });
-  }
-
-  if (els.settingsBtn && els.settingsModal) {
-    els.settingsBtn.addEventListener('click', () => {
-      els.settingsModal.showModal();
-      // Load dictionary list when settings modal opens
-      if (currentUser) {
-        loadDictionaryList();
-      }
-      // Fetch latest BUILD_SHA when settings modal opens (non-critical)
-      try {
-        fetchBuildSha();
-      } catch (err) {
-        console.warn('[SETTINGS] fetchBuildSha failed:', err);
-      }
-    });
-  }
-  if (els.saveSettings) {
-    els.saveSettings.addEventListener('click', (e) => {
-      e.preventDefault();
-      state.maxChars = Number(els.maxChars?.value) || 300;
-      state.gapMs = Number(els.gapMs?.value) || 1000;
-      state.vadSilence = Number(els.vadSilence?.value) || 400;
-      state.uiLang = els.uiLang?.value || 'ja';
-      state.inputLang = els.inputLang?.value || 'auto';
-      state.outputLang = els.outputLang?.value || 'ja';
-      localStorage.setItem('maxChars', state.maxChars);
-      localStorage.setItem('gapMs', state.gapMs);
-      localStorage.setItem('vadSilence', state.vadSilence);
-      localStorage.setItem('uiLang', state.uiLang);
-      localStorage.setItem('inputLang', state.inputLang);
-      localStorage.setItem('outputLang', state.outputLang);
-      // Save glossary & summary prompt
-      const glossaryTextValue = els.glossaryTextInput?.value || '';
-      glossaryStorage.set(glossaryTextValue);
-      const glossaryEntries = parseGlossary(glossaryTextValue);
-      const summaryPromptValue = els.summaryPromptInput?.value || '';
-      summaryPromptStorage.set(summaryPromptValue);
-      applyI18n();
-      els.settingsModal?.close();
-      addDiagLog(
-        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang} glossary_entries=${glossaryEntries.length} summaryPrompt_len=${state.summaryPrompt.length}`
-      );
-      updateDevStatusSummary();
-    });
-  }
-
-  // Preset buttons
-  if (els.presetFast) {
-    els.presetFast.addEventListener('click', () => applyPreset('fast'));
-  }
-  if (els.presetBalanced) {
-    els.presetBalanced.addEventListener('click', () => applyPreset('balanced'));
-  }
-  if (els.presetStable) {
-    els.presetStable.addEventListener('click', () => applyPreset('stable'));
-  }
-
-  // Reset user settings (glossary & summary prompt)
   if (els.resetUserSettings) {
     els.resetUserSettings.addEventListener('click', () => {
       glossaryStorage.clear();
