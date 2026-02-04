@@ -104,6 +104,7 @@ const STRINGS = {
     privacyPolicy: 'プライバシーポリシー',
     termsOfService: '利用規約',
     contact: 'お問い合わせ',
+    buildLabel: 'ビルド',
   },
   en: {
     login: 'Login',
@@ -206,6 +207,7 @@ const STRINGS = {
     privacyPolicy: 'Privacy Policy',
     termsOfService: 'Terms of Service',
     contact: 'Contact',
+    buildLabel: 'Build',
   },
   'zh-Hans': {
     login: '登录',
@@ -330,6 +332,7 @@ const STRINGS = {
     privacyPolicy: '隐私政策',
     termsOfService: '服务条款',
     contact: '联系我们',
+    buildLabel: '构建',
   },
 };
 
@@ -4681,7 +4684,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // Fetch and display BUILD_SHA from /build.txt
   async function fetchBuildSha() {
     try {
-      const response = await fetch('/build.txt', { cache: 'no-cache' });
+      const response = await fetch('/build.txt', { cache: 'no-store' });
       if (!response.ok) throw new Error('build.txt not found');
       const text = await response.text();
       const shaMatch = text.match(/BUILD_SHA=([^\s]+)/);
@@ -4691,13 +4694,14 @@ document.addEventListener('DOMContentLoaded', () => {
       // Store in state for diagnostics
       state.buildVersion = sha;
       if (els.buildShaDisplay) {
-        els.buildShaDisplay.textContent = `BUILD_SHA: ${sha}${time ? ' (' + time + ')' : ''}`;
+        const label = t('buildLabel');
+        els.buildShaDisplay.textContent = `${label}: ${sha}${time ? ' (' + time + ')' : ''}`;
       }
     } catch (err) {
       console.warn('[BUILD] Failed to fetch build.txt:', err);
       state.buildVersion = 'fetch_failed';
       if (els.buildShaDisplay) {
-        els.buildShaDisplay.textContent = 'BUILD_SHA: 取得失敗';
+        els.buildShaDisplay.textContent = `${t('buildLabel')}: unknown`;
       }
     }
   }

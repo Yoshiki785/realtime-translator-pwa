@@ -56,8 +56,9 @@ for f in "${FILES_WITH_BUILD_TIME[@]}"; do
 done
 
 # Write build info for debugging
-echo "$BUILD_TIME" > "public/build.txt"
-echo "  Created: public/build.txt"
+BUILD_SHA="${APP_VERSION:-${COMMIT_SHA:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}}"
+printf 'BUILD_SHA=%s\nBUILD_TIME_UTC=%s\n' "$BUILD_SHA" "$BUILD_TIME" > "public/build.txt"
+echo "  Created: public/build.txt (SHA=$BUILD_SHA)"
 
 echo "=========================================="
 echo "Sync complete: $copied file(s) copied"
