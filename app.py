@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -49,6 +50,8 @@ ENV = os.getenv("ENV", "development")
 IS_PRODUCTION = ENV == "production"
 SERVICE_NAME = os.getenv("SERVICE_NAME", "realtime-translator-api")
 APP_VERSION = os.getenv("APP_VERSION") or os.getenv("COMMIT_SHA") or "local"
+DOWNLOADS_TTL_SECONDS = int(os.getenv("DOWNLOADS_TTL_SECONDS", "7200"))
+DOWNLOADS_MAX_DELETE_PER_RUN = int(os.getenv("DOWNLOADS_MAX_DELETE_PER_RUN", "200"))
 
 def get_openai_api_key() -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -58,8 +61,49 @@ def get_openai_api_key() -> str:
 
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
-DOWNLOAD_DIR = BASE_DIR / "downloads"
+DOWNLOAD_DIR = Path(os.getenv("DOWNLOADS_DIR", str(BASE_DIR / "downloads")))
 DOWNLOAD_DIR.mkdir(exist_ok=True)
+
+_CLEANUP_EXTENSIONS = {".m4a", ".webm", ".wav", ".mp3"}
+_CLEANUP_MIN_AGE_SECONDS = 300  # 5分未満のファイルは絶対に削除しない安全ガード
+
+
+def cleanup_downloads_dir() -> int:
+    """Delete audio files in DOWNLOAD_DIR older than DOWNLOADS_TTL_SECONDS."""
+    deleted = 0
+    try:
+        now = time.time()
+        cutoff = now - DOWNLOADS_TTL_SECONDS
+        for entry in DOWNLOAD_DIR.iterdir():
+            if deleted >= DOWNLOADS_MAX_DELETE_PER_RUN:
+                logger.info(
+                    f"cleanup_downloads_dir: hit max limit ({DOWNLOADS_MAX_DELETE_PER_RUN})"
+                )
+                break
+            if not entry.is_file() or entry.suffix.lower() not in _CLEANUP_EXTENSIONS:
+                continue
+            try:
+                mtime = entry.stat().st_mtime
+            except OSError:
+                continue
+            age = now - mtime
+            if age < _CLEANUP_MIN_AGE_SECONDS:
+                continue  # 直近作成ファイルは安全のためスキップ
+            if mtime < cutoff:
+                try:
+                    entry.unlink()
+                    deleted += 1
+                    logger.info(
+                        f"cleanup_downloads_dir: deleted {entry.name} (age={int(age)}s)"
+                    )
+                except OSError as exc:
+                    logger.warning(
+                        f"cleanup_downloads_dir: failed to delete {entry.name}: {exc}"
+                    )
+    except Exception:
+        logger.exception("cleanup_downloads_dir: unexpected error")
+    return deleted
+
 
 JST = ZoneInfo("Asia/Tokyo")
 
@@ -1047,6 +1091,12 @@ app.mount("/downloads", StaticFiles(directory=DOWNLOAD_DIR), name="downloads")
 async def generate_static_assets() -> None:
     ensure_icon(STATIC_DIR / "icon-192.png", ICON_192_B64)
     ensure_icon(STATIC_DIR / "icon-512.png", ICON_512_B64)
+
+
+@app.on_event("startup")
+async def cleanup_stale_downloads() -> None:
+    deleted = cleanup_downloads_dir()
+    logger.info(f"startup cleanup: removed {deleted} stale file(s) from downloads/")
 
 
 async def post_openai(url: str, payload: dict, headers: dict | None = None) -> dict:
@@ -2587,6 +2637,10 @@ async def convert_audio(request: Request, file: UploadFile = File(...)) -> JSONR
             input_path.unlink()
 
     download_url = f"/downloads/{output_path.name}"
+    try:
+        cleanup_downloads_dir()
+    except Exception:
+        logger.exception("cleanup after conversion failed")
     return JSONResponse({"url": download_url})
 
 
