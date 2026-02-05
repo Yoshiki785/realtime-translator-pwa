@@ -5074,6 +5074,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         try {
           await auth.signOut();
+          analytics.log('logout', {});
           setStatus('Standby');
           addDiagLog('Logout completed');
         } catch (err) {
@@ -5090,6 +5091,7 @@ document.addEventListener('DOMContentLoaded', () => {
         applyAuthUiState(user);
         addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
         if (user) {
+          analytics.log('login', { method: 'google' });
           refreshQuotaStatus();
           handleHashRoute();
           loadCompanyProfile();
@@ -5309,6 +5311,16 @@ document.addEventListener('DOMContentLoaded', () => {
   if (els.saveSettings) {
     els.saveSettings.addEventListener('click', (e) => {
       e.preventDefault();
+      const previousSettings = {
+        maxChars: state.maxChars,
+        gapMs: state.gapMs,
+        vadSilence: state.vadSilence,
+        uiLang: state.uiLang,
+        inputLang: state.inputLang,
+        outputLang: state.outputLang,
+        glossaryText: state.glossaryText,
+        summaryPrompt: state.summaryPrompt,
+      };
       state.maxChars = Number(els.maxChars?.value) || 300;
       state.gapMs = Number(els.gapMs?.value) || 1000;
       state.vadSilence = Number(els.vadSilence?.value) || 400;
@@ -5326,6 +5338,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const glossaryEntries = parseGlossary(glossaryTextValue);
       const summaryPromptValue = els.summaryPromptInput?.value || '';
       summaryPromptStorage.set(summaryPromptValue);
+
+      const changedKeys = [];
+      if (previousSettings.maxChars !== state.maxChars) changedKeys.push('maxChars');
+      if (previousSettings.gapMs !== state.gapMs) changedKeys.push('gapMs');
+      if (previousSettings.vadSilence !== state.vadSilence) changedKeys.push('vadSilence');
+      if (previousSettings.uiLang !== state.uiLang) changedKeys.push('uiLang');
+      if (previousSettings.inputLang !== state.inputLang) changedKeys.push('inputLang');
+      if (previousSettings.outputLang !== state.outputLang) changedKeys.push('outputLang');
+      if (previousSettings.glossaryText !== state.glossaryText) changedKeys.push('glossary_text');
+      if (previousSettings.summaryPrompt !== state.summaryPrompt) changedKeys.push('summary_prompt');
+      changedKeys.forEach((key) => analytics.log('settings_changed', { setting_key: key }));
+
       applyI18n();
       els.settingsModal?.close();
       addDiagLog(
@@ -5621,7 +5645,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Upgrade Pro button click handler
   if (els.upgradeProBtn) {
-    els.upgradeProBtn.addEventListener('click', startCheckout);
+    els.upgradeProBtn.addEventListener('click', () => {
+      analytics.log('upgrade_initiated', { source: 'settings' });
+      startCheckout();
+    });
   }
 
   // Manage subscription button click handler
