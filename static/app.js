@@ -1047,6 +1047,84 @@ const generateSessionId = () => {
   return `${rand}${ts}`.substring(0, 10);
 };
 
+// === Analytics Module (Best-Effort, No PII) ===
+const analytics = {
+  _instance: null,
+  _enabled: false,
+
+  init() {
+    try {
+      if (typeof firebase !== 'undefined' && firebase.analytics) {
+        this._instance = firebase.analytics();
+        this._enabled = true;
+      }
+    } catch (_) {
+      // Silent fail - analytics must not break app
+    }
+  },
+
+  _buildVersionShort() {
+    const raw = state?.buildVersion || state?.buildSha;
+    if (!raw || typeof raw !== 'string') return 'unknown';
+    return raw.slice(0, 7);
+  },
+
+  _context() {
+    return {
+      plan: state?.quota?.plan || 'unknown',
+      ui_lang: state?.uiLang || 'unknown',
+      build_version: this._buildVersionShort(),
+    };
+  },
+
+  log(eventName, params = {}) {
+    if (!this._enabled) return;
+    try {
+      const enriched = {
+        ...params,
+        ...this._context(),
+      };
+      this._instance.logEvent(eventName, enriched);
+    } catch (_) {
+      // Silent fail - analytics must not break app
+    }
+  },
+
+  durationBucket(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return 'unknown';
+    if (seconds < 30) return '<30s';
+    if (seconds < 120) return '30s-2m';
+    if (seconds < 300) return '2m-5m';
+    if (seconds < 900) return '5m-15m';
+    return '15m+';
+  },
+
+  quantityBucket(qty) {
+    if (!Number.isFinite(qty) || qty <= 0) return 'unknown';
+    if (qty === 1) return '1';
+    if (qty <= 5) return '2-5';
+    if (qty <= 10) return '6-10';
+    return '10+';
+  },
+
+  errorCategory(err) {
+    if (err?._isQuotaLimit || err?._isRateLimit) return 'quota';
+    const context = String(err?._context || '').toLowerCase();
+    if (context.includes('token')) return 'token';
+    if (context.includes('auth')) return 'auth';
+    if (context.includes('negotiate') || context.includes('connection')) return 'connection';
+
+    const msg = String(err?.message || err || '').toLowerCase();
+    if (msg.includes('token')) return 'token';
+    if (msg.includes('auth') || msg.includes('login') || msg.includes('sign')) return 'auth';
+    if (msg.includes('quota') || msg.includes('limit') || msg.includes('rate')) return 'quota';
+    if (msg.includes('network') || msg.includes('connection') || msg.includes('rtc') || msg.includes('ice')) {
+      return 'connection';
+    }
+    return 'unknown';
+  },
+};
+
 const state = {
   sessionId: generateSessionId(),
   pc: null,
@@ -4963,6 +5041,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Firebase initialization and auth
     initFirebase();
+    analytics.init();
     applyAuthUiState(null);
     addDiagLog(`Auth init: currentUser=${currentUser?.uid || 'null'}`);
 
