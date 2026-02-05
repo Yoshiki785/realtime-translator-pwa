@@ -3391,6 +3391,7 @@ const handleHashRoute = async () => {
     history.replaceState(null, '', window.location.pathname);
   } else if (hash === '#/tickets/success') {
     // Ticket purchase success - refresh quota to show new balance
+    analytics.log('ticket_purchased', { quantity_bucket: 'unknown' });
     showBillingBanner('ticket-success');
     addDiagLog('Tickets: Purchase successful');
     const updated = await pollForQuotaUpdate();
@@ -3706,6 +3707,19 @@ const blockedReasonMessages = {
   daily_job_limit_reached: 'Freeプランの本日のジョブ作成上限(10回)に達しました。',
 };
 
+const mapQuotaBlockedReason = (reason) => {
+  switch (reason) {
+    case 'monthly_quota_exhausted':
+      return 'monthly';
+    case 'daily_limit_reached':
+      return 'daily';
+    case 'daily_job_limit_reached':
+      return 'daily_job_limit';
+    default:
+      return 'other';
+  }
+};
+
 // ========== Connection Error Categories ==========
 const ERROR_CATEGORY = {
   MIC_PERMISSION: 'mic_permission',
@@ -3906,6 +3920,7 @@ const hasQuotaForStart = () => {
   }
   // Use blockedReason from API if available
   if (quota.blockedReason) {
+    analytics.log('quota_blocked', { reason: mapQuotaBlockedReason(quota.blockedReason) });
     const msg = blockedReasonMessages[quota.blockedReason] || '利用がブロックされています。';
     setError(msg);
     addDiagLog(`Start blocked: ${quota.blockedReason}`);
@@ -3913,11 +3928,13 @@ const hasQuotaForStart = () => {
   }
   // Fallback checks (in case API doesn't return blockedReason)
   if (typeof quota.totalAvailableThisMonth === 'number' && quota.totalAvailableThisMonth <= 0) {
+    analytics.log('quota_blocked', { reason: 'monthly' });
     setError('今月の利用可能時間が残っていません。');
     addDiagLog('Start blocked: monthly quota exhausted');
     return false;
   }
   if (quota.plan === 'free' && typeof quota.dailyRemainingSeconds === 'number' && quota.dailyRemainingSeconds <= 0) {
+    analytics.log('quota_blocked', { reason: 'daily' });
     setError('Freeプランの本日の利用上限(10分)に達しました。');
     addDiagLog('Start blocked: daily limit reached');
     return false;
@@ -3972,6 +3989,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
 
     // quota関連のエラーはブロック理由メッセージを表示
     if (blockedReasonMessages[errorCode]) {
+      analytics.log('quota_blocked', { reason: mapQuotaBlockedReason(errorCode) });
       const quotaErr = new Error(blockedReasonMessages[errorCode]);
       quotaErr._isQuotaLimit = true;
       quotaErr._errorCode = errorCode;
@@ -3979,6 +3997,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
     }
 
     // レート制限の場合はクールダウン処理
+    analytics.log('quota_blocked', { reason: 'other' });
     const retryAfterHeader = res.headers.get('Retry-After');
     let waitMs = DEFAULT_RATE_LIMIT_WAIT_MS;
     if (retryAfterHeader) {
@@ -4761,6 +4780,10 @@ const start = async () => {
       if (!state.jobActive) {
         await reserveJobSlot();
         addDiagLog('STEP2: after reserveJobSlot success');
+        analytics.log('session_start', {
+          input_lang: state.inputLang || 'auto',
+          output_lang: state.outputLang || 'ja',
+        });
       }
 
       await startConnectionAttempt();
@@ -4768,6 +4791,10 @@ const start = async () => {
 
     } catch (err) {
       logErrorDetails('start', err);
+      analytics.log('session_error', {
+        error_class: analytics.errorCategory(err),
+        phase: 'start',
+      });
       if (err._abortStart) {
         addDiagLog('Start aborted by user (takeover declined)');
         stopMedia();
@@ -4879,19 +4906,39 @@ const stop = async () => {
     } catch (err) {
       setError(err.message);
       addDiagLog(`M4A conversion failed: ${err.message}`);
+      analytics.log('session_error', {
+        error_class: analytics.errorCategory(err),
+        phase: 'end',
+      });
     }
   }
 
   let completionData = null;
   let elapsedSeconds = null;
+  let sessionEndResult = 'cancel';
 
   // jobActiveがtrueの場合のみジョブを完了させる
   if (state.jobActive) {
     elapsedSeconds = getJobElapsedSeconds();
     completionData = await completeCurrentJob(elapsedSeconds);
+    if (completionData) {
+      sessionEndResult = 'success';
+    } else {
+      sessionEndResult = 'error';
+      analytics.log('session_error', {
+        error_class: analytics.errorCategory(new Error('job_complete_failed')),
+        phase: 'end',
+      });
+    }
   } else {
     addDiagLog('Stop: no active job to complete');
   }
+
+  analytics.log('session_end', {
+    duration_bucket: analytics.durationBucket(elapsedSeconds),
+    utterance_count_bucket: 'unknown',
+    result: sessionEndResult,
+  });
 
   if (completionData && typeof completionData.actualSeconds === 'number') {
     state.currentSessionResult.durationSeconds = completionData.actualSeconds;
