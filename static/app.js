@@ -108,6 +108,9 @@ const STRINGS = {
     forceUpdate: '最新版を取得',
     forceUpdateRunning: '更新中…',
     forceUpdateFailed: '更新失敗',
+    copyDiagnostics: '診断情報をコピー',
+    diagnosticsCopied: '診断情報をコピーしました',
+    diagnosticsCopyFailed: 'コピーに失敗しました',
   },
   en: {
     login: 'Login',
@@ -214,6 +217,9 @@ const STRINGS = {
     forceUpdate: 'Get Latest',
     forceUpdateRunning: 'Updating…',
     forceUpdateFailed: 'Update Failed',
+    copyDiagnostics: 'Copy Diagnostics',
+    diagnosticsCopied: 'Diagnostics copied',
+    diagnosticsCopyFailed: 'Copy failed',
   },
   'zh-Hans': {
     login: '登录',
@@ -342,6 +348,9 @@ const STRINGS = {
     forceUpdate: '获取最新版',
     forceUpdateRunning: '更新中…',
     forceUpdateFailed: '更新失败',
+    copyDiagnostics: '复制诊断信息',
+    diagnosticsCopied: '诊断信息已复制',
+    diagnosticsCopyFailed: '复制失败',
   },
 };
 
@@ -548,6 +557,191 @@ const DIAG_COPY_LIMIT = 50; // コピー時は直近50行のみ
 const getDiagLogDump = (limit = DIAG_COPY_LIMIT) => {
   // 直近limit件を時系列順（古い→新しい）で返す
   return diagLogs.slice(-limit).join('\n');
+};
+
+/**
+ * 安全な診断情報を収集（PIIなし）
+ */
+const collectDiagnostics = async () => {
+  const sections = [];
+  const now = new Date();
+
+  // Format local time as YYYY-MM-DD HH:MM:SS
+  const pad = (n) => String(n).padStart(2, '0');
+  const localTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // getTimezoneOffset returns minutes WEST of UTC, so we negate for standard offset
+  const utcOffsetMinutes = -now.getTimezoneOffset();
+
+  sections.push('=== Realtime Translator Diagnostics ===');
+  sections.push(`SessionId: ${state.sessionId || 'unknown'}`);
+  sections.push(`Generated: ${now.toISOString()}`);
+  sections.push(`Performance.now: ${performance.now().toFixed(2)}ms`);
+  sections.push('');
+
+  // Build Info
+  sections.push('--- Build Info ---');
+  try {
+    const response = await fetch('/build.txt', { cache: 'no-store' });
+    if (response.ok) {
+      const text = await response.text();
+      const shaMatch = text.match(/BUILD_SHA=([^\s]+)/);
+      const timeMatch = text.match(/BUILD_TIME_UTC=([^\s]+)/);
+      sections.push(`BUILD_SHA: ${shaMatch ? shaMatch[1] : 'unknown'}`);
+      sections.push(`BUILD_TIME_UTC: ${timeMatch ? timeMatch[1] : 'unknown'}`);
+    } else {
+      sections.push('BUILD_SHA: fetch_failed');
+    }
+  } catch (err) {
+    sections.push('BUILD_SHA: error');
+  }
+  sections.push('');
+
+  // Service Worker
+  sections.push('--- Service Worker ---');
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      sections.push(`Controller: ${navigator.serviceWorker.controller ? 'present' : 'none'}`);
+      if (reg) {
+        sections.push(`Scope: ${reg.scope}`);
+        sections.push(`Active: ${reg.active ? reg.active.state : 'none'}`);
+        sections.push(`Waiting: ${reg.waiting ? reg.waiting.state : 'none'}`);
+        sections.push(`Installing: ${reg.installing ? reg.installing.state : 'none'}`);
+      } else {
+        sections.push('Registration: none');
+      }
+    } catch (err) {
+      sections.push('SW error: unknown');
+    }
+  } else {
+    sections.push('ServiceWorker: not supported');
+  }
+  sections.push('');
+
+  // Cache
+  sections.push('--- Cache Info ---');
+  if ('caches' in window) {
+    try {
+      const keys = await caches.keys();
+      const appKeys = keys.filter((k) => k.startsWith('rt-translator'));
+      sections.push(`App caches: ${appKeys.length}`);
+      appKeys.forEach((k) => sections.push(`  - ${k}`));
+    } catch (err) {
+      sections.push('Cache error: unknown');
+    }
+  } else {
+    sections.push('Cache API: not supported');
+  }
+  sections.push('');
+
+  // Environment (no UserAgent to avoid fingerprinting)
+  sections.push('--- Environment ---');
+  sections.push(`LocalTime: ${localTime} (${tz})`);
+  sections.push(`UTCOffsetMinutes: ${utcOffsetMinutes >= 0 ? '+' : ''}${utcOffsetMinutes}`);
+  sections.push(`Timezone: ${tz}`);
+  sections.push(`Language: ${navigator.language}`);
+  sections.push(`Online: ${navigator.onLine}`);
+  sections.push('');
+
+  // App State (safe values only)
+  sections.push('--- App State ---');
+  sections.push(`uiLang: ${state.uiLang}`);
+  sections.push(`inputLang: ${state.inputLang}`);
+  sections.push(`outputLang: ${state.outputLang}`);
+  sections.push(`maxChars: ${state.maxChars}`);
+  sections.push(`gapMs: ${state.gapMs}`);
+  sections.push(`vadSilence: ${state.vadSilence}`);
+  if (state.sttSettings) {
+    sections.push(`sttSettings.inputLang: ${state.sttSettings.inputLang || 'default'}`);
+    sections.push(`sttSettings.vadPreset: ${state.sttSettings.vadPreset || 'default'}`);
+  }
+  // Effective STT input language (which value is actually used)
+  let effectiveSttInputLang = 'auto';
+  let effectiveSource = 'default';
+  if (state.sttSettings && state.sttSettings.inputLang) {
+    effectiveSttInputLang = state.sttSettings.inputLang;
+    effectiveSource = 'sttSettings';
+  } else if (state.inputLang) {
+    effectiveSttInputLang = state.inputLang;
+    effectiveSource = 'ui';
+  }
+  sections.push(`effectiveSttInputLang: ${effectiveSttInputLang} (source: ${effectiveSource})`);
+  sections.push('');
+
+  // Quota (non-sensitive)
+  sections.push('--- Quota ---');
+  const q = state.quota || {};
+  sections.push(`plan: ${q.plan || 'unknown'}`);
+  sections.push(`loaded: ${q.loaded || false}`);
+  sections.push('');
+
+  // Auth (no PII: no uid, no email, no displayName)
+  sections.push('--- Auth ---');
+  sections.push(`loggedIn: ${!!currentUser}`);
+  if (currentUser) {
+    // Get auth provider from providerData if available
+    let provider = 'unknown';
+    try {
+      if (currentUser.providerData && currentUser.providerData.length > 0) {
+        provider = currentUser.providerData[0].providerId || 'unknown';
+      }
+    } catch (e) {
+      provider = 'unknown';
+    }
+    sections.push(`provider: ${provider}`);
+  }
+  sections.push('');
+
+  sections.push('=== End Diagnostics ===');
+  return sections.join('\n');
+};
+
+/**
+ * 診断情報をクリップボードにコピー（UIフィードバック付き）
+ */
+const copyDiagnosticsInSettings = async () => {
+  const btn = els.copyDiagnosticsBtn;
+  const statusEl = els.diagnosticsStatus;
+  if (!btn) return;
+
+  btn.disabled = true;
+  try {
+    const text = await collectDiagnostics();
+
+    // Primary: Clipboard API
+    try {
+      await navigator.clipboard.writeText(text);
+      if (statusEl) statusEl.textContent = t('diagnosticsCopied');
+    } catch (clipErr) {
+      // Fallback: execCommand
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const success = document.execCommand('copy');
+      textarea.remove();
+      if (success) {
+        if (statusEl) statusEl.textContent = t('diagnosticsCopied');
+      } else {
+        throw new Error('execCommand failed');
+      }
+    }
+    setTimeout(() => {
+      if (statusEl) statusEl.textContent = '';
+    }, 3000);
+  } catch (err) {
+    console.error('[DIAG] Copy failed:', err);
+    if (statusEl) statusEl.textContent = t('diagnosticsCopyFailed');
+    setTimeout(() => {
+      if (statusEl) statusEl.textContent = '';
+    }, 3000);
+  } finally {
+    btn.disabled = false;
+  }
 };
 
 addDiagLog('App bootstrap start');
@@ -814,6 +1008,8 @@ const cacheElements = () => {
     swUpdateBtn: document.getElementById('swUpdateBtn'),
     buildShaDisplay: document.getElementById('buildShaDisplay'),
     forceUpdateBtn: document.getElementById('forceUpdateBtn'),
+    copyDiagnosticsBtn: document.getElementById('copyDiagnosticsBtn'),
+    diagnosticsStatus: document.getElementById('diagnosticsStatus'),
     // Result Card (after Stop)
     resultCard: document.getElementById('resultCard'),
     resultCardTitle: document.getElementById('resultCardTitle'),
@@ -841,7 +1037,15 @@ const cacheElements = () => {
   }
 };
 
+// Generate a random sessionId for diagnostics (not persisted, no tracking)
+const generateSessionId = () => {
+  const rand = Math.random().toString(36).substring(2, 8);
+  const ts = Date.now().toString(36).substring(-4);
+  return `${rand}${ts}`.substring(0, 10);
+};
+
 const state = {
+  sessionId: generateSessionId(),
   pc: null,
   dataChannel: null,
   mediaStream: null,
@@ -5009,6 +5213,14 @@ document.addEventListener('DOMContentLoaded', () => {
           els.forceUpdateBtn.textContent = t('forceUpdate');
         }, 3000);
       }
+    });
+  }
+
+  // Diagnostics copy button
+  if (els.copyDiagnosticsBtn) {
+    els.copyDiagnosticsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      copyDiagnosticsInSettings();
     });
   }
 

@@ -1144,6 +1144,19 @@ button.disabled {
   font-size: 11px;
 }
 
+/* Diagnostics section in settings */
+.diagnostics-section {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diagnostics-status {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 /* ========== Result Card (after Stop) ========== */
 .result-card {
   margin-top: 12px;
