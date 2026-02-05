@@ -573,8 +573,11 @@ const collectDiagnostics = async () => {
   // getTimezoneOffset returns minutes WEST of UTC, so we negate for standard offset
   const utcOffsetMinutes = -now.getTimezoneOffset();
 
+  // Fallback: ensure sessionId is always set
+  if (!state.sessionId) state.sessionId = generateSessionId();
+
   sections.push('=== Realtime Translator Diagnostics ===');
-  sections.push(`SessionId: ${state.sessionId || 'unknown'}`);
+  sections.push(`SessionId: ${state.sessionId}`);
   sections.push(`Generated: ${now.toISOString()}`);
   sections.push(`Performance.now: ${performance.now().toFixed(2)}ms`);
   sections.push('');
@@ -1040,7 +1043,7 @@ const cacheElements = () => {
 // Generate a random sessionId for diagnostics (not persisted, no tracking)
 const generateSessionId = () => {
   const rand = Math.random().toString(36).substring(2, 8);
-  const ts = Date.now().toString(36).substring(-4);
+  const ts = Date.now().toString(36).slice(-4);
   return `${rand}${ts}`.substring(0, 10);
 };
 
@@ -1105,8 +1108,8 @@ const state = {
     // Guard: only apply once per WS open
     wsAppliedOnce: false,
   },
-  // Diagnostics: session tracking
-  sessionId: null, // Generated per connection attempt
+  // Diagnostics: sessionId is initialized at top of state object
+  // (do not duplicate here - JS object keys last-wins)
   buildVersion: null, // Fetched from /build.txt
   // History (Sprint 2): current session data for result card
   currentSessionResult: null, // { id, timestamp, title, originals, translations, summary, audioUrl, m4aUrl }
