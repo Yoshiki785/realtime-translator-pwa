@@ -7,5 +7,6 @@ window.FIREBASE_CONFIG = {
   projectId: "realtime-translator-pwa-483710",
   storageBucket: "realtime-translator-pwa-483710.firebasestorage.app",
   messagingSenderId: "853238768850",
-  appId: "1:853238768850:web:0b51c306f3602f6a34f90b"
+  appId: "1:853238768850:web:0b51c306f3602f6a34f90b",
+  measurementId: "G-NSMYHFHFKB"
 };
