@@ -1050,6 +1050,19 @@ const generateSessionId = () => {
   return `${rand}${ts}`.substring(0, 10);
 };
 
+// === Analytics Event Schema (allowlist for debug-mode validation) ===
+const EVENT_SCHEMA = {
+  login:             ['method'],
+  logout:            [],
+  session_start:     ['input_lang', 'output_lang'],
+  session_end:       ['duration_bucket', 'utterance_count_bucket', 'result'],
+  session_error:     ['error_class', 'phase'],
+  quota_blocked:     ['reason'],
+  upgrade_initiated: ['source'],
+  ticket_purchased:  ['pack_id', 'quantity_bucket'],
+  settings_changed:  ['setting_key'],
+};
+
 // === Analytics Module (Best-Effort, No PII) ===
 const analytics = {
   _instance: null,
@@ -1097,6 +1110,17 @@ const analytics = {
   log(eventName, params = {}) {
     if (!this._enabled) return;
     try {
+      if (isAnalyticsDebugMode() && EVENT_SCHEMA) {
+        const schema = EVENT_SCHEMA[eventName];
+        if (!schema) {
+          console.warn(`[ANALYTICS_DEBUG] Unknown event: "${eventName}"`);
+        } else {
+          const extraKeys = Object.keys(params).filter(k => !schema.includes(k));
+          if (extraKeys.length) {
+            console.warn(`[ANALYTICS_DEBUG] Unexpected params for "${eventName}":`, extraKeys);
+          }
+        }
+      }
       const enriched = {
         ...params,
         ...this._context(),
@@ -1125,6 +1149,14 @@ const analytics = {
     if (qty <= 5) return '2-5';
     if (qty <= 10) return '6-10';
     return '10+';
+  },
+
+  minutesBucket(minutes) {
+    if (!Number.isFinite(minutes) || minutes <= 0) return 'unknown';
+    if (minutes <= 120) return '<=120m';
+    if (minutes <= 360) return '121-360m';
+    if (minutes <= 1200) return '361-1200m';
+    return '1200m+';
   },
 
   errorCategory(err) {
@@ -2511,6 +2543,7 @@ const selectTicketPack = async (packId) => {
     // Close modal and redirect to Stripe Checkout
     closeTicketModal();
     if (data.url) {
+      try { sessionStorage.setItem('rt_ticket_packId', packId); } catch (_) {}
       window.location.href = data.url;
     } else {
       throw new Error('No checkout URL returned');
@@ -3411,7 +3444,16 @@ const handleHashRoute = async () => {
     history.replaceState(null, '', window.location.pathname);
   } else if (hash === '#/tickets/success') {
     // Ticket purchase success - refresh quota to show new balance
-    analytics.log('ticket_purchased', { quantity_bucket: 'unknown' });
+    let ticketPackId = null;
+    try {
+      ticketPackId = sessionStorage.getItem('rt_ticket_packId');
+      sessionStorage.removeItem('rt_ticket_packId');
+    } catch (_) {}
+    const ticketMinutes = (ticketPackId && PACK_MINUTES[ticketPackId]) || null;
+    analytics.log('ticket_purchased', {
+      pack_id: ticketPackId || 'unknown',
+      quantity_bucket: ticketMinutes ? analytics.minutesBucket(ticketMinutes) : 'unknown',
+    });
     showBillingBanner('ticket-success');
     addDiagLog('Tickets: Purchase successful');
     const updated = await pollForQuotaUpdate();
@@ -3719,6 +3761,11 @@ const resyncQuota = async () => {
     btn.disabled = false;
     btn.textContent = t('resyncQuota');
   }
+};
+
+const PACK_MINUTES = {
+  t120: 120, t240: 240, t360: 360,
+  t1200: 1200, t1800: 1800, t3000: 3000,
 };
 
 const blockedReasonMessages = {
