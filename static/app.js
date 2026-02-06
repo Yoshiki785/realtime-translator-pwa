@@ -488,8 +488,12 @@ const LANGUAGE_SETTINGS = {
 
 // Debug mode: ?debug=1 in URL
 const isDebugMode = () => new URLSearchParams(window.location.search).get('debug') === '1';
+// Analytics debug mode: ?debug_mode=true in URL (for GA4 DebugView)
+const isAnalyticsDebugMode = () =>
+  new URLSearchParams(window.location.search).get('debug_mode') === 'true';
 
 const isMissingConfigValue = (value) => !value || String(value).startsWith('PASTE_');
+const getRuntimeFirebaseConfig = () => window.FIREBASE_CONFIG || runtimeFirebaseConfig || {};
 
 // Diagnostic log buffer (no secrets)
 const diagLogs = [];
@@ -751,7 +755,7 @@ addDiagLog('App bootstrap start');
 
 const updateFirebaseStatus = () => {
   // Only log to console, never show apiKey on screen
-  const projectId = runtimeFirebaseConfig.projectId || 'missing';
+  const projectId = getRuntimeFirebaseConfig().projectId || 'missing';
   const statusLabel = firebaseState.initialized ? 'initialized' : 'not initialized';
   addDiagLog(`Firebase ${statusLabel} | projectId: ${projectId}`);
   updateDevStatusSummary();
@@ -762,16 +766,15 @@ const initFirebase = () => {
     if (!window.firebase || !window.firebase.initializeApp) {
       throw new Error('Firebase SDK not loaded');
     }
-    const missingKeys = requiredConfigKeys.filter((key) =>
-      isMissingConfigValue(runtimeFirebaseConfig[key])
-    );
+    const config = getRuntimeFirebaseConfig();
+    const missingKeys = requiredConfigKeys.filter((key) => isMissingConfigValue(config[key]));
     if (missingKeys.length) {
       throw new Error(`Firebase config missing: ${missingKeys.join(', ')}`);
     }
     if (firebase.apps?.length) {
       firebase.app();
     } else {
-      firebase.initializeApp(runtimeFirebaseConfig);
+      firebase.initializeApp(config);
     }
     auth = firebase.auth();
     firebaseState.initialized = true;
@@ -1053,13 +1056,27 @@ const analytics = {
   _enabled: false,
 
   init() {
+    let initOk = false;
+    const hasFirebaseAnalytics =
+      typeof firebase !== 'undefined' && typeof firebase.analytics === 'function';
     try {
-      if (typeof firebase !== 'undefined' && firebase.analytics) {
+      if (hasFirebaseAnalytics) {
         this._instance = firebase.analytics();
         this._enabled = true;
+        initOk = true;
       }
     } catch (_) {
       // Silent fail - analytics must not break app
+      this._enabled = false;
+      this._instance = null;
+    } finally {
+      if (isAnalyticsDebugMode()) {
+        const config = getRuntimeFirebaseConfig();
+        const hasMeasurementId = !!config.measurementId;
+        console.log('[ANALYTICS_DEBUG] measurementId_present:', hasMeasurementId);
+        console.log('[ANALYTICS_DEBUG] firebase_analytics_present:', hasFirebaseAnalytics);
+        console.log('[ANALYTICS_DEBUG] analytics_init_ok:', initOk);
+      }
     }
   },
 
@@ -1084,6 +1101,9 @@ const analytics = {
         ...params,
         ...this._context(),
       };
+      if (isAnalyticsDebugMode() && !('debug_mode' in enriched)) {
+        enriched.debug_mode = true;
+      }
       this._instance.logEvent(eventName, enriched);
     } catch (_) {
       // Silent fail - analytics must not break app
@@ -1837,7 +1857,7 @@ const updateDevStatusSummary = () => {
     `Firebase: ${firebaseLabel}`,
     `Auth: ${authLabel}`,
     `API: ${API_BASE_URL}`,
-    `Project: ${runtimeFirebaseConfig.projectId || 'missing'}`,
+    `Project: ${getRuntimeFirebaseConfig().projectId || 'missing'}`,
     `Languages: input=${state.inputLang} → output=${state.outputLang} (UI: ${state.uiLang})`,
     `Settings: maxChars=${state.maxChars}, gapMs=${state.gapMs}, vadSilence=${state.vadSilence}`,
   ];
