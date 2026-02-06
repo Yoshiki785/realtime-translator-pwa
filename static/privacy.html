@@ -103,7 +103,7 @@
       ただし、以下のサービスと連携しています：
     </p>
     <ul>
-      <li><strong>Firebase (Google)</strong>: 認証、データベース</li>
+      <li><strong>Firebase (Google)</strong>: 認証、データベース、アクセス解析</li>
       <li><strong>OpenAI</strong>: 文字起こし・翻訳処理</li>
       <li><strong>Stripe</strong>: 決済処理</li>
     </ul>
@@ -129,7 +129,9 @@
 
     <h2>9. Cookie・アクセス解析</h2>
     <p>
-      本サービスはアクセス解析ツール（Google Analytics 等）を使用していません。
+      本サービスは、サービス改善を目的として Firebase Analytics（Google Analytics 4）を使用しています。
+      収集するデータは操作イベント（セッション開始・終了、設定変更等）の集計情報のみであり、
+      個人を特定する情報（氏名、メールアドレス、音声データ、文字起こしテキスト等）は一切送信しません。
       Firebase Authentication のセッション管理のため、ブラウザの内部ストレージ（IndexedDB、localStorage）を使用します。
       広告目的の第三者トラッキングは行っていません。
     </p>
