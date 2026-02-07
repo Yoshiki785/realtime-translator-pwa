@@ -1,0 +1,11 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // All Firestore access is via Admin SDK (Python backend).
+    // No client-side code uses Firestore.
+    // Deny all direct client access.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

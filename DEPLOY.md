@@ -417,7 +417,7 @@ stripe trigger invoice.payment_failed
 - [ ] `ENV=production` が設定されている
 - [ ] Secret Manager にすべてのシークレットが登録されている
 - [ ] Cloud Run のサービスアカウントに最小権限のみ付与
-- [ ] Firestore Security Rules が設定されている
+- [x] Firestore Security Rules が設定されている（firestore.rules: deny-all）
 - [ ] Cloud Storage bucket に適切なIAM設定
 - [ ] Stripe Webhook 署名検証が有効
 - [ ] Cloud Scheduler は専用Service Accountで実行
