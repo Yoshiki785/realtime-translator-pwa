@@ -476,6 +476,7 @@ const createDefaultQuotaState = () => ({
   concurrentActive: 0,
   billingEnabled: true,
   purchaseAvailable: true,
+  apiAvailable: true,  // false when running on static server without backend
   loaded: false,
 });
 
@@ -494,6 +495,22 @@ const isAnalyticsDebugMode = () =>
 const isLocalhost = () => {
   const h = window.location.hostname;
   return h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+};
+
+let _apiProbed = false;
+const probeApiAvailability = async () => {
+  if (_apiProbed || !isLocalhost()) return;
+  _apiProbed = true;
+  try {
+    const res = await fetch('/api/v1/me', { cache: 'no-store' });
+    // 200/401/403 = backend reachable; 404 = static server
+    if (res.status === 404) state.apiAvailable = false;
+  } catch {
+    state.apiAvailable = false;
+  }
+  if (!state.apiAvailable) {
+    addDiagLog('[init] Static preview mode — API calls suppressed');
+  }
 };
 
 const isMissingConfigValue = (value) => !value || String(value).startsWith('PASTE_');
@@ -875,6 +892,17 @@ const isTokenExpiredError = (body) => {
 
 // Authenticated fetch wrapper with 401 retry (forceRefresh once)
 const authFetch = async (url, options = {}, _retried = false) => {
+  // Static preview guard: suppress API calls when no backend is available
+  if (isLocalhost() && !state.apiAvailable) {
+    if (!authFetch._logged) {
+      authFetch._logged = true;
+      addDiagLog('[api] authFetch suppressed — no backend (static preview)');
+    }
+    return new Response('{}', {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   const token = await getAuthToken(_retried); // forceRefresh on retry
   if (!token) {
     throw new Error(t('errorLoginRequired'));
@@ -1091,6 +1119,36 @@ const analytics = {
       return;
     }
     // TODO: Add consent check here when cookie banner / opt-out UI is implemented.
+
+    // Pin measurementId: Firebase SDK may fetch a different ID from webConfig.
+    // Wrap existing gtag (or create default) and rewrite only config/send_to commands.
+    const staticMid = getRuntimeFirebaseConfig().measurementId;
+    if (staticMid && typeof window !== 'undefined') {
+      window.dataLayer = window.dataLayer || [];
+      const origGtag = window.gtag || function() { window.dataLayer.push(arguments); };
+      window.gtag = function() {
+        const args = [].slice.call(arguments);
+        if (args[0] === 'config' && typeof args[1] === 'string'
+            && args[1].startsWith('G-') && args[1] !== staticMid) {
+          if (isAnalyticsDebugMode()) {
+            console.info('[ANALYTICS_DEBUG] gtag config mid pinned:', args[1], '→', staticMid);
+          }
+          args[1] = staticMid;
+          return origGtag.apply(window, args);
+        }
+        if (args[0] === 'event' && args[2] && typeof args[2].send_to === 'string'
+            && args[2].send_to.startsWith('G-') && args[2].send_to !== staticMid) {
+          if (isAnalyticsDebugMode()) {
+            console.info('[ANALYTICS_DEBUG] gtag send_to pinned:', args[2].send_to, '→', staticMid);
+          }
+          args[2] = Object.assign({}, args[2], { send_to: staticMid });
+          return origGtag.apply(window, args);
+        }
+        // All other commands (js, set, consent, etc.) pass through unmodified
+        return origGtag.apply(window, arguments);
+      };
+    }
+
     let initOk = false;
     const hasFirebaseAnalytics =
       typeof firebase !== 'undefined' && typeof firebase.analytics === 'function';
@@ -5233,16 +5291,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Auth state observer - CRITICAL
     if (auth) {
-      auth.onAuthStateChanged((user) => {
+      auth.onAuthStateChanged(async (user) => {
         currentUser = user;
         applyAuthUiState(user);
         addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
         if (user) {
           analytics.log('login', { method: 'google' });
-          refreshQuotaStatus();
-          handleHashRoute();
-          loadCompanyProfile();
-          refreshBillingStatus();
+          await probeApiAvailability();
+          if (state.apiAvailable) {
+            refreshQuotaStatus();
+            handleHashRoute();
+            loadCompanyProfile();
+            refreshBillingStatus();
+          } else {
+            handleHashRoute();
+          }
         } else {
           resetQuotaState();
         }
@@ -5901,7 +5964,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Refresh billing status and quota when returning from Customer Portal or Stripe Checkout
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && currentUser) {
+    if (document.visibilityState === 'visible' && currentUser && state.apiAvailable) {
       refreshBillingStatus();
       refreshQuotaStatus();
     }
@@ -5909,7 +5972,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Refresh quota on pageshow (bfcache handling)
   window.addEventListener('pageshow', (event) => {
-    if (event.persisted && currentUser) {
+    if (event.persisted && currentUser && state.apiAvailable) {
       refreshQuotaStatus();
     }
   });

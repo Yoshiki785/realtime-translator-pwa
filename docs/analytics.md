@@ -275,6 +275,19 @@ window.__rt_analytics.logEvent('login', { method: 'google' });
 // → [ANALYTICS_DEBUG] logEvent: login {method: "google"}
 ```
 
+### 7. measurementId ピン留め (Runtime Override Prevention)
+
+Firebase SDK は内部的に `firebase.googleapis.com` の webConfig を fetch し、
+そこに含まれる measurementId で `gtag('config', ...)` を呼び出す。
+本アプリでは `static/firebase-config.js` の measurementId を正とするため、
+`analytics.init()` 内で gtag ラッパーを設置し、runtime の measurementId を
+static 値にピン留めしている。
+
+`?debug_mode=true` 時、ピン留めが発動すると以下のログが出力される:
+```
+[ANALYTICS_DEBUG] gtag config mid pinned: G-C0S8XED8NB → G-NSMYHFHFKB
+```
+
 ---
 
 ## No-PII Checklist（新イベント追加時）
