@@ -426,6 +426,40 @@ stripe trigger invoice.payment_failed
 
 ---
 
+## Firestore運用方針（本番）
+
+- 現行構成では、Firestoreは **Cloud Run (Python / Admin SDK)** からのみアクセスする。
+- クライアント（`static/app.js`）は Firestore SDK を使わず、`/api/v1/*` 経由でのみデータ取得/更新する。
+- そのため `firestore.rules` は `deny-all` を維持する（最小権限）。
+
+### 事前検証（デプロイ前）
+
+```bash
+# 1) クライアントがFirestore SDKを直接使っていないことを確認
+rg -n "firebase-firestore|getFirestore|firebase\\.firestore|from 'firebase/firestore'" static public
+
+# 2) クライアントがAPI経由で動作していることを確認
+rg -n "/api/v1/" static/app.js
+```
+
+### Firestore Rules デプロイ
+
+```bash
+# ルールのみデプロイ
+firebase deploy --only firestore:rules --project realtime-translator-pwa-483710
+
+# （必要時のみ）indexesも反映
+firebase deploy --only firestore:indexes --project realtime-translator-pwa-483710
+```
+
+### デプロイ後スモーク
+
+- ログイン後に利用枠表示が更新される（`/api/v1/me` 経由）
+- 辞書の一覧/追加/更新/削除が動作する（`/api/v1/dictionary*` 経由）
+- 課金系導線が動作する（`/api/v1/billing/*` 経由）
+
+---
+
 ## バックログ（未実装）
 
 - [ ] App Check 導入（Firebase App Check でクライアント検証）

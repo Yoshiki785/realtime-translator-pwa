@@ -1,9 +1,11 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    // All Firestore access is via Admin SDK (Python backend).
-    // No client-side code uses Firestore.
-    // Deny all direct client access.
+    // Production policy (server-only Firestore access):
+    // - All reads/writes are performed by Python backend via Firebase Admin SDK.
+    // - Web client uses /api/v1/* endpoints and does not access Firestore directly.
+    // - Billing/quota/authorization related data must remain server-controlled.
+    //   (rules apply to client SDK only; Admin SDK is governed by IAM)
     match /{document=**} {
       allow read, write: if false;
     }
