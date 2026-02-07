@@ -1307,6 +1307,7 @@ const state = {
   hasShownA2HS: localStorage.getItem('a2hsShown') === '1',
   quota: createDefaultQuotaState(),
   pricingConfig: null,
+  apiAvailable: true, // false when running on static server without backend
   currentJob: null,
   jobStartedAt: null,
   jobActive: false, // ジョブが有効（予約済み〜完了前）かどうか
@@ -2256,6 +2257,14 @@ const formatNextReset = (isoString) => {
   }
 };
 
+function safeDiagLog(msg) {
+  try {
+    addDiagLog(msg);
+  } catch (_) {
+    // noop: logging must not block UI initialization
+  }
+}
+
 const getRetentionDaysFromPricingConfig = (plan) => {
   const planKey = plan === 'pro' ? 'pro' : 'free';
   const retentionDays = state.pricingConfig?.plans?.[planKey]?.retentionDays;
@@ -2267,13 +2276,17 @@ const loadPricingConfig = async () => {
     const res = await fetch('/config/pricing.json', { cache: 'no-store' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     state.pricingConfig = await res.json();
-    addDiagLog('[pricing] Config loaded');
+    safeDiagLog('[pricing] Config loaded');
   } catch (err) {
     state.pricingConfig = null;
-    addDiagLog(`[pricing] Config load failed: ${err?.message || err}`);
+    safeDiagLog(`[pricing] Config load failed: ${err?.message || err}`);
   } finally {
     if (state.quota?.loaded) {
-      updateQuotaBreakdown();
+      try {
+        updateQuotaBreakdown();
+      } catch (_) {
+        // noop: keep app running even if breakdown render fails
+      }
     }
   }
 };
