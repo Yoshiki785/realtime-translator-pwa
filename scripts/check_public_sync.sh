@@ -14,6 +14,10 @@ echo "=========================================="
 echo "Checking static/ <-> public/ sync"
 echo "=========================================="
 
+# Validate generated pricing/legal blocks are up to date
+echo "Checking generated pricing blocks"
+node ./scripts/generate_pricing.js --check
+
 # Files to check
 FILES=("app.js" "index.html" "styles.css" "pricing.html" "privacy.html" "terms.html" "firebase-config.js" "manifest.json")
 

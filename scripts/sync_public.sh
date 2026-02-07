@@ -14,6 +14,10 @@ echo "=========================================="
 echo "Syncing static/ -> public/"
 echo "=========================================="
 
+# Generate pricing/legal blocks from single source config
+echo "Generating pricing blocks from static/config/pricing.json"
+node ./scripts/generate_pricing.js
+
 # Generate build timestamp
 BUILD_TIME=$(date +%Y%m%d%H%M%S)
 echo "Build timestamp: $BUILD_TIME"
