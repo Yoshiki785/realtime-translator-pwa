@@ -491,6 +491,10 @@ const isDebugMode = () => new URLSearchParams(window.location.search).get('debug
 // Analytics debug mode: ?debug_mode=true in URL (for GA4 DebugView)
 const isAnalyticsDebugMode = () =>
   new URLSearchParams(window.location.search).get('debug_mode') === 'true';
+const isLocalhost = () => {
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+};
 
 const isMissingConfigValue = (value) => !value || String(value).startsWith('PASTE_');
 const getRuntimeFirebaseConfig = () => window.FIREBASE_CONFIG || runtimeFirebaseConfig || {};
@@ -771,10 +775,22 @@ const initFirebase = () => {
     if (missingKeys.length) {
       throw new Error(`Firebase config missing: ${missingKeys.join(', ')}`);
     }
+    if (isAnalyticsDebugMode()) {
+      console.info('[ANALYTICS_DEBUG] pre-init firebase.apps.length:', firebase.apps?.length || 0);
+      console.info('[ANALYTICS_DEBUG] config.measurementId:', config.measurementId || 'undefined');
+    }
     if (firebase.apps?.length) {
       firebase.app();
     } else {
       firebase.initializeApp(config);
+    }
+    if (isAnalyticsDebugMode()) {
+      try {
+        const opts = firebase.app().options;
+        console.info('[ANALYTICS_DEBUG] post-init firebase.app().options.measurementId:',
+          opts.measurementId || 'undefined');
+        console.info('[ANALYTICS_DEBUG] post-init firebase.apps.length:', firebase.apps?.length || 0);
+      } catch (_) {}
     }
     auth = firebase.auth();
     firebaseState.initialized = true;
@@ -1069,6 +1085,12 @@ const analytics = {
   _enabled: false,
 
   init() {
+    // Suppress analytics on localhost unless debug_mode is explicitly enabled
+    if (isLocalhost() && !isAnalyticsDebugMode()) {
+      this._enabled = false;
+      return;
+    }
+    // TODO: Add consent check here when cookie banner / opt-out UI is implemented.
     let initOk = false;
     const hasFirebaseAnalytics =
       typeof firebase !== 'undefined' && typeof firebase.analytics === 'function';
@@ -1085,10 +1107,21 @@ const analytics = {
     } finally {
       if (isAnalyticsDebugMode()) {
         const config = getRuntimeFirebaseConfig();
-        const hasMeasurementId = !!config.measurementId;
-        console.log('[ANALYTICS_DEBUG] measurementId_present:', hasMeasurementId);
-        console.log('[ANALYTICS_DEBUG] firebase_analytics_present:', hasFirebaseAnalytics);
-        console.log('[ANALYTICS_DEBUG] analytics_init_ok:', initOk);
+        let appMeasurementId;
+        try { appMeasurementId = firebase.app().options.measurementId; } catch (_) {}
+        console.info('[ANALYTICS_DEBUG] config.measurementId:', config.measurementId || 'undefined');
+        console.info('[ANALYTICS_DEBUG] firebase.app().options.measurementId:',
+          appMeasurementId || 'undefined');
+        console.info('[ANALYTICS_DEBUG] firebase_analytics_present:', hasFirebaseAnalytics);
+        console.info('[ANALYTICS_DEBUG] analytics_init_ok:', initOk);
+        try {
+          window.__rt_analytics = {
+            logEvent: (name, params) => {
+              firebase.analytics().logEvent(name, params);
+              console.info('[ANALYTICS_DEBUG] logEvent:', name, params);
+            },
+          };
+        } catch (_) {}
       }
     }
   },

@@ -5,7 +5,7 @@
 | Item | Value |
 |------|-------|
 | SDK | Firebase Analytics compat 10.7.1 (GA4 backend) |
-| measurementId | `G-NSMYHFHFKB` |
+| measurementId | `G-C0S8XED8NB`（`firebase apps:sdkconfig web` で検証済み 2026-02） |
 | Helper | `analytics` object in `static/app.js` |
 | Policy | **best-effort / silent-fail / no-PII** |
 | Debug | URL に `?debug_mode=true` を付与 → GA4 DebugView 対応 |
@@ -227,12 +227,17 @@ login → session_start → session_end(result='success')
 `?debug_mode=true` 付与時、以下のログが出力される:
 
 ```
-[ANALYTICS_DEBUG] measurementId_present: true
+[ANALYTICS_DEBUG] pre-init firebase.apps.length: 0
+[ANALYTICS_DEBUG] config.measurementId: G-C0S8XED8NB
+[ANALYTICS_DEBUG] post-init firebase.app().options.measurementId: G-C0S8XED8NB
+[ANALYTICS_DEBUG] post-init firebase.apps.length: 1
+[ANALYTICS_DEBUG] config.measurementId: G-C0S8XED8NB
+[ANALYTICS_DEBUG] firebase.app().options.measurementId: G-C0S8XED8NB
 [ANALYTICS_DEBUG] firebase_analytics_present: true
 [ANALYTICS_DEBUG] analytics_init_ok: true
 ```
 
-3 つとも `true` であれば正常に初期化されている。
+すべての measurementId が `G-C0S8XED8NB` と一致し、`analytics_init_ok: true` であれば正常。
 
 ### 3. GA4 Realtime レポート
 
@@ -246,6 +251,28 @@ GA4 コンソール → Reports → Realtime で直近 30 分のイベントを�
 ```
 [ANALYTICS_DEBUG] Unknown event: "typo_event"
 [ANALYTICS_DEBUG] Unexpected params for "login": ["bad_param"]
+```
+
+### 5. Localhost Suppression
+
+`localhost` / `127.0.0.1` / `[::1]` では analytics は自動的に無効化される。
+`?debug_mode=true` を付与することでローカルでも analytics を有効化してテスト可能。
+
+| 環境 | debug_mode | analytics |
+|------|-----------|-----------|
+| Production | なし | 有効 |
+| Production | `?debug_mode=true` | 有効 + DebugView |
+| localhost | なし | **無効** |
+| localhost | `?debug_mode=true` | 有効 + DebugView |
+
+### 6. Manual Event Testing (`window.__rt_analytics`)
+
+`?debug_mode=true` 時、`window.__rt_analytics.logEvent(name, params)` が利用可能。
+Console から直接イベントを発火してテストできる:
+
+```js
+window.__rt_analytics.logEvent('login', { method: 'google' });
+// → [ANALYTICS_DEBUG] logEvent: login {method: "google"}
 ```
 
 ---
