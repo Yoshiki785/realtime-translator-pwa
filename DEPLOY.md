@@ -87,6 +87,29 @@ firebase init hosting
 firebase use $PROJECT_ID
 ```
 
+### 3.1 プロジェクト取り違え防止（必須）
+
+- 本番プロジェクトIDは `realtime-translator-pwa-483710`。
+- デプロイ前に必ず Active Project を確認する。
+
+```bash
+# 本番エイリアスを使う（.firebaserc: prod -> realtime-translator-pwa-483710）
+firebase use prod
+
+# Active Project を確認
+firebase use
+```
+
+```bash
+# 安全デプロイ（Hosting）
+firebase use prod && firebase deploy --only hosting --project realtime-translator-pwa-483710
+
+# 安全デプロイ（Firestore Rules）
+firebase use prod && firebase deploy --only firestore:rules --project realtime-translator-pwa-483710
+```
+
+- Console確認時も、画面上部のプロジェクトが `realtime-translator-pwa-483710` であることを毎回確認する。
+
 ### 4. Secret Manager にシークレット登録
 
 ```bash
