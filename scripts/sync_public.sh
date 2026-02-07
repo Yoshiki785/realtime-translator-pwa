@@ -19,7 +19,7 @@ BUILD_TIME=$(date +%Y%m%d%H%M%S)
 echo "Build timestamp: $BUILD_TIME"
 
 # Files to sync (simple copy)
-FILES=("app.js" "index.html" "styles.css" "privacy.html" "terms.html" "firebase-config.js" "manifest.json")
+FILES=("app.js" "index.html" "styles.css" "pricing.html" "privacy.html" "terms.html" "firebase-config.js" "manifest.json")
 
 # Files that need BUILD_TIME replacement
 FILES_WITH_BUILD_TIME=("sw.js")

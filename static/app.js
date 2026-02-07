@@ -101,9 +101,13 @@ const STRINGS = {
     networkDisconnected: '接続が切れました。テキストは保存されています。ネットワーク復帰後に再度 Start してください。',
     errorRateLimit: 'リクエスト制限中です。しばらく待ってから再試行してください。',
     errorServerError: 'サーバーエラーが発生しました。時間をおいて再試行してください。',
+    pricingPlan: '料金・プラン',
     privacyPolicy: 'プライバシーポリシー',
     termsOfService: '利用規約',
     contact: 'お問い合わせ',
+    contactForm: 'お問い合わせフォーム',
+    support: '法務・サポート',
+    contactResponseSla: '通常3営業日以内に返信します。',
     buildLabel: 'ビルド',
     forceUpdate: '最新版を取得',
     forceUpdateRunning: '更新中…',
@@ -210,9 +214,13 @@ const STRINGS = {
     networkDisconnected: 'Connection lost. Your text is saved. Please reconnect and press Start again.',
     errorRateLimit: 'Rate limited. Please wait and try again.',
     errorServerError: 'Server error. Please try again later.',
+    pricingPlan: 'Pricing & Plans',
     privacyPolicy: 'Privacy Policy',
     termsOfService: 'Terms of Service',
     contact: 'Contact',
+    contactForm: 'Contact Form',
+    support: 'Legal & Support',
+    contactResponseSla: 'We usually reply within 3 business days.',
     buildLabel: 'Build',
     forceUpdate: 'Get Latest',
     forceUpdateRunning: 'Updating…',
@@ -341,9 +349,13 @@ const STRINGS = {
     errorRateLimit: '请求受限。请稍等后重试。',
     // 拼音: Fúwùqì cuòwù. Qǐng shāohòu chóngshì.
     errorServerError: '服务器错误。请稍后重试。',
+    pricingPlan: '价格与方案',
     privacyPolicy: '隐私政策',
     termsOfService: '服务条款',
     contact: '联系我们',
+    contactForm: '联系表单',
+    support: '法务与支持',
+    contactResponseSla: '通常会在3个工作日内回复。',
     buildLabel: '构建',
     forceUpdate: '获取最新版',
     forceUpdateRunning: '更新中…',
@@ -1105,6 +1117,8 @@ const EVENT_SCHEMA = {
   upgrade_initiated: ['source'],
   ticket_purchased:  ['pack_id', 'quantity_bucket'],
   settings_changed:  ['setting_key'],
+  legal_link_clicked: ['link_type', 'source'],
+  contact_link_clicked: ['channel', 'source'],
 };
 
 // === Analytics Module (Best-Effort, No PII) ===
@@ -1297,6 +1311,7 @@ const state = {
   jobActive: false, // ジョブが有効（予約済み〜完了前）かどうか
   startInFlight: false, // Start処理がin-flight中かどうか（二重発火防止）
   uiBound: false, // UIイベントハンドラが登録済みか（二重登録防止）
+  linkAnalyticsBound: false, // 導線クリック計測の二重登録防止
   historyListBound: false, // 履歴一覧クリックハンドラの二重登録防止
   historyEmptyDefault: '',
   serverTimeOffsetMs: null, // サーバ時刻との差分（ms）
@@ -3088,6 +3103,52 @@ const pollForQuotaUpdate = async (maxAttempts = 5, intervalMs = 5000) => {
   return false;
 };
 
+const openSettingsModal = () => {
+  if (!els.settingsModal) return;
+  els.settingsModal.showModal();
+  if (currentUser) {
+    loadDictionaryList();
+  }
+  try {
+    fetchBuildSha();
+  } catch (err) {
+    console.warn('[SETTINGS] fetchBuildSha failed:', err);
+  }
+  if (els.forceUpdateBtn) {
+    els.forceUpdateBtn.disabled = false;
+    els.forceUpdateBtn.textContent = t('forceUpdate');
+  }
+};
+
+const bindLinkAnalytics = () => {
+  if (state.linkAnalyticsBound) return;
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    const element = target instanceof Element ? target : target?.parentElement;
+    if (!element) return;
+    const link = element.closest('a');
+    if (!link) return;
+
+    const source = link.getAttribute('data-link-source') || 'unknown';
+    const legalType = link.getAttribute('data-legal-link');
+    if (legalType) {
+      analytics.log('legal_link_clicked', {
+        link_type: legalType,
+        source,
+      });
+    }
+
+    const channel = link.getAttribute('data-contact-channel');
+    if (channel) {
+      analytics.log('contact_link_clicked', {
+        channel,
+        source,
+      });
+    }
+  });
+  state.linkAnalyticsBound = true;
+};
+
 // ========== Dictionary View (Hash Route #/dictionary) ==========
 const showDictionaryView = () => {
   if (els.dictionaryView && els.appShell) {
@@ -3471,8 +3532,8 @@ const schedulePostPurchaseRetry = () => {
   }, 10000);
 };
 
-// Handle hash routes (#/dictionary, #/history, #/history/:id, #/billing/*, #/tickets/*)
-// ルーティング: #/ or '' => メイン, #/history => 履歴一覧, #/history/<id> => 履歴詳細
+// Handle hash routes (#/settings, #/dictionary, #/history, #/history/:id, #/billing/*, #/tickets/*)
+// ルーティング: #/ or '' => メイン, #/settings => 設定, #/history => 履歴一覧, #/history/<id> => 履歴詳細
 const handleHashRoute = async () => {
   const hash = window.location.hash || '';
 
@@ -3482,6 +3543,17 @@ const handleHashRoute = async () => {
     hideHistoryView();
     hideHistoryDetailView();
     if (els.appShell) els.appShell.style.display = 'flex';
+    return;
+  }
+
+  // Settings route
+  if (hash === '#/settings') {
+    hideDictionaryView();
+    hideHistoryView();
+    hideHistoryDetailView();
+    if (els.appShell) els.appShell.style.display = 'flex';
+    openSettingsModal();
+    history.replaceState(null, '', window.location.pathname);
     return;
   }
 
@@ -5232,6 +5304,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (els.summaryPromptInput) els.summaryPromptInput.value = state.summaryPrompt;
 
     applyI18n();
+    bindLinkAnalytics();
 
     // ---- CRITICAL EVENT HANDLERS (login, main buttons) ----
     // 二重登録防止: state.uiBound でガード
@@ -5463,19 +5536,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (els.settingsBtn && els.settingsModal) {
     els.settingsBtn.addEventListener('click', () => {
-      els.settingsModal.showModal();
-      if (currentUser) {
-        loadDictionaryList();
-      }
-      try {
-        fetchBuildSha();
-      } catch (err) {
-        console.warn('[SETTINGS] fetchBuildSha failed:', err);
-      }
-      if (els.forceUpdateBtn) {
-        els.forceUpdateBtn.disabled = false;
-        els.forceUpdateBtn.textContent = t('forceUpdate');
-      }
+      openSettingsModal();
     });
   }
 

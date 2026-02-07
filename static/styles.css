@@ -959,6 +959,43 @@ button.small:active {
   color: #f87171;
 }
 
+/* Support / Legal links in settings */
+.support-section {
+  margin-top: 16px;
+  padding: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.support-section h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.support-note {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.support-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+}
+
+.support-links a {
+  color: var(--accent);
+  text-decoration: none;
+  font-size: 13px;
+}
+
+.support-links a:hover {
+  text-decoration: underline;
+}
+
 /* Ticket Purchase Modal */
 .ticket-modal {
   max-width: 400px;
@@ -1375,6 +1412,7 @@ button.disabled {
 /* ========== Footer Nav ========== */
 .footer-nav {
   display: flex;
+  flex-wrap: wrap;
   justify-content: center;
   gap: 8px;
   margin-top: 8px;
@@ -1451,4 +1489,3 @@ button.disabled {
   max-height: 150px;
   overflow-y: auto;
 }
-

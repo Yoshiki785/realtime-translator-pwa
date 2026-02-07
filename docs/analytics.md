@@ -150,6 +150,32 @@
 | Params | `setting_key` |
 | Enum | `'uiLang'` \| `'inputLang'` \| `'outputLang'` \| `'glossary_text'` \| `'summary_prompt'` \| `'maxChars'` \| `'gapMs'` \| `'vadSilence'` |
 
+### 10. `legal_link_clicked`
+
+| Item | Value |
+|------|-------|
+| Trigger | 料金/プライバシー/利用規約リンクのクリック |
+| Location | `static/app.js`（`data-legal-link` を持つ `<a>` の click） |
+| Params | `link_type`, `source` |
+
+| Param | Enum Values |
+|-------|-------------|
+| `link_type` | `'pricing'` \| `'privacy'` \| `'terms'` |
+| `source` | `'footer'` \| `'settings'` \| `'unknown'` |
+
+### 11. `contact_link_clicked`
+
+| Item | Value |
+|------|-------|
+| Trigger | 問い合わせリンク（メール/フォーム）のクリック |
+| Location | `static/app.js`（`data-contact-channel` を持つ `<a>` の click） |
+| Params | `channel`, `source` |
+
+| Param | Enum Values |
+|-------|-------------|
+| `channel` | `'email'` \| `'form'` |
+| `source` | `'footer'` \| `'settings'` \| `'unknown'` |
+
 ---
 
 ## Known Issues
@@ -210,6 +236,11 @@ login → session_start → session_end(result='success')
 
 - **設定変更率**: settings_changed 発火ユーザー / 全ユーザー
 - **人気設定**: setting_key の分布（glossary_text, vadSilence 等の利用状況）
+
+### Legal / Support Navigation
+
+- **法務ページ導線CTR**: legal_link_clicked / セッション数
+- **問い合わせチャネル比率**: contact_link_clicked の channel 内訳（email vs form）
 
 ---
 
