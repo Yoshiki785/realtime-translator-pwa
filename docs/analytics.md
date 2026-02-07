@@ -5,7 +5,7 @@
 | Item | Value |
 |------|-------|
 | SDK | Firebase Analytics compat 10.7.1 (GA4 backend) |
-| measurementId | `G-C0S8XED8NB`（`firebase apps:sdkconfig web` で検証済み 2026-02） |
+| measurementId | `G-NSMYHFHFKB`（GA4 Web データストリームで検証済み 2026-02） |
 | Helper | `analytics` object in `static/app.js` |
 | Policy | **best-effort / silent-fail / no-PII** |
 | Debug | URL に `?debug_mode=true` を付与 → GA4 DebugView 対応 |
@@ -228,16 +228,16 @@ login → session_start → session_end(result='success')
 
 ```
 [ANALYTICS_DEBUG] pre-init firebase.apps.length: 0
-[ANALYTICS_DEBUG] config.measurementId: G-C0S8XED8NB
-[ANALYTICS_DEBUG] post-init firebase.app().options.measurementId: G-C0S8XED8NB
+[ANALYTICS_DEBUG] config.measurementId: G-NSMYHFHFKB
+[ANALYTICS_DEBUG] post-init firebase.app().options.measurementId: G-NSMYHFHFKB
 [ANALYTICS_DEBUG] post-init firebase.apps.length: 1
-[ANALYTICS_DEBUG] config.measurementId: G-C0S8XED8NB
-[ANALYTICS_DEBUG] firebase.app().options.measurementId: G-C0S8XED8NB
+[ANALYTICS_DEBUG] config.measurementId: G-NSMYHFHFKB
+[ANALYTICS_DEBUG] firebase.app().options.measurementId: G-NSMYHFHFKB
 [ANALYTICS_DEBUG] firebase_analytics_present: true
 [ANALYTICS_DEBUG] analytics_init_ok: true
 ```
 
-すべての measurementId が `G-C0S8XED8NB` と一致し、`analytics_init_ok: true` であれば正常。
+すべての measurementId が `G-NSMYHFHFKB` と一致し、`analytics_init_ok: true` であれば正常。
 
 ### 3. GA4 Realtime レポート
 
