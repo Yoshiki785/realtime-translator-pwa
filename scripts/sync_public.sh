@@ -23,7 +23,7 @@ BUILD_TIME=$(date +%Y%m%d%H%M%S)
 echo "Build timestamp: $BUILD_TIME"
 
 # Files to sync (simple copy)
-FILES=("app.js" "index.html" "styles.css" "pricing.html" "privacy.html" "terms.html" "firebase-config.js" "manifest.json")
+FILES=("app.js" "index.html" "styles.css" "pricing.html" "privacy.html" "terms.html" "firebase-config.js" "manifest.json" "config/pricing.json")
 
 # Files that need BUILD_TIME replacement
 FILES_WITH_BUILD_TIME=("sw.js")
@@ -38,6 +38,7 @@ done
 
 # Copy files
 copied=0
+mkdir -p "public/config"
 for f in "${FILES[@]}"; do
   cp "static/$f" "public/$f"
   echo "  Copied: static/$f -> public/$f"

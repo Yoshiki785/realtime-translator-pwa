@@ -19,7 +19,7 @@ echo "Checking generated pricing blocks"
 node ./scripts/generate_pricing.js --check
 
 # Files to check
-FILES=("app.js" "index.html" "styles.css" "pricing.html" "privacy.html" "terms.html" "firebase-config.js" "manifest.json")
+FILES=("app.js" "index.html" "styles.css" "pricing.html" "privacy.html" "terms.html" "firebase-config.js" "manifest.json" "config/pricing.json")
 
 drift_found=0
 

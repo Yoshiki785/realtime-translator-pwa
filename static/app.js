@@ -1306,6 +1306,7 @@ const state = {
   token: null,
   hasShownA2HS: localStorage.getItem('a2hsShown') === '1',
   quota: createDefaultQuotaState(),
+  pricingConfig: null,
   currentJob: null,
   jobStartedAt: null,
   jobActive: false, // ジョブが有効（予約済み〜完了前）かどうか
@@ -2255,6 +2256,28 @@ const formatNextReset = (isoString) => {
   }
 };
 
+const getRetentionDaysFromPricingConfig = (plan) => {
+  const planKey = plan === 'pro' ? 'pro' : 'free';
+  const retentionDays = state.pricingConfig?.plans?.[planKey]?.retentionDays;
+  return Number.isInteger(retentionDays) && retentionDays > 0 ? retentionDays : null;
+};
+
+const loadPricingConfig = async () => {
+  try {
+    const res = await fetch('/config/pricing.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.pricingConfig = await res.json();
+    addDiagLog('[pricing] Config loaded');
+  } catch (err) {
+    state.pricingConfig = null;
+    addDiagLog(`[pricing] Config load failed: ${err?.message || err}`);
+  } finally {
+    if (state.quota?.loaded) {
+      updateQuotaBreakdown();
+    }
+  }
+};
+
 const updateQuotaBreakdown = () => {
   if (!els.quotaBreakdown) return;
   const q = state.quota;
@@ -2274,7 +2297,7 @@ const updateQuotaBreakdown = () => {
   const monthlyMin = formatMinutes(q.baseRemainingThisMonth);
   const ticketMin = formatMinutes(q.creditSeconds);
   const totalMin = formatMinutes(q.totalAvailableThisMonth);
-  const retentionDays = q.retentionDays ?? 7;
+  const retentionDays = getRetentionDaysFromPricingConfig(q.plan) ?? q.retentionDays ?? 7;
   const nextReset = formatNextReset(q.nextResetAt);
 
   const rows = [
@@ -5527,6 +5550,12 @@ document.addEventListener('DOMContentLoaded', () => {
   } catch (err) {
     console.warn('[INIT:non-critical] Non-critical initialization failed:', err);
     // Non-critical failures are silently logged - app continues
+  }
+
+  try {
+    void loadPricingConfig();
+  } catch (err) {
+    console.warn('[INIT:non-critical] pricing config load failed:', err);
   }
 
   // ============================================================
