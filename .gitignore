@@ -40,3 +40,6 @@ scripts/poll_plan.sh
 # Local test files
 tests/
 ops/tmp/
+
+# local tool artifacts
+.claude/
