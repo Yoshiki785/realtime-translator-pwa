@@ -1801,6 +1801,24 @@ async def get_billing_status(request: Request) -> JSONResponse:
     subscription_status = user_data.get("subscriptionStatus", "free")
     cancel_at_period_end = user_data.get("cancelAtPeriodEnd", False)
     current_period_end = user_data.get("currentPeriodEnd")
+    is_pro = plan == "pro"
+
+    # Stripe fallback: currentPeriodEnd が Firestore に無い場合、Stripe から取得してバックフィル
+    if not current_period_end and is_pro:
+        subscription_id = user_data.get("stripeSubscriptionId")
+        if subscription_id:
+            try:
+                secret_key = os.getenv("STRIPE_SECRET_KEY")
+                if secret_key:
+                    stripe.api_key = secret_key
+                    sub = stripe.Subscription.retrieve(subscription_id)
+                    cpe = sub.get("current_period_end")
+                    if cpe:
+                        current_period_end = datetime.fromtimestamp(cpe, tz=timezone.utc)
+                        user_ref.set({"currentPeriodEnd": current_period_end}, merge=True)
+                        logger.info(f"[billing_status] Backfilled currentPeriodEnd from Stripe | uid={uid}")
+            except Exception as e:
+                logger.warning(f"[billing_status] Stripe fallback failed | uid={uid} error={e}")
 
     # currentPeriodEnd を ISO 文字列に変換
     current_period_end_iso = None
@@ -1819,9 +1837,9 @@ async def get_billing_status(request: Request) -> JSONResponse:
         "cancelAtPeriodEnd": cancel_at_period_end,
         "currentPeriodEnd": current_period_end_iso,
         "currentPeriodEndUnix": current_period_end_unix,
-        "isPro": plan == "pro",
+        "isPro": is_pro,
         "isPastDue": subscription_status == "past_due",
-        "isCanceling": cancel_at_period_end and plan == "pro",
+        "isCanceling": cancel_at_period_end and is_pro,
     }
 
     logger.info(f"[billing_status] GET | {json.dumps({'uid': uid, 'plan': plan, 'status': subscription_status})}")
@@ -2108,14 +2126,13 @@ async def stripe_webhook(request: Request) -> JSONResponse:
 
 # ========== Ticket Purchase API ==========
 # Allowed ticket minutes (UI options)
-ALLOWED_TICKET_MINUTES = [120, 240, 300, 360, 1200, 1800, 3000]
+ALLOWED_TICKET_MINUTES = [120, 240, 360, 1200, 1800, 3000]
 
 # Ticket pack definitions (packId -> minutes, JPY price)
 # Price ID is resolved from STRIPE_TICKET_PRICE_MAP_JSON or price_T{minutes} env
 TICKET_PACKS = {
     "t120": {"minutes": 120, "price_jpy": 1440},
     "t240": {"minutes": 240, "price_jpy": 2440},
-    "t300": {"minutes": 300, "price_jpy": 2940},
     "t360": {"minutes": 360, "price_jpy": 3240},
     "t1200": {"minutes": 1200, "price_jpy": 9600},
     "t1800": {"minutes": 1800, "price_jpy": 12600},
