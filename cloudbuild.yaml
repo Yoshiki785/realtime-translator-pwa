@@ -48,7 +48,7 @@ steps:
 
 substitutions:
   _SERVICE_NAME: realtime-translator-api
-  _REGION: us-central1
+  _REGION: asia-northeast1
   _REPO_NAME: realtime-translator
   _ENV: production
 
