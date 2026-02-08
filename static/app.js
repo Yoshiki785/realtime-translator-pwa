@@ -2271,6 +2271,31 @@ const getRetentionDaysFromPricingConfig = (plan) => {
   return Number.isInteger(retentionDays) && retentionDays > 0 ? retentionDays : null;
 };
 
+const getPlanLimitsFromPricingConfig = (plan) => {
+  const planKey = plan === 'pro' ? 'pro' : 'free';
+  const planConfig = state.pricingConfig?.plans?.[planKey];
+  if (!planConfig || typeof planConfig !== 'object') return null;
+  const monthlyMinutes = planConfig.monthlyMinutes;
+  if (!Number.isInteger(monthlyMinutes) || monthlyMinutes <= 0) return null;
+  const dailyMinutesRaw = planConfig.dailyMinutes;
+  const dailyMinutes =
+    dailyMinutesRaw == null
+      ? null
+      : Number.isInteger(dailyMinutesRaw) && dailyMinutesRaw > 0
+        ? dailyMinutesRaw
+        : null;
+  return { monthlyMinutes, dailyMinutes };
+};
+
+const formatPlanLimitsText = (limits) => {
+  if (!limits || !Number.isInteger(limits.monthlyMinutes) || limits.monthlyMinutes <= 0) return '';
+  const dailyText =
+    Number.isInteger(limits.dailyMinutes) && limits.dailyMinutes > 0
+      ? `1日${limits.dailyMinutes}分`
+      : '日次制限なし';
+  return `月間${limits.monthlyMinutes}分 / ${dailyText}`;
+};
+
 const loadPricingConfig = async () => {
   try {
     const res = await fetch('/config/pricing.json', { cache: 'no-store' });
@@ -2311,6 +2336,7 @@ const updateQuotaBreakdown = () => {
   const ticketMin = formatMinutes(q.creditSeconds);
   const totalMin = formatMinutes(q.totalAvailableThisMonth);
   const retentionDays = getRetentionDaysFromPricingConfig(q.plan) ?? q.retentionDays ?? 7;
+  const planLimitsText = formatPlanLimitsText(getPlanLimitsFromPricingConfig(q.plan));
   const nextReset = formatNextReset(q.nextResetAt);
 
   const rows = [
@@ -2320,6 +2346,7 @@ const updateQuotaBreakdown = () => {
     ['月間残り:', `${monthlyMin}分`],
     ['チケット残高:', `${ticketMin}分`],
     ['合計:', `${totalMin}分`, 'total'],
+    ...(planLimitsText ? [['プラン上限:', planLimitsText]] : []),
     ['保持期間:', `${retentionDays}日`],
     ['次回リセット:', nextReset, 'reset'],
   ];
