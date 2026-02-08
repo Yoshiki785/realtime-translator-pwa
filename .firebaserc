@@ -1,6 +1,7 @@
 {
   "projects": {
-    "default": "realtime-translator-pwa",
-    "prod": "realtime-translator-pwa-483710"
+    "default": "realtime-translator-pwa-483710",
+    "prod": "realtime-translator-pwa-483710",
+    "legacy": "realtime-translator-pwa"
   }
 }

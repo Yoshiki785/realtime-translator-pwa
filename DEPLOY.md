@@ -1,5 +1,7 @@
 # デプロイ・運用ガイド
 
+> 🚀 MVP ローンチ用チェックリスト → [docs/launch_mvp_runbook.md](docs/launch_mvp_runbook.md)
+
 ## アーキテクチャ
 
 - **バックエンド**: Cloud Run（FastAPI + uvicorn）
@@ -109,6 +111,31 @@ firebase use prod && firebase deploy --only firestore:rules --project realtime-t
 ```
 
 - Console確認時も、画面上部のプロジェクトが `realtime-translator-pwa-483710` であることを毎回確認する。
+
+### 3.2 デプロイ前チェックリスト
+
+- [ ] `firebase use` で Active Project が `realtime-translator-pwa-483710` であることを確認
+- [ ] Firebase Console 画面上部のプロジェクトが `realtime-translator-pwa-483710` であることを確認
+- [ ] `--project realtime-translator-pwa-483710` を明示して実行
+
+#### コピペ用コマンド
+
+```bash
+# プロジェクト確認
+firebase use
+
+# Hosting デプロイ
+firebase deploy --only hosting --project realtime-translator-pwa-483710
+
+# Firestore Rules デプロイ
+firebase deploy --only firestore:rules --project realtime-translator-pwa-483710
+
+# Firestore Indexes デプロイ（必要時のみ）
+firebase deploy --only firestore:indexes --project realtime-translator-pwa-483710
+
+# プロジェクト一覧（必要時）
+firebase projects:list
+```
 
 ### 4. Secret Manager にシークレット登録
 
