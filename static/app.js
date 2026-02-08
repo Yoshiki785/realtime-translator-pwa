@@ -2328,14 +2328,51 @@ const formatTicketPacksSampleText = (packs) => {
   return rest > 0 ? `${head} … 他${rest}種` : head;
 };
 
+const summarizeTicketPacks = (packs) => {
+  if (!Array.isArray(packs) || packs.length === 0) return null;
+  let count = 0;
+  let minMinutes = 0;
+  let maxMinutes = 0;
+  let minPrice = 0;
+  let maxPrice = 0;
+
+  for (const pack of packs) {
+    if (
+      !pack
+      || !Number.isInteger(pack.minutes)
+      || pack.minutes <= 0
+      || !Number.isInteger(pack.priceJpy)
+      || pack.priceJpy <= 0
+    ) {
+      continue;
+    }
+
+    if (count === 0) {
+      minMinutes = pack.minutes;
+      maxMinutes = pack.minutes;
+      minPrice = pack.priceJpy;
+      maxPrice = pack.priceJpy;
+    } else {
+      if (pack.minutes < minMinutes) minMinutes = pack.minutes;
+      if (pack.minutes > maxMinutes) maxMinutes = pack.minutes;
+      if (pack.priceJpy < minPrice) minPrice = pack.priceJpy;
+      if (pack.priceJpy > maxPrice) maxPrice = pack.priceJpy;
+    }
+    count += 1;
+  }
+
+  if (count === 0) return null;
+  return { count, minMinutes, maxMinutes, minPrice, maxPrice };
+};
+
 const formatTicketPolicyText = (plan) => {
   const display = getTicketDisplayFromPricingConfig(plan);
   if (!display) return null;
   if (plan !== 'pro') return display;
   const packs = getVisibleTicketPacksFromPricingConfig();
-  if (!packs || packs.length === 0) return display;
-  const sample = formatTicketPacksSampleText(packs);
-  return sample ? `${display} / パック例: ${sample}` : display;
+  const summary = summarizeTicketPacks(packs);
+  if (!summary) return display;
+  return `可（${summary.count}種・${summary.minMinutes}〜${summary.maxMinutes}分）`;
 };
 
 const loadPricingConfig = async () => {
@@ -2380,6 +2417,10 @@ const updateQuotaBreakdown = () => {
   const retentionDays = getRetentionDaysFromPricingConfig(q.plan) ?? q.retentionDays ?? 7;
   const planLimitsText = formatPlanLimitsText(getPlanLimitsFromPricingConfig(q.plan));
   const ticketPolicyText = formatTicketPolicyText(q.plan);
+  const ticketBalanceText =
+    q.plan === 'pro' && ticketPolicyText
+      ? `${ticketMin}分（追加購入: ${ticketPolicyText}）`
+      : `${ticketMin}分`;
   const nextReset = formatNextReset(q.nextResetAt);
 
   const rows = [
@@ -2387,10 +2428,9 @@ const updateQuotaBreakdown = () => {
     ['本日残り:', q.plan === 'free' ? `${dayMin}分` : '制限なし'],
     ['今日のジョブ:', q.plan === 'free' ? `${jobUsed}/${jobLimit}回` : '制限なし'],
     ['月間残り:', `${monthlyMin}分`],
-    ['チケット残高:', `${ticketMin}分`],
+    ['チケット残高:', ticketBalanceText],
     ['合計:', `${totalMin}分`, 'total'],
     ...(planLimitsText ? [['プラン上限:', planLimitsText]] : []),
-    ...(ticketPolicyText ? [['追加購入:', ticketPolicyText]] : []),
     ['保持期間:', `${retentionDays}日`],
     ['次回リセット:', nextReset, 'reset'],
   ];
