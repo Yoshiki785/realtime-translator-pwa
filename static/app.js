@@ -12,6 +12,14 @@ const STRINGS = {
     close: '閉じる',
     transcriptLog: '原文ログ',
     translationLog: '翻訳ログ',
+    historyCreatedLabel: '作成日時: ',
+    historyLangLabel: '言語: ',
+    historyDurationLabel: '所要: ',
+    historyUtterancesLabel: '発話数: ',
+    historyExpired: '期限切れのため表示できません',
+    historyEmptyFiltered: '期限切れの履歴は非表示です',
+    historyNoOriginal: '（原文なし）',
+    historyNoTranslation: '（翻訳なし）',
     preset: 'プリセット:',
     presetFast: '速い',
     presetBalanced: 'バランス',
@@ -40,19 +48,24 @@ const STRINGS = {
     glossaryLabel: '辞書（用語集）',
     glossaryHint: '1行1エントリ：source=target',
     takeoverTitle: '別端末で使用中です',
-    takeoverMessage: '別端末で翻訳が開始されています。この端末で開始すると他端末のセッションは停止扱いになります。',
+    takeoverMessage: '別端末で翻訳が実行中です。別端末でStopしてから、この端末でStartしてください。',
     takeoverStart: 'この端末で開始（他を停止）',
-    takeoverKeep: '別端末の継続を優先',
+    takeoverKeep: '閉じる',
     upgradeToPro: 'Proにアップグレード',
     upgrading: '処理中...',
     billingSuccess: 'アップグレード完了！',
     billingPending: 'プラン反映中...',
+    billingSyncDelayed: '反映に時間がかかっています。しばらくして再読込してください。',
     billingCancelled: 'キャンセルしました',
     billingError: 'エラーが発生しました',
     alreadyPro: 'Proプラン利用中',
     manageSubscription: 'サブスク管理',
     buyTicket: '追加購入',
     buyTicketProOnly: '追加購入（Pro限定）',
+    resyncQuota: '再同期',
+    resyncInProgress: '再同期中…',
+    resyncFailed: '再同期に失敗しました',
+    resyncSuccess: 'クオータ情報を更新しました',
     proRequiredHint: 'Proプランのみ購入可能です。アップグレードしてください。',
     purchasing: '購入中...',
     ticketSuccess: 'チケット購入完了！',
@@ -85,6 +98,23 @@ const STRINGS = {
     errorNoTextToSummarize: '要約するテキストがありません',
     errorSummaryFailed: '要約の生成に失敗しました',
     errorInputTooLong: '入力が長すぎます（上限を超えました）',
+    networkDisconnected: '接続が切れました。テキストは保存されています。ネットワーク復帰後に再度 Start してください。',
+    errorRateLimit: 'リクエスト制限中です。しばらく待ってから再試行してください。',
+    errorServerError: 'サーバーエラーが発生しました。時間をおいて再試行してください。',
+    pricingPlan: '料金・プラン',
+    privacyPolicy: 'プライバシーポリシー',
+    termsOfService: '利用規約',
+    contact: 'お問い合わせ',
+    contactForm: 'お問い合わせフォーム',
+    support: '法務・サポート',
+    contactResponseSla: '通常3営業日以内に返信します。',
+    buildLabel: 'ビルド',
+    forceUpdate: '最新版を取得',
+    forceUpdateRunning: '更新中…',
+    forceUpdateFailed: '更新失敗',
+    copyDiagnostics: '診断情報をコピー',
+    diagnosticsCopied: '診断情報をコピーしました',
+    diagnosticsCopyFailed: 'コピーに失敗しました',
   },
   en: {
     login: 'Login',
@@ -95,6 +125,14 @@ const STRINGS = {
     close: 'Close',
     transcriptLog: 'Transcript',
     translationLog: 'Translation',
+    historyCreatedLabel: 'Created: ',
+    historyLangLabel: 'Languages: ',
+    historyDurationLabel: 'Duration: ',
+    historyUtterancesLabel: 'Utterances: ',
+    historyExpired: 'This entry has expired and cannot be displayed.',
+    historyEmptyFiltered: 'Expired history entries are hidden.',
+    historyNoOriginal: '(no original)',
+    historyNoTranslation: '(no translation)',
     preset: 'Preset:',
     presetFast: 'Fast',
     presetBalanced: 'Balanced',
@@ -123,19 +161,24 @@ const STRINGS = {
     glossaryLabel: 'Glossary',
     glossaryHint: 'One per line: source=target',
     takeoverTitle: 'Translation is active elsewhere',
-    takeoverMessage: 'Another device is already translating. Starting here will stop the other session.',
+    takeoverMessage: 'Another device is translating. Please stop it there, then start here.',
     takeoverStart: 'Start on this device (stop others)',
-    takeoverKeep: 'Keep the other session',
+    takeoverKeep: 'Close',
     upgradeToPro: 'Upgrade to Pro',
     upgrading: 'Processing...',
     billingSuccess: 'Upgrade complete!',
     billingPending: 'Applying plan...',
+    billingSyncDelayed: 'Sync is taking longer. Please reload in a moment.',
     billingCancelled: 'Cancelled',
     billingError: 'An error occurred',
     alreadyPro: 'Pro plan active',
     manageSubscription: 'Manage Subscription',
     buyTicket: 'Buy Add-on',
     buyTicketProOnly: 'Buy Add-on (Pro only)',
+    resyncQuota: 'Resync',
+    resyncInProgress: 'Resyncing…',
+    resyncFailed: 'Resync failed',
+    resyncSuccess: 'Quota info updated',
     proRequiredHint: 'Available for Pro plans only. Please upgrade.',
     purchasing: 'Purchasing...',
     ticketSuccess: 'Ticket purchased!',
@@ -168,6 +211,23 @@ const STRINGS = {
     errorNoTextToSummarize: 'No text to summarize',
     errorSummaryFailed: 'Failed to generate summary',
     errorInputTooLong: 'Input is too long (exceeded limit)',
+    networkDisconnected: 'Connection lost. Your text is saved. Please reconnect and press Start again.',
+    errorRateLimit: 'Rate limited. Please wait and try again.',
+    errorServerError: 'Server error. Please try again later.',
+    pricingPlan: 'Pricing & Plans',
+    privacyPolicy: 'Privacy Policy',
+    termsOfService: 'Terms of Service',
+    contact: 'Contact',
+    contactForm: 'Contact Form',
+    support: 'Legal & Support',
+    contactResponseSla: 'We usually reply within 3 business days.',
+    buildLabel: 'Build',
+    forceUpdate: 'Get Latest',
+    forceUpdateRunning: 'Updating…',
+    forceUpdateFailed: 'Update Failed',
+    copyDiagnostics: 'Copy Diagnostics',
+    diagnosticsCopied: 'Diagnostics copied',
+    diagnosticsCopyFailed: 'Copy failed',
   },
   'zh-Hans': {
     login: '登录',
@@ -178,6 +238,30 @@ const STRINGS = {
     close: '关闭',
     transcriptLog: '原文日志',
     translationLog: '翻译日志',
+    // 拼音: Chuàngjiàn shíjiān：
+    // 日本語訳: 作成日時:
+    historyCreatedLabel: '创建时间：',
+    // 拼音: Yǔyán：
+    // 日本語訳: 言語:
+    historyLangLabel: '语言：',
+    // 拼音: Shícháng：
+    // 日本語訳: 所要:
+    historyDurationLabel: '时长：',
+    // 拼音: Fāhuà shù：
+    // 日本語訳: 発話数:
+    historyUtterancesLabel: '发话数：',
+    // 拼音: Lìshǐ yǐ guòqí, wúfǎ xiǎnshì.
+    // 日本語訳: 期限切れのため表示できません。
+    historyExpired: '历史已过期，无法显示。',
+    // 拼音: Guòqí jìlù yǐ yǐncáng.
+    // 日本語訳: 期限切れの履歴は非表示です。
+    historyEmptyFiltered: '过期记录已隐藏。',
+    // 拼音: （Wú yuánwén）
+    // 日本語訳: （原文なし）
+    historyNoOriginal: '（无原文）',
+    // 拼音: （Wú fānyì）
+    // 日本語訳: （翻訳なし）
+    historyNoTranslation: '（无翻译）',
     preset: '预设:',
     presetFast: '快速',
     presetBalanced: '平衡',
@@ -206,19 +290,26 @@ const STRINGS = {
     glossaryLabel: '词汇表',
     glossaryHint: '每行一条：source=target',
     takeoverTitle: '其他设备正在使用',
-    takeoverMessage: '另一台设备正在翻译。若在此设备开始，将停止其他会话。',
+    takeoverMessage: '另一台设备正在翻译。请在那里停止，然后在这里开始。',
     takeoverStart: '在此设备开始（停止其他）',
-    takeoverKeep: '优先保留其他设备',
+    takeoverKeep: '关闭',
     upgradeToPro: '升级到Pro',
     upgrading: '处理中...',
     billingSuccess: '升级完成！',
     billingPending: '正在应用计划...',
+    // 拼音: Tóngbù xūyào yìxiē shíjiān. Qǐng shāohòu shuāxīn.
+    // 日本語訳: 反映に時間がかかっています。しばらくして再読込してください。
+    billingSyncDelayed: '同步需要一些时间。请稍后刷新。',
     billingCancelled: '已取消',
     billingError: '发生错误',
     alreadyPro: 'Pro计划使用中',
     manageSubscription: '管理订阅',
     buyTicket: '追加购买',
     buyTicketProOnly: '追加购买（仅Pro）',
+    resyncQuota: '重新同步',
+    resyncInProgress: '同步中…',
+    resyncFailed: '重新同步失败',
+    resyncSuccess: '配额信息已更新',
     proRequiredHint: '仅限Pro计划购买，请升级。',
     purchasing: '购买中...',
     ticketSuccess: '购买成功！',
@@ -251,6 +342,27 @@ const STRINGS = {
     errorNoTextToSummarize: '没有可摘要的文本',
     errorInputTooLong: '输入过长（超过上限）',
     errorSummaryFailed: '摘要生成失败',
+    // 拼音: Liánjiē yǐ duànkāi. Wénběn yǐ bǎocún. Qǐng huīfù wǎngluò hòu chóngxīn diǎnjī kāishǐ.
+    // 日本語訳: 接続が切れました。テキストは保存されています。ネットワーク復帰後に再度開始してください。
+    networkDisconnected: '连接已断开。文本已保存。请恢复网络后重新点击开始。',
+    // 拼音: Qǐngqiú shòuxiàn. Qǐng shāoděng hòu chóngshì.
+    errorRateLimit: '请求受限。请稍等后重试。',
+    // 拼音: Fúwùqì cuòwù. Qǐng shāohòu chóngshì.
+    errorServerError: '服务器错误。请稍后重试。',
+    pricingPlan: '价格与方案',
+    privacyPolicy: '隐私政策',
+    termsOfService: '服务条款',
+    contact: '联系我们',
+    contactForm: '联系表单',
+    support: '法务与支持',
+    contactResponseSla: '通常会在3个工作日内回复。',
+    buildLabel: '构建',
+    forceUpdate: '获取最新版',
+    forceUpdateRunning: '更新中…',
+    forceUpdateFailed: '更新失败',
+    copyDiagnostics: '复制诊断信息',
+    diagnosticsCopied: '诊断信息已复制',
+    diagnosticsCopyFailed: '复制失败',
   },
 };
 
@@ -324,23 +436,19 @@ const showTakeoverDialog = (activeSince = null) => {
     } catch (_) { /* ignore parse errors */ }
   }
   if (message) message.textContent = messageText;
-  if (confirmBtn) confirmBtn.textContent = t('takeoverStart');
+  // B案: confirmBtn（この端末で開始）は非表示にする
+  if (confirmBtn) confirmBtn.style.display = 'none';
   if (cancelBtn) cancelBtn.textContent = t('takeoverKeep');
 
   return new Promise((resolve) => {
-    const onConfirm = () => {
-      dialog.close();
-      resolve(true);
-    };
-    const onCancel = (event) => {
+    const onClose = (event) => {
       if (event) event.preventDefault();
       dialog.close();
       resolve(false);
     };
 
-    confirmBtn?.addEventListener('click', onConfirm, { once: true });
-    cancelBtn?.addEventListener('click', onCancel, { once: true });
-    dialog.addEventListener('cancel', onCancel, { once: true });
+    cancelBtn?.addEventListener('click', onClose, { once: true });
+    dialog.addEventListener('cancel', onClose, { once: true });
 
     if (!dialog.open) {
       dialog.showModal();
@@ -371,6 +479,16 @@ const createDefaultQuotaState = () => ({
   maxSessionSeconds: null,
   nextResetAt: null,
   blockedReason: null,
+  // 新規フィールド
+  dayJobLimit: null,
+  dayJobUsed: 0,
+  dayJobRemaining: null,
+  retentionDays: 7,
+  concurrentLimit: 1,
+  concurrentActive: 0,
+  billingEnabled: true,
+  purchaseAvailable: true,
+  apiAvailable: true,  // false when running on static server without backend
   loaded: false,
 });
 
@@ -383,8 +501,32 @@ const LANGUAGE_SETTINGS = {
 
 // Debug mode: ?debug=1 in URL
 const isDebugMode = () => new URLSearchParams(window.location.search).get('debug') === '1';
+// Analytics debug mode: ?debug_mode=true in URL (for GA4 DebugView)
+const isAnalyticsDebugMode = () =>
+  new URLSearchParams(window.location.search).get('debug_mode') === 'true';
+const isLocalhost = () => {
+  const h = window.location.hostname;
+  return h === 'localhost' || h === '127.0.0.1' || h === '[::1]';
+};
+
+let _apiProbed = false;
+const probeApiAvailability = async () => {
+  if (_apiProbed || !isLocalhost()) return;
+  _apiProbed = true;
+  try {
+    const res = await fetch('/api/v1/me', { cache: 'no-store' });
+    // 200/401/403 = backend reachable; 404 = static server
+    if (res.status === 404) state.apiAvailable = false;
+  } catch {
+    state.apiAvailable = false;
+  }
+  if (!state.apiAvailable) {
+    addDiagLog('[init] Static preview mode — API calls suppressed');
+  }
+};
 
 const isMissingConfigValue = (value) => !value || String(value).startsWith('PASTE_');
+const getRuntimeFirebaseConfig = () => window.FIREBASE_CONFIG || runtimeFirebaseConfig || {};
 
 // Diagnostic log buffer (no secrets)
 const diagLogs = [];
@@ -454,11 +596,199 @@ const getDiagLogDump = (limit = DIAG_COPY_LIMIT) => {
   return diagLogs.slice(-limit).join('\n');
 };
 
+/**
+ * 安全な診断情報を収集（PIIなし）
+ */
+const collectDiagnostics = async () => {
+  const sections = [];
+  const now = new Date();
+
+  // Format local time as YYYY-MM-DD HH:MM:SS
+  const pad = (n) => String(n).padStart(2, '0');
+  const localTime = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // getTimezoneOffset returns minutes WEST of UTC, so we negate for standard offset
+  const utcOffsetMinutes = -now.getTimezoneOffset();
+
+  // Fallback: ensure sessionId is always set
+  if (!state.sessionId) state.sessionId = generateSessionId();
+
+  sections.push('=== Realtime Translator Diagnostics ===');
+  sections.push(`SessionId: ${state.sessionId}`);
+  sections.push(`Generated: ${now.toISOString()}`);
+  sections.push(`Performance.now: ${performance.now().toFixed(2)}ms`);
+  sections.push('');
+
+  // Build Info
+  sections.push('--- Build Info ---');
+  try {
+    const response = await fetch('/build.txt', { cache: 'no-store' });
+    if (response.ok) {
+      const text = await response.text();
+      const shaMatch = text.match(/BUILD_SHA=([^\s]+)/);
+      const timeMatch = text.match(/BUILD_TIME_UTC=([^\s]+)/);
+      sections.push(`BUILD_SHA: ${shaMatch ? shaMatch[1] : 'unknown'}`);
+      sections.push(`BUILD_TIME_UTC: ${timeMatch ? timeMatch[1] : 'unknown'}`);
+    } else {
+      sections.push('BUILD_SHA: fetch_failed');
+    }
+  } catch (err) {
+    sections.push('BUILD_SHA: error');
+  }
+  sections.push('');
+
+  // Service Worker
+  sections.push('--- Service Worker ---');
+  if ('serviceWorker' in navigator) {
+    try {
+      const reg = await navigator.serviceWorker.getRegistration();
+      sections.push(`Controller: ${navigator.serviceWorker.controller ? 'present' : 'none'}`);
+      if (reg) {
+        sections.push(`Scope: ${reg.scope}`);
+        sections.push(`Active: ${reg.active ? reg.active.state : 'none'}`);
+        sections.push(`Waiting: ${reg.waiting ? reg.waiting.state : 'none'}`);
+        sections.push(`Installing: ${reg.installing ? reg.installing.state : 'none'}`);
+      } else {
+        sections.push('Registration: none');
+      }
+    } catch (err) {
+      sections.push('SW error: unknown');
+    }
+  } else {
+    sections.push('ServiceWorker: not supported');
+  }
+  sections.push('');
+
+  // Cache
+  sections.push('--- Cache Info ---');
+  if ('caches' in window) {
+    try {
+      const keys = await caches.keys();
+      const appKeys = keys.filter((k) => k.startsWith('rt-translator'));
+      sections.push(`App caches: ${appKeys.length}`);
+      appKeys.forEach((k) => sections.push(`  - ${k}`));
+    } catch (err) {
+      sections.push('Cache error: unknown');
+    }
+  } else {
+    sections.push('Cache API: not supported');
+  }
+  sections.push('');
+
+  // Environment (no UserAgent to avoid fingerprinting)
+  sections.push('--- Environment ---');
+  sections.push(`LocalTime: ${localTime} (${tz})`);
+  sections.push(`UTCOffsetMinutes: ${utcOffsetMinutes >= 0 ? '+' : ''}${utcOffsetMinutes}`);
+  sections.push(`Timezone: ${tz}`);
+  sections.push(`Language: ${navigator.language}`);
+  sections.push(`Online: ${navigator.onLine}`);
+  sections.push('');
+
+  // App State (safe values only)
+  sections.push('--- App State ---');
+  sections.push(`uiLang: ${state.uiLang}`);
+  sections.push(`inputLang: ${state.inputLang}`);
+  sections.push(`outputLang: ${state.outputLang}`);
+  sections.push(`maxChars: ${state.maxChars}`);
+  sections.push(`gapMs: ${state.gapMs}`);
+  sections.push(`vadSilence: ${state.vadSilence}`);
+  if (state.sttSettings) {
+    sections.push(`sttSettings.inputLang: ${state.sttSettings.inputLang || 'default'}`);
+    sections.push(`sttSettings.vadPreset: ${state.sttSettings.vadPreset || 'default'}`);
+  }
+  // Effective STT input language (which value is actually used)
+  let effectiveSttInputLang = 'auto';
+  let effectiveSource = 'default';
+  if (state.sttSettings && state.sttSettings.inputLang) {
+    effectiveSttInputLang = state.sttSettings.inputLang;
+    effectiveSource = 'sttSettings';
+  } else if (state.inputLang) {
+    effectiveSttInputLang = state.inputLang;
+    effectiveSource = 'ui';
+  }
+  sections.push(`effectiveSttInputLang: ${effectiveSttInputLang} (source: ${effectiveSource})`);
+  sections.push('');
+
+  // Quota (non-sensitive)
+  sections.push('--- Quota ---');
+  const q = state.quota || {};
+  sections.push(`plan: ${q.plan || 'unknown'}`);
+  sections.push(`loaded: ${q.loaded || false}`);
+  sections.push('');
+
+  // Auth (no PII: no uid, no email, no displayName)
+  sections.push('--- Auth ---');
+  sections.push(`loggedIn: ${!!currentUser}`);
+  if (currentUser) {
+    // Get auth provider from providerData if available
+    let provider = 'unknown';
+    try {
+      if (currentUser.providerData && currentUser.providerData.length > 0) {
+        provider = currentUser.providerData[0].providerId || 'unknown';
+      }
+    } catch (e) {
+      provider = 'unknown';
+    }
+    sections.push(`provider: ${provider}`);
+  }
+  sections.push('');
+
+  sections.push('=== End Diagnostics ===');
+  return sections.join('\n');
+};
+
+/**
+ * 診断情報をクリップボードにコピー（UIフィードバック付き）
+ */
+const copyDiagnosticsInSettings = async () => {
+  const btn = els.copyDiagnosticsBtn;
+  const statusEl = els.diagnosticsStatus;
+  if (!btn) return;
+
+  btn.disabled = true;
+  try {
+    const text = await collectDiagnostics();
+
+    // Primary: Clipboard API
+    try {
+      await navigator.clipboard.writeText(text);
+      if (statusEl) statusEl.textContent = t('diagnosticsCopied');
+    } catch (clipErr) {
+      // Fallback: execCommand
+      const textarea = document.createElement('textarea');
+      textarea.value = text;
+      textarea.style.position = 'fixed';
+      textarea.style.opacity = '0';
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      const success = document.execCommand('copy');
+      textarea.remove();
+      if (success) {
+        if (statusEl) statusEl.textContent = t('diagnosticsCopied');
+      } else {
+        throw new Error('execCommand failed');
+      }
+    }
+    setTimeout(() => {
+      if (statusEl) statusEl.textContent = '';
+    }, 3000);
+  } catch (err) {
+    console.error('[DIAG] Copy failed:', err);
+    if (statusEl) statusEl.textContent = t('diagnosticsCopyFailed');
+    setTimeout(() => {
+      if (statusEl) statusEl.textContent = '';
+    }, 3000);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
 addDiagLog('App bootstrap start');
 
 const updateFirebaseStatus = () => {
   // Only log to console, never show apiKey on screen
-  const projectId = runtimeFirebaseConfig.projectId || 'missing';
+  const projectId = getRuntimeFirebaseConfig().projectId || 'missing';
   const statusLabel = firebaseState.initialized ? 'initialized' : 'not initialized';
   addDiagLog(`Firebase ${statusLabel} | projectId: ${projectId}`);
   updateDevStatusSummary();
@@ -469,16 +799,27 @@ const initFirebase = () => {
     if (!window.firebase || !window.firebase.initializeApp) {
       throw new Error('Firebase SDK not loaded');
     }
-    const missingKeys = requiredConfigKeys.filter((key) =>
-      isMissingConfigValue(runtimeFirebaseConfig[key])
-    );
+    const config = getRuntimeFirebaseConfig();
+    const missingKeys = requiredConfigKeys.filter((key) => isMissingConfigValue(config[key]));
     if (missingKeys.length) {
       throw new Error(`Firebase config missing: ${missingKeys.join(', ')}`);
+    }
+    if (isAnalyticsDebugMode()) {
+      console.info('[ANALYTICS_DEBUG] pre-init firebase.apps.length:', firebase.apps?.length || 0);
+      console.info('[ANALYTICS_DEBUG] config.measurementId:', config.measurementId || 'undefined');
     }
     if (firebase.apps?.length) {
       firebase.app();
     } else {
-      firebase.initializeApp(runtimeFirebaseConfig);
+      firebase.initializeApp(config);
+    }
+    if (isAnalyticsDebugMode()) {
+      try {
+        const opts = firebase.app().options;
+        console.info('[ANALYTICS_DEBUG] post-init firebase.app().options.measurementId:',
+          opts.measurementId || 'undefined');
+        console.info('[ANALYTICS_DEBUG] post-init firebase.apps.length:', firebase.apps?.length || 0);
+      } catch (_) {}
     }
     auth = firebase.auth();
     firebaseState.initialized = true;
@@ -563,6 +904,17 @@ const isTokenExpiredError = (body) => {
 
 // Authenticated fetch wrapper with 401 retry (forceRefresh once)
 const authFetch = async (url, options = {}, _retried = false) => {
+  // Static preview guard: suppress API calls when no backend is available
+  if (isLocalhost() && !state.apiAvailable) {
+    if (!authFetch._logged) {
+      authFetch._logged = true;
+      addDiagLog('[api] authFetch suppressed — no backend (static preview)');
+    }
+    return new Response('{}', {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
   const token = await getAuthToken(_retried); // forceRefresh on retry
   if (!token) {
     throw new Error(t('errorLoginRequired'));
@@ -583,15 +935,15 @@ const authFetch = async (url, options = {}, _retried = false) => {
       // ignore parse error
     }
     if (isTokenExpiredError(body)) {
-      addDiagLog(`authFetch 401 detected, retrying with forceRefresh | url=${url}`);
+      addDiagLog(`[auth] 401 detected, retrying with forceRefresh | url=${url}`);
       return authFetch(url, options, true);
     }
   }
 
   // If still 401 after retry, sign out and show session expired message
   if (res.status === 401 && _retried) {
-    addDiagLog(`authFetch 401 after retry, signing out | url=${url}`);
-    setError('セッション期限切れ。再ログインしてください。');
+    addDiagLog(`[auth] 401 after retry, signing out | url=${url}`);
+    setError(t('errorLoginRequired'));
     if (auth) {
       try {
         await auth.signOut();
@@ -673,6 +1025,7 @@ const cacheElements = () => {
     upgradeProBtn: document.getElementById('upgradeProBtn'),
     manageBillingBtn: document.getElementById('manageBillingBtn'),
     buyTicketBtn: document.getElementById('buyTicketBtn'),
+    resyncQuotaBtn: document.getElementById('resyncQuotaBtn'),
     billingStatus: document.getElementById('billingStatus'),
     // Ticket Modal
     ticketModal: document.getElementById('ticketModal'),
@@ -716,6 +1069,9 @@ const cacheElements = () => {
     swUpdateBanner: document.getElementById('swUpdateBanner'),
     swUpdateBtn: document.getElementById('swUpdateBtn'),
     buildShaDisplay: document.getElementById('buildShaDisplay'),
+    forceUpdateBtn: document.getElementById('forceUpdateBtn'),
+    copyDiagnosticsBtn: document.getElementById('copyDiagnosticsBtn'),
+    diagnosticsStatus: document.getElementById('diagnosticsStatus'),
     // Result Card (after Stop)
     resultCard: document.getElementById('resultCard'),
     resultCardTitle: document.getElementById('resultCardTitle'),
@@ -738,9 +1094,196 @@ const cacheElements = () => {
     historyDetailTitle: document.getElementById('historyDetailTitle'),
     historyDetailContent: document.getElementById('historyDetailContent'),
   };
+  if (els.historyListEmpty && !state.historyEmptyDefault) {
+    state.historyEmptyDefault = els.historyListEmpty.textContent || '';
+  }
+};
+
+// Generate a random sessionId for diagnostics (not persisted, no tracking)
+const generateSessionId = () => {
+  const rand = Math.random().toString(36).substring(2, 8);
+  const ts = Date.now().toString(36).slice(-4);
+  return `${rand}${ts}`.substring(0, 10);
+};
+
+// === Analytics Event Schema (allowlist for debug-mode validation) ===
+const EVENT_SCHEMA = {
+  login:             ['method'],
+  logout:            [],
+  session_start:     ['input_lang', 'output_lang'],
+  session_end:       ['duration_bucket', 'utterance_count_bucket', 'result'],
+  session_error:     ['error_class', 'phase'],
+  quota_blocked:     ['reason'],
+  upgrade_initiated: ['source'],
+  ticket_purchased:  ['pack_id', 'quantity_bucket'],
+  settings_changed:  ['setting_key'],
+  legal_link_clicked: ['link_type', 'source'],
+  contact_link_clicked: ['channel', 'source'],
+};
+
+// === Analytics Module (Best-Effort, No PII) ===
+const analytics = {
+  _instance: null,
+  _enabled: false,
+
+  init() {
+    // Suppress analytics on localhost unless debug_mode is explicitly enabled
+    if (isLocalhost() && !isAnalyticsDebugMode()) {
+      this._enabled = false;
+      return;
+    }
+    // TODO: Add consent check here when cookie banner / opt-out UI is implemented.
+
+    // Pin measurementId: Firebase SDK may fetch a different ID from webConfig.
+    // Wrap existing gtag (or create default) and rewrite only config/send_to commands.
+    const staticMid = getRuntimeFirebaseConfig().measurementId;
+    if (staticMid && typeof window !== 'undefined') {
+      window.dataLayer = window.dataLayer || [];
+      const origGtag = window.gtag || function() { window.dataLayer.push(arguments); };
+      window.gtag = function() {
+        const args = [].slice.call(arguments);
+        if (args[0] === 'config' && typeof args[1] === 'string'
+            && args[1].startsWith('G-') && args[1] !== staticMid) {
+          if (isAnalyticsDebugMode()) {
+            console.info('[ANALYTICS_DEBUG] gtag config mid pinned:', args[1], '→', staticMid);
+          }
+          args[1] = staticMid;
+          return origGtag.apply(window, args);
+        }
+        if (args[0] === 'event' && args[2] && typeof args[2].send_to === 'string'
+            && args[2].send_to.startsWith('G-') && args[2].send_to !== staticMid) {
+          if (isAnalyticsDebugMode()) {
+            console.info('[ANALYTICS_DEBUG] gtag send_to pinned:', args[2].send_to, '→', staticMid);
+          }
+          args[2] = Object.assign({}, args[2], { send_to: staticMid });
+          return origGtag.apply(window, args);
+        }
+        // All other commands (js, set, consent, etc.) pass through unmodified
+        return origGtag.apply(window, arguments);
+      };
+    }
+
+    let initOk = false;
+    const hasFirebaseAnalytics =
+      typeof firebase !== 'undefined' && typeof firebase.analytics === 'function';
+    try {
+      if (hasFirebaseAnalytics) {
+        this._instance = firebase.analytics();
+        this._enabled = true;
+        initOk = true;
+      }
+    } catch (_) {
+      // Silent fail - analytics must not break app
+      this._enabled = false;
+      this._instance = null;
+    } finally {
+      if (isAnalyticsDebugMode()) {
+        const config = getRuntimeFirebaseConfig();
+        let appMeasurementId;
+        try { appMeasurementId = firebase.app().options.measurementId; } catch (_) {}
+        console.info('[ANALYTICS_DEBUG] config.measurementId:', config.measurementId || 'undefined');
+        console.info('[ANALYTICS_DEBUG] firebase.app().options.measurementId:',
+          appMeasurementId || 'undefined');
+        console.info('[ANALYTICS_DEBUG] firebase_analytics_present:', hasFirebaseAnalytics);
+        console.info('[ANALYTICS_DEBUG] analytics_init_ok:', initOk);
+        try {
+          window.__rt_analytics = {
+            logEvent: (name, params) => {
+              firebase.analytics().logEvent(name, params);
+              console.info('[ANALYTICS_DEBUG] logEvent:', name, params);
+            },
+          };
+        } catch (_) {}
+      }
+    }
+  },
+
+  _buildVersionShort() {
+    const raw = state?.buildVersion || state?.buildSha;
+    if (!raw || typeof raw !== 'string') return 'unknown';
+    return raw.slice(0, 7);
+  },
+
+  _context() {
+    return {
+      plan: state?.quota?.plan || 'unknown',
+      ui_lang: state?.uiLang || 'unknown',
+      build_version: this._buildVersionShort(),
+    };
+  },
+
+  log(eventName, params = {}) {
+    if (!this._enabled) return;
+    try {
+      if (isAnalyticsDebugMode() && EVENT_SCHEMA) {
+        const schema = EVENT_SCHEMA[eventName];
+        if (!schema) {
+          console.warn(`[ANALYTICS_DEBUG] Unknown event: "${eventName}"`);
+        } else {
+          const extraKeys = Object.keys(params).filter(k => !schema.includes(k));
+          if (extraKeys.length) {
+            console.warn(`[ANALYTICS_DEBUG] Unexpected params for "${eventName}":`, extraKeys);
+          }
+        }
+      }
+      const enriched = {
+        ...params,
+        ...this._context(),
+      };
+      if (isAnalyticsDebugMode() && !('debug_mode' in enriched)) {
+        enriched.debug_mode = true;
+      }
+      this._instance.logEvent(eventName, enriched);
+    } catch (_) {
+      // Silent fail - analytics must not break app
+    }
+  },
+
+  durationBucket(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return 'unknown';
+    if (seconds < 30) return '<30s';
+    if (seconds < 120) return '30s-2m';
+    if (seconds < 300) return '2m-5m';
+    if (seconds < 900) return '5m-15m';
+    return '15m+';
+  },
+
+  quantityBucket(qty) {
+    if (!Number.isFinite(qty) || qty <= 0) return 'unknown';
+    if (qty === 1) return '1';
+    if (qty <= 5) return '2-5';
+    if (qty <= 10) return '6-10';
+    return '10+';
+  },
+
+  minutesBucket(minutes) {
+    if (!Number.isFinite(minutes) || minutes <= 0) return 'unknown';
+    if (minutes <= 120) return '<=120m';
+    if (minutes <= 360) return '121-360m';
+    if (minutes <= 1200) return '361-1200m';
+    return '1200m+';
+  },
+
+  errorCategory(err) {
+    if (err?._isQuotaLimit || err?._isRateLimit) return 'quota';
+    const context = String(err?._context || '').toLowerCase();
+    if (context.includes('token')) return 'token';
+    if (context.includes('auth')) return 'auth';
+    if (context.includes('negotiate') || context.includes('connection')) return 'connection';
+
+    const msg = String(err?.message || err || '').toLowerCase();
+    if (msg.includes('token')) return 'token';
+    if (msg.includes('auth') || msg.includes('login') || msg.includes('sign')) return 'auth';
+    if (msg.includes('quota') || msg.includes('limit') || msg.includes('rate')) return 'quota';
+    if (msg.includes('network') || msg.includes('connection') || msg.includes('rtc') || msg.includes('ice')) {
+      return 'connection';
+    }
+    return 'unknown';
+  },
 };
 
 const state = {
+  sessionId: generateSessionId(),
   pc: null,
   dataChannel: null,
   mediaStream: null,
@@ -763,11 +1306,17 @@ const state = {
   token: null,
   hasShownA2HS: localStorage.getItem('a2hsShown') === '1',
   quota: createDefaultQuotaState(),
+  pricingConfig: null,
+  apiAvailable: true, // false when running on static server without backend
   currentJob: null,
   jobStartedAt: null,
   jobActive: false, // ジョブが有効（予約済み〜完了前）かどうか
   startInFlight: false, // Start処理がin-flight中かどうか（二重発火防止）
   uiBound: false, // UIイベントハンドラが登録済みか（二重登録防止）
+  linkAnalyticsBound: false, // 導線クリック計測の二重登録防止
+  historyListBound: false, // 履歴一覧クリックハンドラの二重登録防止
+  historyEmptyDefault: '',
+  serverTimeOffsetMs: null, // サーバ時刻との差分（ms）
   // スロットル/クールダウン管理
   lastJobCreateAt: 0, // 最後にjobs/createを呼んだ時刻（Date.now()）
   cooldownUntil: 0, // クールダウン終了時刻（Date.now()）
@@ -797,8 +1346,8 @@ const state = {
     // Guard: only apply once per WS open
     wsAppliedOnce: false,
   },
-  // Diagnostics: session tracking
-  sessionId: null, // Generated per connection attempt
+  // Diagnostics: sessionId is initialized at top of state object
+  // (do not duplicate here - JS object keys last-wins)
   buildVersion: null, // Fetched from /build.txt
   // History (Sprint 2): current session data for result card
   currentSessionResult: null, // { id, timestamp, title, originals, translations, summary, audioUrl, m4aUrl }
@@ -1448,7 +1997,7 @@ const updateDevStatusSummary = () => {
     `Firebase: ${firebaseLabel}`,
     `Auth: ${authLabel}`,
     `API: ${API_BASE_URL}`,
-    `Project: ${runtimeFirebaseConfig.projectId || 'missing'}`,
+    `Project: ${getRuntimeFirebaseConfig().projectId || 'missing'}`,
     `Languages: input=${state.inputLang} → output=${state.outputLang} (UI: ${state.uiLang})`,
     `Settings: maxChars=${state.maxChars}, gapMs=${state.gapMs}, vadSilence=${state.vadSilence}`,
   ];
@@ -1643,9 +2192,37 @@ const setError = (text) => {
 
 const numberOrNull = (value) => (typeof value === 'number' && Number.isFinite(value) ? value : null);
 
+const parseServerTimeMs = (serverTime) => {
+  if (!serverTime) return null;
+  const ms = Date.parse(serverTime);
+  return Number.isFinite(ms) ? ms : null;
+};
+
+const updateServerTimeOffset = (serverTime) => {
+  const serverMs = parseServerTimeMs(serverTime);
+  if (serverMs == null) return;
+  state.serverTimeOffsetMs = serverMs - Date.now();
+};
+
+const getServerNowMs = () => {
+  if (typeof state.serverTimeOffsetMs !== 'number' || !Number.isFinite(state.serverTimeOffsetMs)) {
+    return null;
+  }
+  return Date.now() + state.serverTimeOffsetMs;
+};
+
+// UI表示専用: 常に文字列を返す（数値 or '–'）
 const formatMinutes = (seconds) => {
   if (typeof seconds !== 'number' || Number.isNaN(seconds)) return '–';
-  return Math.max(0, Math.floor(seconds / 60));
+  return String(Math.max(0, Math.floor(seconds / 60)));
+};
+
+const formatDuration = (seconds) => {
+  if (typeof seconds !== 'number' || Number.isNaN(seconds)) return '–';
+  const total = Math.max(0, Math.round(seconds));
+  const mins = Math.floor(total / 60);
+  const secs = total % 60;
+  return `${mins}:${String(secs).padStart(2, '0')}`;
 };
 
 const updateQuotaInfo = () => {
@@ -1660,7 +2237,11 @@ const updateQuotaInfo = () => {
       : '–分';
   if (state.quota.plan === 'free' && typeof state.quota.dailyRemainingSeconds === 'number') {
     const dailyText = `${formatMinutes(state.quota.dailyRemainingSeconds)}分`;
-    els.quotaInfo.textContent = `本日: ${dailyText} / 今月: ${totalText}`;
+    // ジョブ数表示を追加
+    const jobUsed = state.quota.dayJobUsed ?? 0;
+    const jobLimit = state.quota.dayJobLimit ?? 10;
+    const jobText = `ジョブ: ${jobUsed}/${jobLimit}回`;
+    els.quotaInfo.textContent = `本日: ${dailyText} ${jobText} / 今月: ${totalText}`;
   } else {
     els.quotaInfo.textContent = `残り: ${totalText}`;
   }
@@ -1676,6 +2257,144 @@ const formatNextReset = (isoString) => {
   }
 };
 
+function safeDiagLog(msg) {
+  try {
+    addDiagLog(msg);
+  } catch (_) {
+    // noop: logging must not block UI initialization
+  }
+}
+
+const getRetentionDaysFromPricingConfig = (plan) => {
+  const planKey = plan === 'pro' ? 'pro' : 'free';
+  const retentionDays = state.pricingConfig?.plans?.[planKey]?.retentionDays;
+  return Number.isInteger(retentionDays) && retentionDays > 0 ? retentionDays : null;
+};
+
+const getPlanLimitsFromPricingConfig = (plan) => {
+  const planKey = plan === 'pro' ? 'pro' : 'free';
+  const planConfig = state.pricingConfig?.plans?.[planKey];
+  if (!planConfig || typeof planConfig !== 'object') return null;
+  const monthlyMinutes = planConfig.monthlyMinutes;
+  if (!Number.isInteger(monthlyMinutes) || monthlyMinutes <= 0) return null;
+  const dailyMinutesRaw = planConfig.dailyMinutes;
+  const dailyMinutes =
+    dailyMinutesRaw == null
+      ? null
+      : Number.isInteger(dailyMinutesRaw) && dailyMinutesRaw > 0
+        ? dailyMinutesRaw
+        : null;
+  return { monthlyMinutes, dailyMinutes };
+};
+
+const formatPlanLimitsText = (limits) => {
+  if (!limits || !Number.isInteger(limits.monthlyMinutes) || limits.monthlyMinutes <= 0) return '';
+  const dailyText =
+    Number.isInteger(limits.dailyMinutes) && limits.dailyMinutes > 0
+      ? `1日${limits.dailyMinutes}分`
+      : '日次制限なし';
+  return `月間${limits.monthlyMinutes}分 / ${dailyText}`;
+};
+
+const getTicketDisplayFromPricingConfig = (plan) => {
+  const planKey = plan === 'pro' ? 'pro' : 'free';
+  const display = state.pricingConfig?.ticketDisplay?.[planKey];
+  return typeof display === 'string' ? display : null;
+};
+
+const getVisibleTicketPacksFromPricingConfig = () => {
+  const packs = state.pricingConfig?.ticketPacks;
+  if (!Array.isArray(packs)) return null;
+  return packs
+    .filter((pack) => (
+      pack
+      && pack.visible === true
+      && Number.isInteger(pack.minutes)
+      && pack.minutes > 0
+      && Number.isInteger(pack.priceJpy)
+      && pack.priceJpy > 0
+    ))
+    .map((pack) => ({ minutes: pack.minutes, priceJpy: pack.priceJpy }));
+};
+
+const formatTicketPacksSampleText = (packs) => {
+  const list = Array.isArray(packs) ? packs : [];
+  if (list.length === 0) return '';
+  const head = list
+    .slice(0, 3)
+    .map((pack) => `${pack.minutes}分(¥${pack.priceJpy})`)
+    .join(', ');
+  const rest = Math.max(0, list.length - 3);
+  return rest > 0 ? `${head} … 他${rest}種` : head;
+};
+
+const summarizeTicketPacks = (packs) => {
+  if (!Array.isArray(packs) || packs.length === 0) return null;
+  let count = 0;
+  let minMinutes = 0;
+  let maxMinutes = 0;
+  let minPrice = 0;
+  let maxPrice = 0;
+
+  for (const pack of packs) {
+    if (
+      !pack
+      || !Number.isInteger(pack.minutes)
+      || pack.minutes <= 0
+      || !Number.isInteger(pack.priceJpy)
+      || pack.priceJpy <= 0
+    ) {
+      continue;
+    }
+
+    if (count === 0) {
+      minMinutes = pack.minutes;
+      maxMinutes = pack.minutes;
+      minPrice = pack.priceJpy;
+      maxPrice = pack.priceJpy;
+    } else {
+      if (pack.minutes < minMinutes) minMinutes = pack.minutes;
+      if (pack.minutes > maxMinutes) maxMinutes = pack.minutes;
+      if (pack.priceJpy < minPrice) minPrice = pack.priceJpy;
+      if (pack.priceJpy > maxPrice) maxPrice = pack.priceJpy;
+    }
+    count += 1;
+  }
+
+  if (count === 0) return null;
+  return { count, minMinutes, maxMinutes, minPrice, maxPrice };
+};
+
+const formatTicketPolicyText = (plan) => {
+  const display = getTicketDisplayFromPricingConfig(plan);
+  if (!display) return null;
+  if (plan !== 'pro') return display;
+  const packs = getVisibleTicketPacksFromPricingConfig();
+  const summary = summarizeTicketPacks(packs);
+  if (!summary) return display;
+  return `可（${summary.count}種・${summary.minMinutes}〜${summary.maxMinutes}分）`;
+};
+
+const loadPricingConfig = async () => {
+  try {
+    const res = await fetch('/config/pricing.json', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.pricingConfig = await res.json();
+    safeDiagLog('[pricing] Config loaded');
+  } catch (err) {
+    state.pricingConfig = null;
+    safeDiagLog(`[pricing] Config load failed: ${err?.message || err}`);
+  } finally {
+    if (state.quota?.loaded) {
+      try {
+        updateQuotaBreakdown();
+      } catch (_) {
+        // noop: keep app running even if breakdown render fails
+      }
+    }
+  }
+};
+
 const updateQuotaBreakdown = () => {
   if (!els.quotaBreakdown) return;
   const q = state.quota;
@@ -1684,18 +2403,50 @@ const updateQuotaBreakdown = () => {
     updateBillingSection(false);
     return;
   }
+
+  // XSS安全: createElement + textContent で構築
+  els.quotaBreakdown.innerHTML = '';
+
   const planLabel = q.plan === 'pro' ? 'Pro' : 'Free';
+  const dayMin = q.plan === 'free' ? formatMinutes(q.dailyRemainingSeconds) : null;
+  const jobUsed = q.dayJobUsed ?? 0;
+  const jobLimit = q.dayJobLimit ?? '∞';
   const monthlyMin = formatMinutes(q.baseRemainingThisMonth);
   const ticketMin = formatMinutes(q.creditSeconds);
   const totalMin = formatMinutes(q.totalAvailableThisMonth);
+  const retentionDays = getRetentionDaysFromPricingConfig(q.plan) ?? q.retentionDays ?? 7;
+  const planLimitsText = formatPlanLimitsText(getPlanLimitsFromPricingConfig(q.plan));
+  const ticketPolicyText = formatTicketPolicyText(q.plan);
+  const ticketBalanceText =
+    q.plan === 'pro' && ticketPolicyText
+      ? `${ticketMin}分（追加購入: ${ticketPolicyText}）`
+      : `${ticketMin}分`;
   const nextReset = formatNextReset(q.nextResetAt);
-  els.quotaBreakdown.innerHTML = `
-    <div class="breakdown-row"><span>プラン:</span><span>${planLabel}</span></div>
-    <div class="breakdown-row"><span>月間残り:</span><span>${monthlyMin}分</span></div>
-    <div class="breakdown-row"><span>チケット残高:</span><span>${ticketMin}分</span></div>
-    <div class="breakdown-row total"><span>合計:</span><span>${totalMin}分</span></div>
-    <div class="breakdown-row reset"><span>次回リセット:</span><span>${nextReset}</span></div>
-  `;
+
+  const rows = [
+    ['プラン:', planLabel],
+    ['本日残り:', q.plan === 'free' ? `${dayMin}分` : '制限なし'],
+    ['今日のジョブ:', q.plan === 'free' ? `${jobUsed}/${jobLimit}回` : '制限なし'],
+    ['月間残り:', `${monthlyMin}分`],
+    ['チケット残高:', ticketBalanceText],
+    ['合計:', `${totalMin}分`, 'total'],
+    ...(planLimitsText ? [['プラン上限:', planLimitsText]] : []),
+    ['保持期間:', `${retentionDays}日`],
+    ['次回リセット:', nextReset, 'reset'],
+  ];
+
+  rows.forEach(([label, value, extraClass]) => {
+    const row = document.createElement('div');
+    row.className = 'breakdown-row' + (extraClass ? ` ${extraClass}` : '');
+    const labelSpan = document.createElement('span');
+    labelSpan.textContent = label;
+    const valueSpan = document.createElement('span');
+    valueSpan.textContent = value;
+    row.appendChild(labelSpan);
+    row.appendChild(valueSpan);
+    els.quotaBreakdown.appendChild(row);
+  });
+
   // Show billing section for logged-in users
   updateBillingSection(currentUser != null);
 };
@@ -1744,6 +2495,12 @@ const updateBillingSection = (show) => {
         els.buyTicketBtn.disabled = true;
         els.buyTicketBtn.classList.add('disabled');
       }
+    }
+
+    // Resync button: visible for all logged-in users
+    if (els.resyncQuotaBtn) {
+      els.resyncQuotaBtn.style.display = '';
+      els.resyncQuotaBtn.textContent = t('resyncQuota');
     }
   }
 
@@ -2039,6 +2796,7 @@ const selectTicketPack = async (packId) => {
     // Close modal and redirect to Stripe Checkout
     closeTicketModal();
     if (data.url) {
+      try { sessionStorage.setItem('rt_ticket_packId', packId); } catch (_) {}
       window.location.href = data.url;
     } else {
       throw new Error('No checkout URL returned');
@@ -2468,6 +3226,76 @@ const pollForPlanUpdate = async (maxAttempts = 12, intervalMs = 5000) => {
   return false;
 };
 
+const pollForQuotaUpdate = async (maxAttempts = 5, intervalMs = 5000) => {
+  const initialPlan = state.quota.plan;
+  const initialCredit = typeof state.quota.creditSeconds === 'number' ? state.quota.creditSeconds : null;
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const data = await refreshQuotaStatus();
+    if (data) {
+      const nextPlan = data.plan || state.quota.plan;
+      const nextCredit = typeof data.creditSeconds === 'number' ? data.creditSeconds : null;
+      const planChanged = initialPlan && nextPlan && nextPlan !== initialPlan;
+      const creditIncreased =
+        typeof initialCredit === 'number' && typeof nextCredit === 'number' && nextCredit > initialCredit;
+      const creditNowAvailable = initialCredit == null && typeof nextCredit === 'number' && nextCredit > 0;
+      if (planChanged || creditIncreased || creditNowAvailable) {
+        return true;
+      }
+    }
+    if (i < maxAttempts - 1) {
+      await new Promise((r) => setTimeout(r, intervalMs));
+    }
+  }
+  return false;
+};
+
+const openSettingsModal = () => {
+  if (!els.settingsModal) return;
+  els.settingsModal.showModal();
+  if (currentUser) {
+    loadDictionaryList();
+  }
+  try {
+    fetchBuildSha();
+  } catch (err) {
+    console.warn('[SETTINGS] fetchBuildSha failed:', err);
+  }
+  if (els.forceUpdateBtn) {
+    els.forceUpdateBtn.disabled = false;
+    els.forceUpdateBtn.textContent = t('forceUpdate');
+  }
+};
+
+const bindLinkAnalytics = () => {
+  if (state.linkAnalyticsBound) return;
+  document.addEventListener('click', (event) => {
+    const target = event.target;
+    const element = target instanceof Element ? target : target?.parentElement;
+    if (!element) return;
+    const link = element.closest('a');
+    if (!link) return;
+
+    const source = link.getAttribute('data-link-source') || 'unknown';
+    const legalType = link.getAttribute('data-legal-link');
+    if (legalType) {
+      analytics.log('legal_link_clicked', {
+        link_type: legalType,
+        source,
+      });
+    }
+
+    const channel = link.getAttribute('data-contact-channel');
+    if (channel) {
+      analytics.log('contact_link_clicked', {
+        channel,
+        source,
+      });
+    }
+  });
+  state.linkAnalyticsBound = true;
+};
+
 // ========== Dictionary View (Hash Route #/dictionary) ==========
 const showDictionaryView = () => {
   if (els.dictionaryView && els.appShell) {
@@ -2509,6 +3337,37 @@ const navigateBackFromDictionary = () => {
   }
 };
 
+const clearElement = (el) => {
+  if (!el) return;
+  while (el.firstChild) {
+    el.removeChild(el.firstChild);
+  }
+};
+
+const getRetentionDays = () => (state.quota?.plan === 'pro' ? 30 : 7);
+
+const getSessionTimestampInfo = (session) => {
+  if (!session) return null;
+  if (typeof session.serverTimestampMs === 'number' && Number.isFinite(session.serverTimestampMs)) {
+    return { ts: session.serverTimestampMs, confidence: 'high' };
+  }
+  if (typeof session.timestamp === 'number' && Number.isFinite(session.timestamp)) {
+    return { ts: session.timestamp, confidence: 'low' };
+  }
+  return null;
+};
+
+const isSessionExpired = (session) => {
+  const nowMs = getServerNowMs();
+  if (!nowMs) return false;
+  const tsInfo = getSessionTimestampInfo(session);
+  if (!tsInfo) return false;
+  // クライアント時刻のみの場合は誤判定を避けるため表示側に倒す
+  if (tsInfo.confidence !== 'high') return false;
+  const retentionMs = getRetentionDays() * 24 * 60 * 60 * 1000;
+  return nowMs - tsInfo.ts >= retentionMs;
+};
+
 // ========== History View Navigation ==========
 const navigateToHistory = () => {
   window.location.hash = '#/history';
@@ -2521,6 +3380,36 @@ const navigateBackFromHistory = () => {
 
 const navigateBackFromHistoryDetail = () => {
   window.location.hash = '#/history';
+};
+
+const buildHistoryMetaText = (session) => {
+  const parts = [];
+  if (session?.timestamp != null) {
+    parts.push(`${t('historyCreatedLabel')}${formatTimestamp(session.timestamp)}`);
+  }
+  const inputLang = session?.inputLang || 'auto';
+  const outputLang = session?.outputLang || 'ja';
+  parts.push(`${t('historyLangLabel')}${inputLang} → ${outputLang}`);
+  const durationText = formatDuration(session?.durationSeconds);
+  if (durationText !== '–') {
+    parts.push(`${t('historyDurationLabel')}${durationText}`);
+  }
+  const utterances = Array.isArray(session?.originals) ? session.originals.length : 0;
+  parts.push(`${t('historyUtterancesLabel')}${utterances}`);
+  return parts.join(' • ');
+};
+
+const handleHistoryListClick = (e) => {
+  const btn = e.target.closest('button');
+  if (!btn) return;
+  const id = btn.dataset.id;
+  if (!id) return;
+
+  if (btn.classList.contains('hist-detail-btn')) {
+    window.location.hash = `#/history/${id}`;
+  } else if (btn.classList.contains('hist-delete-btn')) {
+    deleteHistoryEntry(id);
+  }
 };
 
 const showHistoryView = async () => {
@@ -2545,44 +3434,67 @@ const loadHistoryList = async () => {
 
   try {
     const sessions = await historyStorage.getAll();
+    const visibleSessions = sessions.filter((session) => !isSessionExpired(session));
 
     els.historyListLoading.style.display = 'none';
 
     if (sessions.length === 0) {
+      if (state.historyEmptyDefault) {
+        els.historyListEmpty.textContent = state.historyEmptyDefault;
+      }
       els.historyListEmpty.style.display = 'block';
       return;
     }
 
-    els.historyList.innerHTML = '';
-    sessions.forEach((session) => {
+    if (visibleSessions.length === 0) {
+      els.historyListEmpty.textContent = t('historyEmptyFiltered');
+      els.historyListEmpty.style.display = 'block';
+      return;
+    }
+
+    clearElement(els.historyList);
+    visibleSessions.forEach((session) => {
       const item = document.createElement('div');
       item.className = 'history-item';
-      item.innerHTML = `
-        <div class="history-item-info">
-          <div class="history-item-title">${escapeHtml(session.title || 'Untitled')}</div>
-          <div class="history-item-meta">${formatTimestamp(session.timestamp)} • ${(session.originals || []).length} 発話</div>
-        </div>
-        <div class="history-item-actions">
-          <button class="secondary small hist-detail-btn" data-id="${session.id}">詳細</button>
-          <button class="secondary small danger hist-delete-btn" data-id="${session.id}">削除</button>
-        </div>
-      `;
+      const info = document.createElement('div');
+      info.className = 'history-item-info';
+
+      const title = document.createElement('div');
+      title.className = 'history-item-title';
+      title.textContent = session.title || 'Untitled';
+
+      const meta = document.createElement('div');
+      meta.className = 'history-item-meta';
+      meta.textContent = buildHistoryMetaText(session);
+
+      info.appendChild(title);
+      info.appendChild(meta);
+
+      const actions = document.createElement('div');
+      actions.className = 'history-item-actions';
+
+      const detailBtn = document.createElement('button');
+      detailBtn.className = 'secondary small hist-detail-btn';
+      detailBtn.dataset.id = session.id;
+      detailBtn.textContent = '詳細';
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.className = 'secondary small danger hist-delete-btn';
+      deleteBtn.dataset.id = session.id;
+      deleteBtn.textContent = '削除';
+
+      actions.appendChild(detailBtn);
+      actions.appendChild(deleteBtn);
+
+      item.appendChild(info);
+      item.appendChild(actions);
       els.historyList.appendChild(item);
     });
 
-    // Event delegation for history list
-    els.historyList.onclick = (e) => {
-      const btn = e.target.closest('button');
-      if (!btn) return;
-      const id = btn.dataset.id;
-      if (!id) return;
-
-      if (btn.classList.contains('hist-detail-btn')) {
-        window.location.hash = `#/history/${id}`;
-      } else if (btn.classList.contains('hist-delete-btn')) {
-        deleteHistoryEntry(id);
-      }
-    };
+    if (!state.historyListBound) {
+      els.historyList.addEventListener('click', handleHistoryListClick);
+      state.historyListBound = true;
+    }
 
     els.historyList.style.display = 'flex';
   } catch (err) {
@@ -2613,7 +3525,24 @@ const showHistoryDetailView = async (sessionId) => {
   try {
     const session = await historyStorage.get(sessionId);
     if (!session) {
-      els.historyDetailContent.innerHTML = '<p>セッションが見つかりません</p>';
+      if (els.historyDetailTitle) {
+        els.historyDetailTitle.textContent = 'セッション詳細';
+      }
+      clearElement(els.historyDetailContent);
+      const notFound = document.createElement('p');
+      notFound.textContent = 'セッションが見つかりません';
+      els.historyDetailContent.appendChild(notFound);
+      return;
+    }
+
+    if (isSessionExpired(session)) {
+      if (els.historyDetailTitle) {
+        els.historyDetailTitle.textContent = 'セッション詳細';
+      }
+      clearElement(els.historyDetailContent);
+      const expired = document.createElement('p');
+      expired.textContent = t('historyExpired');
+      els.historyDetailContent.appendChild(expired);
       return;
     }
 
@@ -2627,42 +3556,60 @@ const showHistoryDetailView = async (sessionId) => {
       .map((orig, idx) => `${orig}\n${(session.translations || [])[idx] || ''}`)
       .join('\n\n');
 
-    els.historyDetailContent.innerHTML = `
-      <div class="history-detail-section">
-        <h4>情報</h4>
-        <div class="history-detail-text">
-          日時: ${formatTimestamp(session.timestamp)}<br>
-          入力言語: ${session.inputLang || 'auto'}<br>
-          出力言語: ${session.outputLang || 'ja'}<br>
-          発話数: ${(session.originals || []).length}
-        </div>
-      </div>
-      ${originals ? `
-      <div class="history-detail-section">
-        <h4>原文</h4>
-        <div class="history-detail-text">${escapeHtml(originals)}</div>
-      </div>
-      ` : ''}
-      ${translations ? `
-      <div class="history-detail-section">
-        <h4>翻訳</h4>
-        <div class="history-detail-text">${escapeHtml(translations)}</div>
-      </div>
-      ` : ''}
-      ${session.summary ? `
-      <div class="history-detail-section">
-        <h4>要約</h4>
-        <div class="history-detail-text">${escapeHtml(session.summary)}</div>
-      </div>
-      ` : ''}
-      <div class="history-detail-section">
-        <h4>ダウンロード</h4>
-        <div class="history-detail-downloads" id="historyDetailDownloads"></div>
-      </div>
-    `;
+    clearElement(els.historyDetailContent);
+
+    const appendSection = (titleText, bodyEl) => {
+      const section = document.createElement('div');
+      section.className = 'history-detail-section';
+      const heading = document.createElement('h4');
+      heading.textContent = titleText;
+      section.appendChild(heading);
+      if (bodyEl) section.appendChild(bodyEl);
+      els.historyDetailContent.appendChild(section);
+    };
+
+    const infoText = document.createElement('div');
+    infoText.className = 'history-detail-text';
+    const durationText = formatDuration(session.durationSeconds);
+    const utterances = Array.isArray(session.originals) ? session.originals.length : 0;
+    infoText.textContent = [
+      `${t('historyCreatedLabel')}${formatTimestamp(session.timestamp)}`,
+      `${t('inputLangLabel')}: ${session.inputLang || 'auto'}`,
+      `${t('outputLangLabel')}: ${session.outputLang || 'ja'}`,
+      `${t('historyDurationLabel')}${durationText}`,
+      `${t('historyUtterancesLabel')}${utterances}`,
+    ].join('\n');
+    appendSection('情報', infoText);
+
+    const originalText = document.createElement('div');
+    originalText.className = 'history-detail-text';
+    originalText.textContent = originals ? originals : t('historyNoOriginal');
+    appendSection('原文', originalText);
+
+    const translationText = document.createElement('div');
+    translationText.className = 'history-detail-text';
+    translationText.textContent = translations ? translations : t('historyNoTranslation');
+    appendSection('翻訳', translationText);
+
+    if (session.summary) {
+      const summaryText = document.createElement('div');
+      summaryText.className = 'history-detail-text';
+      summaryText.textContent = session.summary;
+      appendSection('要約', summaryText);
+    }
+
+    const downloadSection = document.createElement('div');
+    downloadSection.className = 'history-detail-section';
+    const downloadHeading = document.createElement('h4');
+    downloadHeading.textContent = 'ダウンロード';
+    const downloadContainer = document.createElement('div');
+    downloadContainer.className = 'history-detail-downloads';
+    downloadContainer.id = 'historyDetailDownloads';
+    downloadSection.appendChild(downloadHeading);
+    downloadSection.appendChild(downloadContainer);
+    els.historyDetailContent.appendChild(downloadSection);
 
     // Add download buttons
-    const downloadContainer = document.getElementById('historyDetailDownloads');
     if (downloadContainer) {
       const files = [];
       const tsFilename = formatTimestampForFilename(session.timestamp);
@@ -2696,7 +3643,10 @@ const showHistoryDetailView = async (sessionId) => {
       });
     }
   } catch (err) {
-    els.historyDetailContent.innerHTML = `<p>エラー: ${escapeHtml(err.message)}</p>`;
+    clearElement(els.historyDetailContent);
+    const errorMsg = document.createElement('p');
+    errorMsg.textContent = `エラー: ${err.message}`;
+    els.historyDetailContent.appendChild(errorMsg);
     addDiagLog(`History detail error: ${err.message}`);
   }
 };
@@ -2717,8 +3667,20 @@ const hideHistoryDetailView = () => {
   }
 };
 
-// Handle hash routes (#/dictionary, #/history, #/history/:id, #/billing/*, #/tickets/*)
-// ルーティング: #/ or '' => メイン, #/history => 履歴一覧, #/history/<id> => 履歴詳細
+// Delayed one-shot retry after purchase polling timeout (guarded against stacking)
+let _postPurchaseRetryTimer = null;
+const schedulePostPurchaseRetry = () => {
+  if (_postPurchaseRetryTimer) clearTimeout(_postPurchaseRetryTimer);
+  _postPurchaseRetryTimer = setTimeout(async () => {
+    _postPurchaseRetryTimer = null;
+    await refreshQuotaStatus();
+    refreshBillingStatus();
+    addDiagLog('[billing] post-purchase delayed retry completed');
+  }, 10000);
+};
+
+// Handle hash routes (#/settings, #/dictionary, #/history, #/history/:id, #/billing/*, #/tickets/*)
+// ルーティング: #/ or '' => メイン, #/settings => 設定, #/history => 履歴一覧, #/history/<id> => 履歴詳細
 const handleHashRoute = async () => {
   const hash = window.location.hash || '';
 
@@ -2728,6 +3690,17 @@ const handleHashRoute = async () => {
     hideHistoryView();
     hideHistoryDetailView();
     if (els.appShell) els.appShell.style.display = 'flex';
+    return;
+  }
+
+  // Settings route
+  if (hash === '#/settings') {
+    hideDictionaryView();
+    hideHistoryView();
+    hideHistoryDetailView();
+    if (els.appShell) els.appShell.style.display = 'flex';
+    openSettingsModal();
+    history.replaceState(null, '', window.location.pathname);
     return;
   }
 
@@ -2766,9 +3739,12 @@ const handleHashRoute = async () => {
     if (upgraded) {
       showBillingBanner('success');
       addDiagLog('Billing: Plan upgraded to Pro');
+      await refreshQuotaStatus();
+      refreshBillingStatus();
     } else {
       showBillingBanner('pending-timeout');
       addDiagLog('Billing: Polling timeout, plan not yet updated');
+      schedulePostPurchaseRetry();
     }
     // Clean up hash
     history.replaceState(null, '', window.location.pathname);
@@ -2778,10 +3754,26 @@ const handleHashRoute = async () => {
     history.replaceState(null, '', window.location.pathname);
   } else if (hash === '#/tickets/success') {
     // Ticket purchase success - refresh quota to show new balance
+    let ticketPackId = null;
+    try {
+      ticketPackId = sessionStorage.getItem('rt_ticket_packId');
+      sessionStorage.removeItem('rt_ticket_packId');
+    } catch (_) {}
+    const ticketMinutes = (ticketPackId && PACK_MINUTES[ticketPackId]) || null;
+    analytics.log('ticket_purchased', {
+      pack_id: ticketPackId || 'unknown',
+      quantity_bucket: ticketMinutes ? analytics.minutesBucket(ticketMinutes) : 'unknown',
+    });
     showBillingBanner('ticket-success');
     addDiagLog('Tickets: Purchase successful');
-    // Refresh quota to show updated ticket balance
-    refreshQuotaAndPlan();
+    const updated = await pollForQuotaUpdate();
+    if (updated) {
+      refreshBillingStatus();
+    } else {
+      showBillingBanner('pending-timeout');
+      addDiagLog('Tickets: Polling timeout, quota not yet updated');
+      schedulePostPurchaseRetry();
+    }
     history.replaceState(null, '', window.location.pathname);
   } else if (hash === '#/tickets/cancel') {
     showBillingBanner('ticket-cancelled');
@@ -2814,7 +3806,7 @@ const showBillingBanner = (status) => {
       showClose = false;
       break;
     case 'pending-timeout':
-      message = t('billingPending') + ' (確認中...)';
+      message = t('billingSyncDelayed');
       banner.classList.add('pending');
       break;
     case 'cancelled':
@@ -2826,14 +3818,26 @@ const showBillingBanner = (status) => {
     case 'ticket-cancelled':
       message = t('ticketCancelled');
       break;
+    case 'error':
+      message = t('resyncFailed');
+      break;
+    case 'resync-success':
+      message = t('resyncSuccess');
+      break;
     default:
       message = status;
   }
 
-  banner.innerHTML = `
-    <span>${message}</span>
-    ${showClose ? '<button onclick="this.parentElement.remove()">✕</button>' : ''}
-  `;
+  const messageEl = document.createElement('span');
+  messageEl.textContent = message;
+  banner.appendChild(messageEl);
+
+  if (showClose) {
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.addEventListener('click', () => banner.remove());
+    banner.appendChild(closeBtn);
+  }
 
   document.body.prepend(banner);
 
@@ -2843,7 +3847,131 @@ const showBillingBanner = (status) => {
   }
 };
 
+// P0-2: ネットワーク断のUI通知バナー（XSS対策: innerHTML不使用）
+const showNetworkDisconnectBanner = () => {
+  const existing = document.querySelector('.network-disconnect-banner');
+  if (existing) return; // 二重表示防止
+
+  const banner = document.createElement('div');
+  banner.className = 'network-disconnect-banner';
+
+  const span = document.createElement('span');
+  span.textContent = t('networkDisconnected');
+
+  const btn = document.createElement('button');
+  btn.textContent = '✕';
+  btn.addEventListener('click', () => banner.remove());
+
+  banner.append(span, btn);
+  document.body.prepend(banner);
+  addDiagLog('[net] Network disconnect banner shown');
+};
+
+const hideNetworkDisconnectBanner = () => {
+  const banner = document.querySelector('.network-disconnect-banner');
+  if (banner) {
+    banner.remove();
+    addDiagLog('[net] Network disconnect banner hidden');
+  }
+};
+
+// ネットワーク切断処理のデバウンス
+const DISCONNECT_DEBOUNCE_MS = 500;
+let _disconnectDebounceTimer = null;
+let _disconnectHandled = false;
+
+const handleNetworkDisconnectOnce = (reason) => {
+  if (_disconnectHandled) {
+    addDiagLog(`[net] Disconnect already handled, ignoring: ${reason}`);
+    return;
+  }
+  if (_disconnectDebounceTimer) {
+    clearTimeout(_disconnectDebounceTimer);
+  }
+  _disconnectDebounceTimer = setTimeout(() => {
+    _disconnectHandled = true;
+    addDiagLog(`[net] Disconnect handled: ${reason}`);
+    showNetworkDisconnectBanner();
+    setStatus('Standby');
+
+    // ジョブがあれば pending finalize に保存（即実行しない）
+    // state.currentJob は保持し、jobActive=false にするだけ
+    if (state.currentJob && state.jobActive) {
+      state._pendingJobFinalize = {
+        jobId: state.currentJob.jobId,
+        audioSeconds: getJobElapsedSeconds(),
+      };
+      addDiagLog(`[job] Pending finalize saved: jobId=${state._pendingJobFinalize.jobId}`);
+      state.jobActive = false; // ジョブを非アクティブに
+    }
+  }, DISCONNECT_DEBOUNCE_MS);
+};
+
+const resetDisconnectState = () => {
+  _disconnectHandled = false;
+  if (_disconnectDebounceTimer) {
+    clearTimeout(_disconnectDebounceTimer);
+    _disconnectDebounceTimer = null;
+  }
+};
+
+// online復帰時のpending job finalize
+const tryFinalizePendingJob = async () => {
+  if (!state._pendingJobFinalize) return;
+  if (!navigator.onLine) {
+    addDiagLog('[job] Skipping finalize: still offline');
+    return;
+  }
+
+  const pending = state._pendingJobFinalize;
+  const attempts = pending._attempts || 0;
+
+  // 最大1回再試行（2回目以降は破棄）
+  if (attempts >= 1) {
+    addDiagLog(`[job] Pending finalize max attempts reached, discarding: jobId=${pending.jobId}`);
+    state.currentJob = null;
+    state.jobStartedAt = null;
+    state._pendingJobFinalize = null;
+    return;
+  }
+
+  const { jobId, audioSeconds } = pending;
+  addDiagLog(`[job] Attempting pending finalize: jobId=${jobId} attempt=${attempts + 1}`);
+
+  // completeCurrentJob と同じ形式でpayloadを構築
+  const payload = { jobId };
+  if (typeof audioSeconds === 'number' && Number.isFinite(audioSeconds)) {
+    payload.audioSeconds = Math.max(0, Math.round(audioSeconds));
+  }
+
+  try {
+    const res = await authFetch('/api/v1/jobs/complete', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) {
+      applyQuotaFromPayload(data);
+      addDiagLog(`[job] Pending finalize success: jobId=${jobId} billed=${data.billedSeconds ?? 'n/a'}s`);
+      // 成功時のみstateクリア
+      state.currentJob = null;
+      state.jobStartedAt = null;
+      state._pendingJobFinalize = null;
+    } else {
+      addDiagLog(`[job] Pending finalize failed: jobId=${jobId} status=${res.status}`);
+      // 失敗時は保持、attemptsをインクリメント
+      state._pendingJobFinalize._attempts = attempts + 1;
+    }
+  } catch (err) {
+    addDiagLog(`[job] Pending finalize error: ${err.message}`);
+    // エラー時も保持、attemptsをインクリメント
+    state._pendingJobFinalize._attempts = attempts + 1;
+  }
+};
+
 const applyQuotaFromPayload = (payload = {}) => {
+  updateServerTimeOffset(payload.serverTime);
   const next = {
     plan: payload.plan || state.quota.plan || 'free',
     baseRemainingThisMonth: numberOrNull(payload.baseRemainingThisMonth),
@@ -2856,6 +3984,15 @@ const applyQuotaFromPayload = (payload = {}) => {
     ),
     nextResetAt: payload.nextResetAt || null,
     blockedReason: payload.blockedReason || null,
+    // 新規フィールド
+    dayJobLimit: payload.dayJobLimit ?? null,
+    dayJobUsed: payload.dayJobUsed ?? 0,
+    dayJobRemaining: payload.dayJobRemaining ?? null,
+    retentionDays: payload.retentionDays ?? 7,
+    concurrentLimit: payload.concurrentLimit ?? 1,
+    concurrentActive: payload.concurrentActive ?? 0,
+    billingEnabled: payload.billingEnabled ?? true,
+    purchaseAvailable: payload.purchaseAvailable ?? true,
     loaded: true,
   };
   state.quota = next;
@@ -2868,6 +4005,7 @@ const resetQuotaState = () => {
   state.quota = createDefaultQuotaState();
   state.currentJob = null;
   state.jobStartedAt = null;
+  state.serverTimeOffsetMs = null;
   updateQuotaInfo();
   updateQuotaBreakdown();
   updateDevStatusSummary();
@@ -2914,9 +4052,49 @@ const refreshQuotaStatus = async () => {
   }
 };
 
+const resyncQuota = async () => {
+  const btn = els.resyncQuotaBtn;
+  if (!btn || btn.disabled) return;
+  btn.disabled = true;
+  btn.textContent = t('resyncInProgress');
+  try {
+    const res = await authFetch('/api/v1/me', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    applyQuotaFromPayload(data);
+    showBillingBanner('resync-success');
+    addDiagLog('[resync] quota refreshed');
+  } catch (err) {
+    addDiagLog(`[resync] error: ${err.message}`);
+    showBillingBanner('error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = t('resyncQuota');
+  }
+};
+
+const PACK_MINUTES = {
+  t120: 120, t240: 240, t360: 360,
+  t1200: 1200, t1800: 1800, t3000: 3000,
+};
+
 const blockedReasonMessages = {
   monthly_quota_exhausted: '今月の利用可能時間が残っていません。',
   daily_limit_reached: 'Freeプランの本日の利用上限(10分)に達しました。',
+  daily_job_limit_reached: 'Freeプランの本日のジョブ作成上限(10回)に達しました。',
+};
+
+const mapQuotaBlockedReason = (reason) => {
+  switch (reason) {
+    case 'monthly_quota_exhausted':
+      return 'monthly';
+    case 'daily_limit_reached':
+      return 'daily';
+    case 'daily_job_limit_reached':
+      return 'daily_job_limit';
+    default:
+      return 'other';
+  }
 };
 
 // ========== Connection Error Categories ==========
@@ -2927,17 +4105,52 @@ const ERROR_CATEGORY = {
   ICE_FAILED: 'ice_failed',
   CONNECTION_TIMEOUT: 'connection_timeout',
   NETWORK: 'network',
+  RATE_LIMIT: 'rate_limit',
+  SERVER_ERROR: 'server_error',
   UNKNOWN: 'unknown',
 };
 
+// P0-1: 多言語対応エラーメッセージ
 const ERROR_MESSAGES = {
-  [ERROR_CATEGORY.MIC_PERMISSION]: 'マイクの使用が許可されていません。ブラウザの設定でマイクへのアクセスを許可してください。',
-  [ERROR_CATEGORY.TOKEN_AUTH]: '認証エラーが発生しました。再ログインしてください。',
-  [ERROR_CATEGORY.REALTIME_NEGOTIATE]: 'リアルタイム接続の確立に失敗しました。しばらくしてから再試行してください。',
-  [ERROR_CATEGORY.ICE_FAILED]: '通信経路の確立に失敗しました。ネットワーク接続を確認してください。',
-  [ERROR_CATEGORY.CONNECTION_TIMEOUT]: '接続がタイムアウトしました。ネットワーク状況を確認して再試行してください。',
-  [ERROR_CATEGORY.NETWORK]: 'ネットワークエラーが発生しました。インターネット接続を確認してください。',
-  [ERROR_CATEGORY.UNKNOWN]: '予期しないエラーが発生しました。再試行してください。',
+  ja: {
+    [ERROR_CATEGORY.MIC_PERMISSION]: 'マイクの使用が許可されていません。ブラウザの設定でマイクへのアクセスを許可してください。',
+    [ERROR_CATEGORY.TOKEN_AUTH]: '認証エラーが発生しました。再ログインしてください。',
+    [ERROR_CATEGORY.REALTIME_NEGOTIATE]: 'リアルタイム接続の確立に失敗しました。しばらくしてから再試行してください。',
+    [ERROR_CATEGORY.ICE_FAILED]: '通信経路の確立に失敗しました。ネットワーク接続を確認してください。',
+    [ERROR_CATEGORY.CONNECTION_TIMEOUT]: '接続がタイムアウトしました。ネットワーク状況を確認して再試行してください。',
+    [ERROR_CATEGORY.NETWORK]: 'ネットワークエラーが発生しました。インターネット接続を確認してください。',
+    [ERROR_CATEGORY.RATE_LIMIT]: 'リクエスト制限中です。しばらく待ってから再試行してください。',
+    [ERROR_CATEGORY.SERVER_ERROR]: 'サーバーエラーが発生しました。時間をおいて再試行してください。',
+    [ERROR_CATEGORY.UNKNOWN]: '予期しないエラーが発生しました。再試行してください。',
+  },
+  en: {
+    [ERROR_CATEGORY.MIC_PERMISSION]: 'Microphone access denied. Please allow microphone access in browser settings.',
+    [ERROR_CATEGORY.TOKEN_AUTH]: 'Authentication error. Please log in again.',
+    [ERROR_CATEGORY.REALTIME_NEGOTIATE]: 'Failed to establish realtime connection. Please try again later.',
+    [ERROR_CATEGORY.ICE_FAILED]: 'Failed to establish communication path. Please check your network.',
+    [ERROR_CATEGORY.CONNECTION_TIMEOUT]: 'Connection timed out. Please check your network and try again.',
+    [ERROR_CATEGORY.NETWORK]: 'Network error. Please check your internet connection.',
+    [ERROR_CATEGORY.RATE_LIMIT]: 'Rate limited. Please wait and try again.',
+    [ERROR_CATEGORY.SERVER_ERROR]: 'Server error. Please try again later.',
+    [ERROR_CATEGORY.UNKNOWN]: 'Unexpected error. Please try again.',
+  },
+  'zh-Hans': {
+    [ERROR_CATEGORY.MIC_PERMISSION]: '麦克风权限被拒绝。请在浏览器设置中允许麦克风访问。',
+    [ERROR_CATEGORY.TOKEN_AUTH]: '认证错误。请重新登录。',
+    [ERROR_CATEGORY.REALTIME_NEGOTIATE]: '无法建立实时连接。请稍后重试。',
+    [ERROR_CATEGORY.ICE_FAILED]: '无法建立通信路径。请检查网络连接。',
+    [ERROR_CATEGORY.CONNECTION_TIMEOUT]: '连接超时。请检查网络后重试。',
+    [ERROR_CATEGORY.NETWORK]: '网络错误。请检查您的互联网连接。',
+    [ERROR_CATEGORY.RATE_LIMIT]: '请求受限。请稍等后重试。',
+    [ERROR_CATEGORY.SERVER_ERROR]: '服务器错误。请稍后重试。',
+    [ERROR_CATEGORY.UNKNOWN]: '发生意外错误。请重试。',
+  },
+};
+
+// 言語に応じたエラーメッセージを取得
+const getErrorMessage = (category) => {
+  const lang = getUiLang();
+  return ERROR_MESSAGES[lang]?.[category] || ERROR_MESSAGES.ja[category] || ERROR_MESSAGES.ja[ERROR_CATEGORY.UNKNOWN];
 };
 
 const CONNECTION_TIMEOUT_MS = 10000; // 10秒でタイムアウト
@@ -3031,38 +4244,48 @@ const classifyError = (err, context = '') => {
 
   // マイク許可エラー
   if (errName === 'notallowederror' || errMsg.includes('permission denied') || errMsg.includes('not allowed')) {
-    return { category: ERROR_CATEGORY.MIC_PERMISSION, message: ERROR_MESSAGES[ERROR_CATEGORY.MIC_PERMISSION], retryable: false };
+    return { category: ERROR_CATEGORY.MIC_PERMISSION, message: getErrorMessage(ERROR_CATEGORY.MIC_PERMISSION), retryable: false };
   }
 
   // トークン認証エラー（/token 401, invalid_auth）
   if (context === 'token' || errMsg.includes('401') || errMsg.includes('invalid_auth') || errMsg.includes('token') && errMsg.includes('expired')) {
-    return { category: ERROR_CATEGORY.TOKEN_AUTH, message: ERROR_MESSAGES[ERROR_CATEGORY.TOKEN_AUTH], retryable: false };
+    return { category: ERROR_CATEGORY.TOKEN_AUTH, message: getErrorMessage(ERROR_CATEGORY.TOKEN_AUTH), retryable: false };
+  }
+
+  // 429 Rate Limit エラー
+  if (errMsg.includes('429') || errMsg.includes('rate_limit') || errMsg.includes('too many requests')) {
+    return { category: ERROR_CATEGORY.RATE_LIMIT, message: getErrorMessage(ERROR_CATEGORY.RATE_LIMIT), retryable: false };
+  }
+
+  // 5xx サーバーエラー
+  if (errMsg.includes('500') || errMsg.includes('502') || errMsg.includes('503') || errMsg.includes('504') || errMsg.includes('server error')) {
+    return { category: ERROR_CATEGORY.SERVER_ERROR, message: getErrorMessage(ERROR_CATEGORY.SERVER_ERROR), retryable: true };
   }
 
   // Realtime negotiate エラー（400, 401）
   if (context === 'negotiate' || errMsg.includes('negotiate') || errMsg.includes('realtime')) {
     if (errMsg.includes('401') || errMsg.includes('unauthorized')) {
-      return { category: ERROR_CATEGORY.TOKEN_AUTH, message: ERROR_MESSAGES[ERROR_CATEGORY.TOKEN_AUTH], retryable: false };
+      return { category: ERROR_CATEGORY.TOKEN_AUTH, message: getErrorMessage(ERROR_CATEGORY.TOKEN_AUTH), retryable: false };
     }
-    return { category: ERROR_CATEGORY.REALTIME_NEGOTIATE, message: ERROR_MESSAGES[ERROR_CATEGORY.REALTIME_NEGOTIATE], retryable: true };
+    return { category: ERROR_CATEGORY.REALTIME_NEGOTIATE, message: getErrorMessage(ERROR_CATEGORY.REALTIME_NEGOTIATE), retryable: true };
   }
 
   // ICE接続失敗
   if (errMsg.includes('ice') || errMsg.includes('connection failed') || errMsg.includes('ice failed')) {
-    return { category: ERROR_CATEGORY.ICE_FAILED, message: ERROR_MESSAGES[ERROR_CATEGORY.ICE_FAILED], retryable: true };
+    return { category: ERROR_CATEGORY.ICE_FAILED, message: getErrorMessage(ERROR_CATEGORY.ICE_FAILED), retryable: true };
   }
 
   // タイムアウト
   if (errMsg.includes('timeout') || errMsg.includes('timed out')) {
-    return { category: ERROR_CATEGORY.CONNECTION_TIMEOUT, message: ERROR_MESSAGES[ERROR_CATEGORY.CONNECTION_TIMEOUT], retryable: true };
+    return { category: ERROR_CATEGORY.CONNECTION_TIMEOUT, message: getErrorMessage(ERROR_CATEGORY.CONNECTION_TIMEOUT), retryable: true };
   }
 
   // ネットワークエラー
   if (errMsg.includes('network') || errMsg.includes('fetch') || errName === 'typeerror') {
-    return { category: ERROR_CATEGORY.NETWORK, message: ERROR_MESSAGES[ERROR_CATEGORY.NETWORK], retryable: true };
+    return { category: ERROR_CATEGORY.NETWORK, message: getErrorMessage(ERROR_CATEGORY.NETWORK), retryable: true };
   }
 
-  return { category: ERROR_CATEGORY.UNKNOWN, message: ERROR_MESSAGES[ERROR_CATEGORY.UNKNOWN], retryable: true };
+  return { category: ERROR_CATEGORY.UNKNOWN, message: getErrorMessage(ERROR_CATEGORY.UNKNOWN), retryable: true };
 };
 
 const hasQuotaForStart = () => {
@@ -3074,6 +4297,7 @@ const hasQuotaForStart = () => {
   }
   // Use blockedReason from API if available
   if (quota.blockedReason) {
+    analytics.log('quota_blocked', { reason: mapQuotaBlockedReason(quota.blockedReason) });
     const msg = blockedReasonMessages[quota.blockedReason] || '利用がブロックされています。';
     setError(msg);
     addDiagLog(`Start blocked: ${quota.blockedReason}`);
@@ -3081,11 +4305,13 @@ const hasQuotaForStart = () => {
   }
   // Fallback checks (in case API doesn't return blockedReason)
   if (typeof quota.totalAvailableThisMonth === 'number' && quota.totalAvailableThisMonth <= 0) {
+    analytics.log('quota_blocked', { reason: 'monthly' });
     setError('今月の利用可能時間が残っていません。');
     addDiagLog('Start blocked: monthly quota exhausted');
     return false;
   }
   if (quota.plan === 'free' && typeof quota.dailyRemainingSeconds === 'number' && quota.dailyRemainingSeconds <= 0) {
+    analytics.log('quota_blocked', { reason: 'daily' });
     setError('Freeプランの本日の利用上限(10分)に達しました。');
     addDiagLog('Start blocked: daily limit reached');
     return false;
@@ -3102,7 +4328,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
 
   // client_request_id を生成（観測用）
   const clientRequestId = generateUUID();
-  addDiagLog(`Requesting job reservation | clientRequestId=${clientRequestId}`);
+  addDiagLog(`[job] Requesting reservation | clientRequestId=${clientRequestId}`);
 
   // 呼び出し時刻を記録（スロットル用）
   state.lastJobCreateAt = Date.now();
@@ -3123,28 +4349,32 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
   if (res.status === 409 && errorCode === 'active_job_in_progress') {
     // 409 detail から activeSince を取得
     const activeSince = (typeof detail === 'object' && detail?.activeSince) ? detail.activeSince : null;
-    addDiagLog(`Job create blocked: active_job_in_progress | clientRequestId=${clientRequestId} | activeSince=${activeSince}`);
+    addDiagLog(`[job] Blocked: active_job_in_progress | clientRequestId=${clientRequestId} | activeSince=${activeSince}`);
 
-    // force_takeover=true でも再度 409 が返った場合は明確なメッセージで中断
-    if (forceTakeover) {
-      const takeoverErr = new Error('他端末のセッション停止が反映されていません。数秒待ってから再試行、または他端末でStopしてください。');
-      takeoverErr._context = 'job_create';
-      takeoverErr._abortStart = true;  // リトライ無し終了
-      throw takeoverErr;
-    }
-
-    // takeover ダイアログを表示（activeSince 付き）
-    const shouldTakeover = await showTakeoverDialog(activeSince);
-    if (!shouldTakeover) {
-      const cancelErr = new Error('takeover_declined');
-      cancelErr._abortStart = true;
-      throw cancelErr;
-    }
-    return reserveJobSlot({ forceTakeover: true });
+    // B案: takeover ダイアログを表示（閉じるのみ）して必ず中断
+    await showTakeoverDialog(activeSince);
+    const abortErr = new Error('active_job_in_progress');
+    abortErr._context = 'job_create';
+    abortErr._abortStart = true;
+    throw abortErr;
   }
 
-  // 429 Too Many Requests の処理
+  // 429 Too Many Requests の処理 (quota制限含む)
   if (res.status === 429) {
+    const errorCode = data?.detail || 'rate_limited';
+    addDiagLog(`429 | errorCode=${errorCode} | clientRequestId=${clientRequestId}`);
+
+    // quota関連のエラーはブロック理由メッセージを表示
+    if (blockedReasonMessages[errorCode]) {
+      analytics.log('quota_blocked', { reason: mapQuotaBlockedReason(errorCode) });
+      const quotaErr = new Error(blockedReasonMessages[errorCode]);
+      quotaErr._isQuotaLimit = true;
+      quotaErr._errorCode = errorCode;
+      throw quotaErr;
+    }
+
+    // レート制限の場合はクールダウン処理
+    analytics.log('quota_blocked', { reason: 'other' });
     const retryAfterHeader = res.headers.get('Retry-After');
     let waitMs = DEFAULT_RATE_LIMIT_WAIT_MS;
     if (retryAfterHeader) {
@@ -3153,9 +4383,7 @@ const reserveJobSlot = async ({ forceTakeover = false } = {}) => {
         waitMs = retryAfterSec * 1000;
       }
     }
-    addDiagLog(`429 Too Many Requests | Retry-After=${retryAfterHeader || 'none'} | waitMs=${waitMs} | clientRequestId=${clientRequestId}`);
 
-    // 特別なエラーをthrowして、呼び出し元でクールダウン処理を行う
     const rateLimitErr = new Error('rate_limit');
     rateLimitErr._isRateLimit = true;
     rateLimitErr._waitMs = waitMs;
@@ -3733,21 +4961,27 @@ const fetchToken = async () => {
   state.pc = pc;
 
   pc.onconnectionstatechange = () => {
-    addDiagLog(`RTC connectionState: ${pc.connectionState}`);
+    addDiagLog(`[rtc] connectionState: ${pc.connectionState}`);
     if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
-      addDiagLog(`Network disconnect detected | state=${pc.connectionState} | sid=${state.sessionId}`);
+      handleNetworkDisconnectOnce(`pc:${pc.connectionState}`);
+    }
+    if (pc.connectionState === 'connected') {
+      resetDisconnectState();
     }
   };
 
   pc.oniceconnectionstatechange = () => {
-    addDiagLog(`RTC iceConnectionState: ${pc.iceConnectionState}`);
+    addDiagLog(`[rtc] iceConnectionState: ${pc.iceConnectionState}`);
   };
 
   state.dataChannel = pc.createDataChannel('oai-events');
   state.dataChannel.onmessage = handleDataMessage;
-  state.dataChannel.onclose = () => setStatus('Closed');
+  state.dataChannel.onclose = () => {
+    addDiagLog('[rtc] DataChannel closed');
+    handleNetworkDisconnectOnce('datachannel:close');
+  };
   state.dataChannel.onopen = () => {
-    addDiagLog('STEP7: RTC connected / datachannel opened');
+    addDiagLog('[rtc] STEP7: RTC connected / datachannel opened');
     setStatus('Listening');
     flushRealtimeEventQueue();
     try {
@@ -3923,6 +5157,10 @@ const start = async () => {
       if (!state.jobActive) {
         await reserveJobSlot();
         addDiagLog('STEP2: after reserveJobSlot success');
+        analytics.log('session_start', {
+          input_lang: state.inputLang || 'auto',
+          output_lang: state.outputLang || 'ja',
+        });
       }
 
       await startConnectionAttempt();
@@ -3930,6 +5168,10 @@ const start = async () => {
 
     } catch (err) {
       logErrorDetails('start', err);
+      analytics.log('session_error', {
+        error_class: analytics.errorCategory(err),
+        phase: 'start',
+      });
       if (err._abortStart) {
         addDiagLog('Start aborted by user (takeover declined)');
         stopMedia();
@@ -4021,6 +5263,8 @@ const stop = async () => {
     summary: '',
     audioUrl: null,
     m4aUrl: null,
+    durationSeconds: null,
+    serverTimestampMs: null,
     inputLang: state.inputLang,
     outputLang: state.outputLang,
   };
@@ -4039,15 +5283,51 @@ const stop = async () => {
     } catch (err) {
       setError(err.message);
       addDiagLog(`M4A conversion failed: ${err.message}`);
+      analytics.log('session_error', {
+        error_class: analytics.errorCategory(err),
+        phase: 'end',
+      });
     }
   }
 
+  let completionData = null;
+  let elapsedSeconds = null;
+  let sessionEndResult = 'cancel';
+
   // jobActiveがtrueの場合のみジョブを完了させる
   if (state.jobActive) {
-    const elapsedSeconds = getJobElapsedSeconds();
-    await completeCurrentJob(elapsedSeconds);
+    elapsedSeconds = getJobElapsedSeconds();
+    completionData = await completeCurrentJob(elapsedSeconds);
+    if (completionData) {
+      sessionEndResult = 'success';
+    } else {
+      sessionEndResult = 'error';
+      analytics.log('session_error', {
+        error_class: analytics.errorCategory(new Error('job_complete_failed')),
+        phase: 'end',
+      });
+    }
   } else {
     addDiagLog('Stop: no active job to complete');
+  }
+
+  analytics.log('session_end', {
+    duration_bucket: analytics.durationBucket(elapsedSeconds),
+    utterance_count_bucket: 'unknown',
+    result: sessionEndResult,
+  });
+
+  if (completionData && typeof completionData.actualSeconds === 'number') {
+    state.currentSessionResult.durationSeconds = completionData.actualSeconds;
+  } else if (typeof elapsedSeconds === 'number') {
+    state.currentSessionResult.durationSeconds = elapsedSeconds;
+  }
+
+  if (completionData?.serverTime) {
+    const serverMs = parseServerTimeMs(completionData.serverTime);
+    if (serverMs != null) {
+      state.currentSessionResult.serverTimestampMs = serverMs;
+    }
   }
 
   // Generate title from text (try LLM, fallback to simple extraction)
@@ -4120,10 +5400,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Format YYYYMMDDHHMMSS to human-readable UTC string
+  function formatBuildTime(raw) {
+    if (!raw || raw.length < 14) return raw;
+    return `${raw.slice(0, 4)}-${raw.slice(4, 6)}-${raw.slice(6, 8)} ${raw.slice(8, 10)}:${raw.slice(10, 12)}:${raw.slice(12, 14)} UTC`;
+  }
+
   // Fetch and display BUILD_SHA from /build.txt
   async function fetchBuildSha() {
     try {
-      const response = await fetch('/build.txt', { cache: 'no-cache' });
+      const response = await fetch('/build.txt', { cache: 'no-store' });
       if (!response.ok) throw new Error('build.txt not found');
       const text = await response.text();
       const shaMatch = text.match(/BUILD_SHA=([^\s]+)/);
@@ -4133,13 +5419,14 @@ document.addEventListener('DOMContentLoaded', () => {
       // Store in state for diagnostics
       state.buildVersion = sha;
       if (els.buildShaDisplay) {
-        els.buildShaDisplay.textContent = `BUILD_SHA: ${sha}${time ? ' (' + time + ')' : ''}`;
+        const label = t('buildLabel');
+        els.buildShaDisplay.textContent = `${label}: ${sha}${time ? ' (' + formatBuildTime(time) + ')' : ''}`;
       }
     } catch (err) {
       console.warn('[BUILD] Failed to fetch build.txt:', err);
       state.buildVersion = 'fetch_failed';
       if (els.buildShaDisplay) {
-        els.buildShaDisplay.textContent = 'BUILD_SHA: 取得失敗';
+        els.buildShaDisplay.textContent = `${t('buildLabel')}: unknown`;
       }
     }
   }
@@ -4164,6 +5451,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (els.summaryPromptInput) els.summaryPromptInput.value = state.summaryPrompt;
 
     applyI18n();
+    bindLinkAnalytics();
 
     // ---- CRITICAL EVENT HANDLERS (login, main buttons) ----
     // 二重登録防止: state.uiBound でガード
@@ -4178,6 +5466,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Firebase initialization and auth
     initFirebase();
+    analytics.init();
     applyAuthUiState(null);
     addDiagLog(`Auth init: currentUser=${currentUser?.uid || 'null'}`);
 
@@ -4210,6 +5499,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         try {
           await auth.signOut();
+          analytics.log('logout', {});
           setStatus('Standby');
           addDiagLog('Logout completed');
         } catch (err) {
@@ -4221,15 +5511,21 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Auth state observer - CRITICAL
     if (auth) {
-      auth.onAuthStateChanged((user) => {
+      auth.onAuthStateChanged(async (user) => {
         currentUser = user;
         applyAuthUiState(user);
         addDiagLog(`Auth state: ${user ? `logged in uid=${user.uid}` : 'signed out uid=null'}`);
         if (user) {
-          refreshQuotaStatus();
-          handleHashRoute();
-          loadCompanyProfile();
-          refreshBillingStatus();
+          analytics.log('login', { method: 'google' });
+          await probeApiAvailability();
+          if (state.apiAvailable) {
+            refreshQuotaStatus();
+            handleHashRoute();
+            loadCompanyProfile();
+            refreshBillingStatus();
+          } else {
+            handleHashRoute();
+          }
         } else {
           resetQuotaState();
         }
@@ -4259,6 +5555,21 @@ document.addEventListener('DOMContentLoaded', () => {
       fetchBuildSha();
     } catch (err) {
       console.warn('[INIT:non-critical] fetchBuildSha failed:', err);
+    }
+
+    // Online/Offline event handlers
+    try {
+      window.addEventListener('online', () => {
+        addDiagLog('[net] Browser online event');
+        hideNetworkDisconnectBanner();
+        resetDisconnectState();
+        tryFinalizePendingJob();
+      });
+      window.addEventListener('offline', () => {
+        addDiagLog('[net] Browser offline event');
+      });
+    } catch (err) {
+      console.warn('[INIT:non-critical] Online/offline handlers failed:', err);
     }
 
     // Service Worker registration
@@ -4365,6 +5676,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // Non-critical failures are silently logged - app continues
   }
 
+  try {
+    void loadPricingConfig();
+  } catch (err) {
+    console.warn('[INIT:non-critical] pricing config load failed:', err);
+  }
+
   // ============================================================
   // ADDITIONAL UI EVENT HANDLERS
   // These are registered after core init to ensure login works first
@@ -4372,20 +5689,62 @@ document.addEventListener('DOMContentLoaded', () => {
 
   if (els.settingsBtn && els.settingsModal) {
     els.settingsBtn.addEventListener('click', () => {
-      els.settingsModal.showModal();
-      if (currentUser) {
-        loadDictionaryList();
-      }
+      openSettingsModal();
+    });
+  }
+
+  if (els.forceUpdateBtn) {
+    els.forceUpdateBtn.addEventListener('click', async () => {
+      els.forceUpdateBtn.disabled = true;
+      els.forceUpdateBtn.textContent = t('forceUpdateRunning');
       try {
-        fetchBuildSha();
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) {
+            await reg.update();
+            if (reg.waiting) {
+              reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            }
+          }
+        }
+        if ('caches' in window) {
+          const keys = await caches.keys();
+          const appKeys = keys.filter((k) => k.startsWith('rt-translator'));
+          await Promise.all(appKeys.map((k) => caches.delete(k)));
+        }
+        window.location.reload();
       } catch (err) {
-        console.warn('[SETTINGS] fetchBuildSha failed:', err);
+        console.warn('[FORCE_UPDATE] failed:', err);
+        els.forceUpdateBtn.disabled = false;
+        els.forceUpdateBtn.textContent = t('forceUpdateFailed');
+        setTimeout(() => {
+          els.forceUpdateBtn.textContent = t('forceUpdate');
+        }, 3000);
       }
     });
   }
+
+  // Diagnostics copy button
+  if (els.copyDiagnosticsBtn) {
+    els.copyDiagnosticsBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      copyDiagnosticsInSettings();
+    });
+  }
+
   if (els.saveSettings) {
     els.saveSettings.addEventListener('click', (e) => {
       e.preventDefault();
+      const previousSettings = {
+        maxChars: state.maxChars,
+        gapMs: state.gapMs,
+        vadSilence: state.vadSilence,
+        uiLang: state.uiLang,
+        inputLang: state.inputLang,
+        outputLang: state.outputLang,
+        glossaryText: state.glossaryText,
+        summaryPrompt: state.summaryPrompt,
+      };
       state.maxChars = Number(els.maxChars?.value) || 300;
       state.gapMs = Number(els.gapMs?.value) || 1000;
       state.vadSilence = Number(els.vadSilence?.value) || 400;
@@ -4403,6 +5762,18 @@ document.addEventListener('DOMContentLoaded', () => {
       const glossaryEntries = parseGlossary(glossaryTextValue);
       const summaryPromptValue = els.summaryPromptInput?.value || '';
       summaryPromptStorage.set(summaryPromptValue);
+
+      const changedKeys = [];
+      if (previousSettings.maxChars !== state.maxChars) changedKeys.push('maxChars');
+      if (previousSettings.gapMs !== state.gapMs) changedKeys.push('gapMs');
+      if (previousSettings.vadSilence !== state.vadSilence) changedKeys.push('vadSilence');
+      if (previousSettings.uiLang !== state.uiLang) changedKeys.push('uiLang');
+      if (previousSettings.inputLang !== state.inputLang) changedKeys.push('inputLang');
+      if (previousSettings.outputLang !== state.outputLang) changedKeys.push('outputLang');
+      if (previousSettings.glossaryText !== state.glossaryText) changedKeys.push('glossary_text');
+      if (previousSettings.summaryPrompt !== state.summaryPrompt) changedKeys.push('summary_prompt');
+      changedKeys.forEach((key) => analytics.log('settings_changed', { setting_key: key }));
+
       applyI18n();
       els.settingsModal?.close();
       addDiagLog(
@@ -4539,73 +5910,6 @@ document.addEventListener('DOMContentLoaded', () => {
   // Initialize STT UI on page load
   initSttSettingsUI();
 
-  if (els.resetUserSettings) {
-    els.resetUserSettings.addEventListener('click', () => {
-      glossaryStorage.clear();
-      summaryPromptStorage.clear();
-      if (els.glossaryTextInput) els.glossaryTextInput.value = '';
-      if (els.summaryPromptInput) els.summaryPromptInput.value = '';
-      addDiagLog('User settings reset (glossary & summaryPrompt cleared)');
-    });
-  }
-
-  if (els.settingsBtn && els.settingsModal) {
-    els.settingsBtn.addEventListener('click', () => {
-      els.settingsModal.showModal();
-      // Load dictionary list when settings modal opens
-      if (currentUser) {
-        loadDictionaryList();
-      }
-      // Fetch latest BUILD_SHA when settings modal opens (non-critical)
-      try {
-        fetchBuildSha();
-      } catch (err) {
-        console.warn('[SETTINGS] fetchBuildSha failed:', err);
-      }
-    });
-  }
-  if (els.saveSettings) {
-    els.saveSettings.addEventListener('click', (e) => {
-      e.preventDefault();
-      state.maxChars = Number(els.maxChars?.value) || 300;
-      state.gapMs = Number(els.gapMs?.value) || 1000;
-      state.vadSilence = Number(els.vadSilence?.value) || 400;
-      state.uiLang = els.uiLang?.value || 'ja';
-      state.inputLang = els.inputLang?.value || 'auto';
-      state.outputLang = els.outputLang?.value || 'ja';
-      localStorage.setItem('maxChars', state.maxChars);
-      localStorage.setItem('gapMs', state.gapMs);
-      localStorage.setItem('vadSilence', state.vadSilence);
-      localStorage.setItem('uiLang', state.uiLang);
-      localStorage.setItem('inputLang', state.inputLang);
-      localStorage.setItem('outputLang', state.outputLang);
-      // Save glossary & summary prompt
-      const glossaryTextValue = els.glossaryTextInput?.value || '';
-      glossaryStorage.set(glossaryTextValue);
-      const glossaryEntries = parseGlossary(glossaryTextValue);
-      const summaryPromptValue = els.summaryPromptInput?.value || '';
-      summaryPromptStorage.set(summaryPromptValue);
-      applyI18n();
-      els.settingsModal?.close();
-      addDiagLog(
-        `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang} glossary_entries=${glossaryEntries.length} summaryPrompt_len=${state.summaryPrompt.length}`
-      );
-      updateDevStatusSummary();
-    });
-  }
-
-  // Preset buttons
-  if (els.presetFast) {
-    els.presetFast.addEventListener('click', () => applyPreset('fast'));
-  }
-  if (els.presetBalanced) {
-    els.presetBalanced.addEventListener('click', () => applyPreset('balanced'));
-  }
-  if (els.presetStable) {
-    els.presetStable.addEventListener('click', () => applyPreset('stable'));
-  }
-
-  // Reset user settings (glossary & summary prompt)
   if (els.resetUserSettings) {
     els.resetUserSettings.addEventListener('click', () => {
       glossaryStorage.clear();
@@ -4765,7 +6069,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Upgrade Pro button click handler
   if (els.upgradeProBtn) {
-    els.upgradeProBtn.addEventListener('click', startCheckout);
+    els.upgradeProBtn.addEventListener('click', () => {
+      analytics.log('upgrade_initiated', { source: 'settings' });
+      startCheckout();
+    });
   }
 
   // Manage subscription button click handler
@@ -4776,6 +6083,11 @@ document.addEventListener('DOMContentLoaded', () => {
   // Buy ticket button click handler - opens modal
   if (els.buyTicketBtn) {
     els.buyTicketBtn.addEventListener('click', openTicketModal);
+  }
+
+  // Resync quota button click handler
+  if (els.resyncQuotaBtn) {
+    els.resyncQuotaBtn.addEventListener('click', resyncQuota);
   }
 
   // Ticket modal close button
@@ -4866,7 +6178,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Refresh billing status and quota when returning from Customer Portal or Stripe Checkout
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && currentUser) {
+    if (document.visibilityState === 'visible' && currentUser && state.apiAvailable) {
       refreshBillingStatus();
       refreshQuotaStatus();
     }
@@ -4874,7 +6186,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Refresh quota on pageshow (bfcache handling)
   window.addEventListener('pageshow', (event) => {
-    if (event.persisted && currentUser) {
+    if (event.persisted && currentUser && state.apiAvailable) {
       refreshQuotaStatus();
     }
   });

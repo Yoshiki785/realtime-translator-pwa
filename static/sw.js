@@ -49,11 +49,13 @@ self.addEventListener('fetch', (event) => {
 
   const url = new URL(request.url);
   const isNetworkFirst = NETWORK_FIRST.some((path) => url.pathname === path || url.pathname.endsWith(path));
+  const shouldBypassHttpCache = url.pathname === '/firebase-config.js';
+  const networkRequest = shouldBypassHttpCache ? new Request(request, { cache: 'no-store' }) : request;
 
   if (isNetworkFirst) {
     // Network-first: 最新版を取得し、キャッシュを更新
     event.respondWith(
-      fetch(request)
+      fetch(networkRequest)
         .then((response) => {
           if (response.ok) {
             const clone = response.clone();

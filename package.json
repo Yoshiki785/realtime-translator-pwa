@@ -2,7 +2,7 @@
   "scripts": {
     "sync": "./scripts/sync_public.sh",
     "check-sync": "./scripts/check_public_sync.sh",
-    "deploy:hosting": "./scripts/sync_public.sh && ./scripts/check_public_sync.sh && firebase deploy --only hosting"
+    "deploy:hosting": "./scripts/sync_public.sh && ./scripts/check_public_sync.sh && firebase deploy --only hosting --project realtime-translator-pwa-483710"
   },
   "devDependencies": {
     "@playwright/test": "^1.57.0"

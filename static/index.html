@@ -11,6 +11,7 @@
   <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-analytics-compat.js"></script>
 </head>
 <body>
   <!-- SW Update Notification Banner -->
@@ -83,6 +84,17 @@
       </div>
       <div class="a2hs" id="a2hs">ホーム画面に追加してオフラインでも使えます</div>
     </footer>
+    <nav class="footer-nav">
+      <a href="/pricing.html" data-i18n="pricingPlan" data-legal-link="pricing" data-link-source="footer">料金・プラン</a>
+      <span>·</span>
+      <a href="/privacy.html" data-i18n="privacyPolicy" data-legal-link="privacy" data-link-source="footer">プライバシーポリシー</a>
+      <span>·</span>
+      <a href="/terms.html" data-i18n="termsOfService" data-legal-link="terms" data-link-source="footer">利用規約</a>
+      <span>·</span>
+      <a href="mailto:lingoflow.cus@gmail.com" data-i18n="contact" data-contact-channel="email" data-link-source="footer">お問い合わせ</a>
+      <span>·</span>
+      <a href="https://docs.google.com/forms/d/e/1FAIpQLSevSNsYZtukK-MYwuPyz07O0qCKWy_2GUL-fa0BinjLi5WwEQ/viewform?usp=header" target="_blank" rel="noopener noreferrer" data-i18n="contactForm" data-contact-channel="form" data-link-source="footer">お問い合わせフォーム</a>
+    </nav>
   </div>
 
   <dialog id="settingsModal">
@@ -97,6 +109,7 @@
           <button id="upgradeProBtn" class="cta small" data-i18n="upgradeToPro">Proにアップグレード</button>
           <button id="manageBillingBtn" class="cta small secondary" data-i18n="manageSubscription" style="display:none;">サブスク管理</button>
           <button id="buyTicketBtn" class="cta small secondary" data-i18n="buyTicket">追加購入</button>
+          <button id="resyncQuotaBtn" class="cta small secondary" data-i18n="resyncQuota" style="display:none;">再同期</button>
           <div id="billingStatus" class="billing-status"></div>
         </div>
       </section>
@@ -105,6 +118,17 @@
         <p class="company-note" data-i18n="companyNote">※ Stripeの請求先情報・解約は「サブスク管理」から行えます</p>
         <div class="company-actions-row">
           <button id="editCompanyBtn" class="cta small secondary" data-i18n="editCompany">会社情報を編集</button>
+        </div>
+      </section>
+      <section id="supportSection" class="support-section">
+        <h3 data-i18n="support">法務・サポート</h3>
+        <p class="support-note" data-i18n="contactResponseSla">通常3営業日以内に返信します。</p>
+        <div class="support-links">
+          <a href="/pricing.html" data-i18n="pricingPlan" data-legal-link="pricing" data-link-source="settings">料金・プラン</a>
+          <a href="/privacy.html" data-i18n="privacyPolicy" data-legal-link="privacy" data-link-source="settings">プライバシーポリシー</a>
+          <a href="/terms.html" data-i18n="termsOfService" data-legal-link="terms" data-link-source="settings">利用規約</a>
+          <a href="mailto:lingoflow.cus@gmail.com" data-i18n="contact" data-contact-channel="email" data-link-source="settings">お問い合わせ</a>
+          <a href="https://docs.google.com/forms/d/e/1FAIpQLSevSNsYZtukK-MYwuPyz07O0qCKWy_2GUL-fa0BinjLi5WwEQ/viewform?usp=header" target="_blank" rel="noopener noreferrer" data-i18n="contactForm" data-contact-channel="form" data-link-source="settings">お問い合わせフォーム</a>
         </div>
       </section>
       <hr class="settings-divider" />
@@ -210,7 +234,12 @@
       </div>
       <hr class="settings-divider" />
       <div class="build-info">
-        <small id="buildShaDisplay" class="build-sha">BUILD_SHA: 読み込み中...</small>
+        <small id="buildShaDisplay" class="build-sha" data-i18n="buildLabel">ビルド</small>
+        <button type="button" id="forceUpdateBtn" class="small secondary" data-i18n="forceUpdate">最新版を取得</button>
+      </div>
+      <div class="diagnostics-section">
+        <button type="button" id="copyDiagnosticsBtn" class="small secondary" data-i18n="copyDiagnostics">診断情報をコピー</button>
+        <small id="diagnosticsStatus" class="diagnostics-status"></small>
       </div>
       <div class="modal-actions">
         <button value="cancel" class="secondary" data-i18n="close">閉じる</button>
@@ -264,6 +293,7 @@
         <h2 data-i18n="ticketSelectTitle">追加チケットを選択</h2>
         <button id="ticketModalClose" class="modal-close-btn" aria-label="Close">✕</button>
       </header>
+      <!-- AUTO:INDEX_TICKET_PACKS:START -->
       <div class="ticket-grid">
         <button class="ticket-pack" data-pack-id="t120">
           <span class="ticket-minutes">+120分</span>
@@ -290,6 +320,7 @@
           <span class="ticket-price">¥21,000</span>
         </button>
       </div>
+      <!-- AUTO:INDEX_TICKET_PACKS:END -->
       <div id="ticketModalStatus" class="billing-status"></div>
     </div>
   </dialog>

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "currency": "JPY",
+  "plans": {
+    "free": {
+      "monthlyMinutes": 20,
+      "dailyMinutes": 10,
+      "retentionDays": 7
+    },
+    "pro": {
+      "monthlyMinutes": 120,
+      "dailyMinutes": null,
+      "retentionDays": 30
+    }
+  },
+  "ticketDisplay": {
+    "free": "不可",
+    "pro": "可（有料）"
+  },
+  "ticketPacks": [
+    { "packId": "t120", "minutes": 120, "priceJpy": 1440, "visible": true },
+    { "packId": "t240", "minutes": 240, "priceJpy": 2440, "visible": true },
+    { "packId": "t360", "minutes": 360, "priceJpy": 3240, "visible": true },
+    { "packId": "t1200", "minutes": 1200, "priceJpy": 9600, "visible": true },
+    { "packId": "t1800", "minutes": 1800, "priceJpy": 12600, "visible": true },
+    { "packId": "t3000", "minutes": 3000, "priceJpy": 21000, "visible": true }
+  ]
+}

@@ -3,6 +3,7 @@ import base64
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -49,6 +50,8 @@ ENV = os.getenv("ENV", "development")
 IS_PRODUCTION = ENV == "production"
 SERVICE_NAME = os.getenv("SERVICE_NAME", "realtime-translator-api")
 APP_VERSION = os.getenv("APP_VERSION") or os.getenv("COMMIT_SHA") or "local"
+DOWNLOADS_TTL_SECONDS = int(os.getenv("DOWNLOADS_TTL_SECONDS", "7200"))
+DOWNLOADS_MAX_DELETE_PER_RUN = int(os.getenv("DOWNLOADS_MAX_DELETE_PER_RUN", "200"))
 
 def get_openai_api_key() -> str:
     api_key = os.getenv("OPENAI_API_KEY")
@@ -58,20 +61,62 @@ def get_openai_api_key() -> str:
 
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
-DOWNLOAD_DIR = BASE_DIR / "downloads"
+DOWNLOAD_DIR = Path(os.getenv("DOWNLOADS_DIR", str(BASE_DIR / "downloads")))
 DOWNLOAD_DIR.mkdir(exist_ok=True)
+
+_CLEANUP_EXTENSIONS = {".m4a", ".webm", ".wav", ".mp3"}
+_CLEANUP_MIN_AGE_SECONDS = 300  # 5分未満のファイルは絶対に削除しない安全ガード
+
+
+def cleanup_downloads_dir() -> int:
+    """Delete audio files in DOWNLOAD_DIR older than DOWNLOADS_TTL_SECONDS."""
+    deleted = 0
+    try:
+        now = time.time()
+        cutoff = now - DOWNLOADS_TTL_SECONDS
+        for entry in DOWNLOAD_DIR.iterdir():
+            if deleted >= DOWNLOADS_MAX_DELETE_PER_RUN:
+                logger.info(
+                    f"cleanup_downloads_dir: hit max limit ({DOWNLOADS_MAX_DELETE_PER_RUN})"
+                )
+                break
+            if not entry.is_file() or entry.suffix.lower() not in _CLEANUP_EXTENSIONS:
+                continue
+            try:
+                mtime = entry.stat().st_mtime
+            except OSError:
+                continue
+            age = now - mtime
+            if age < _CLEANUP_MIN_AGE_SECONDS:
+                continue  # 直近作成ファイルは安全のためスキップ
+            if mtime < cutoff:
+                try:
+                    entry.unlink()
+                    deleted += 1
+                    logger.info(
+                        f"cleanup_downloads_dir: deleted {entry.name} (age={int(age)}s)"
+                    )
+                except OSError as exc:
+                    logger.warning(
+                        f"cleanup_downloads_dir: failed to delete {entry.name}: {exc}"
+                    )
+    except Exception:
+        logger.exception("cleanup_downloads_dir: unexpected error")
+    return deleted
+
 
 JST = ZoneInfo("Asia/Tokyo")
 
 PLANS = {
     "free": {
-        "quotaSeconds": 1800,
+        "quotaSeconds": 1200,  # 20分/月
         "retentionDays": 7,
-        "baseMonthlyQuotaSeconds": 1800,
-        "baseDailyQuotaSeconds": 600,
-        "maxSessionSeconds": 600,
+        "baseMonthlyQuotaSeconds": 1200,  # 20分/月
+        "baseDailyQuotaSeconds": 600,  # 10分/日
+        "maxSessionSeconds": 600,  # 10分/セッション
         "maxConcurrentJobs": 1,
         "createRateLimitPerMin": 6,
+        "dailyJobLimit": 10,  # 10ジョブ/日
     },
     "pro": {
         "quotaSeconds": 7200,
@@ -81,6 +126,7 @@ PLANS = {
         "maxSessionSeconds": 7200,
         "maxConcurrentJobs": 1,
         "createRateLimitPerMin": 12,
+        "dailyJobLimit": None,  # 無制限
     },
 }
 
@@ -469,13 +515,20 @@ def normalize_user_usage_data(
     if state.get("dayKey") != today:
         updates["dayKey"] = today
         updates["usedSecondsToday"] = 0
+        updates["jobCountToday"] = 0  # 日次ジョブカウントもリセット
         state["dayKey"] = today
         state["usedSecondsToday"] = 0
+        state["jobCountToday"] = 0
     else:
         used_today = max(0, safe_int(state.get("usedSecondsToday"), 0))
         if state.get("usedSecondsToday") != used_today:
             updates["usedSecondsToday"] = used_today
         state["usedSecondsToday"] = used_today
+        # jobCountToday の正規化
+        job_count = max(0, safe_int(state.get("jobCountToday"), 0))
+        if state.get("jobCountToday") != job_count:
+            updates["jobCountToday"] = job_count
+        state["jobCountToday"] = job_count
 
     month = month_key(current_jst)
     if state.get("monthKey") != month:
@@ -612,11 +665,8 @@ def _create_job_core(
 
         if total_available <= 0:
             raise HTTPException(
-                status_code=402,
-                detail={
-                    "error": "no_remaining_minutes",
-                    "message": "No remaining minutes (monthly base + tickets exhausted)",
-                },
+                status_code=429,
+                detail="monthly_quota_exhausted",
             )
 
         daily_cap = plan_config.get("baseDailyQuotaSeconds")
@@ -624,10 +674,16 @@ def _create_job_core(
         if daily_cap is not None and (daily_remaining is None or daily_remaining <= 0):
             raise HTTPException(
                 status_code=429,
-                detail={
-                    "error": "daily_limit_reached",
-                    "message": "Daily limit reached (10 min/day)",
-                },
+                detail="daily_limit_reached",
+            )
+
+        # 日次ジョブ数制限チェック
+        daily_job_limit = plan_config.get("dailyJobLimit")
+        job_count_today = user_state.get("jobCountToday", 0)
+        if daily_job_limit is not None and job_count_today >= daily_job_limit:
+            raise HTTPException(
+                status_code=429,
+                detail="daily_job_limit_reached",
             )
 
         minute_key = current_jst.strftime("%Y-%m-%dT%H:%M")
@@ -640,10 +696,7 @@ def _create_job_core(
         if create_limit and create_count >= create_limit:
             raise HTTPException(
                 status_code=429,
-                detail={
-                    "error": "rate_limited",
-                    "message": "Too many job requests this minute",
-                },
+                detail="rate_limited",
             )
 
         max_session = plan_config.get("maxSessionSeconds", 600)
@@ -690,8 +743,8 @@ def _create_job_core(
     reserved_seconds = max(0, int(reserved_seconds))
     if reserved_seconds <= 0:
         raise HTTPException(
-            status_code=402,
-            detail={"error": "no_reservable_minutes", "message": "No minutes available for reservation"},
+            status_code=429,
+            detail="monthly_quota_exhausted",
         )
 
     retention_days = plan_config.get("retentionDays", 7)
@@ -709,6 +762,7 @@ def _create_job_core(
         "activeJobStartedAt": firebase_firestore.SERVER_TIMESTAMP,
         "jobCreateMinuteKey": stored_minute,
         "jobCreateCount": create_count,
+        "jobCountToday": firebase_firestore.Increment(1),  # アトミックにインクリメント
     }
     apply_user_updates(user_ref, user_updates, transaction)
 
@@ -1039,6 +1093,12 @@ async def generate_static_assets() -> None:
     ensure_icon(STATIC_DIR / "icon-512.png", ICON_512_B64)
 
 
+@app.on_event("startup")
+async def cleanup_stale_downloads() -> None:
+    deleted = cleanup_downloads_dir()
+    logger.info(f"startup cleanup: removed {deleted} stale file(s) from downloads/")
+
+
 async def post_openai(url: str, payload: dict, headers: dict | None = None) -> dict:
     async with httpx.AsyncClient(timeout=30.0) as client:
         response = await client.post(url, json=payload, headers=headers or {})
@@ -1319,6 +1379,8 @@ async def complete_job(request: Request) -> JSONResponse:
             transaction, db, job_ref, uid, audio_seconds, current_jst, now_utc
         )
 
+    result["serverTime"] = now_utc.isoformat()
+
     log_payload = {
         "uid": uid,
         "jobId": job_id,
@@ -1366,6 +1428,7 @@ async def get_me(request: Request) -> JSONResponse:
     uid = get_uid_from_request(request)
     db = get_firestore_client()
     current_jst = now_jst()
+    now_utc = datetime.now(timezone.utc)
     _, user_state, plan, plan_config = read_user_state(db, uid, current_jst)
     snapshot = build_quota_snapshot(user_state, plan_config)
 
@@ -1376,36 +1439,80 @@ async def get_me(request: Request) -> JSONResponse:
     blocked_reason = None
     total_available = snapshot["totalAvailableThisMonth"]
     daily_remaining = snapshot["dailyRemainingSeconds"]
+    daily_job_limit = plan_config.get("dailyJobLimit")
+    job_count_today = user_state.get("jobCountToday", 0)
+
     if total_available <= 0:
         blocked_reason = "monthly_quota_exhausted"
     elif plan == "free" and daily_remaining is not None and daily_remaining <= 0:
         blocked_reason = "daily_limit_reached"
+    elif daily_job_limit is not None and job_count_today >= daily_job_limit:
+        blocked_reason = "daily_job_limit_reached"
+
+    # 日次ジョブ残り計算
+    day_job_remaining = None
+    if daily_job_limit is not None:
+        day_job_remaining = max(0, daily_job_limit - job_count_today)
+
+    # 分単位変換ヘルパー
+    def to_min(seconds):
+        return seconds // 60 if seconds is not None else None
 
     response = {
         "uid": uid,
         "plan": plan,
+        "serverTime": now_utc.isoformat(),
+
+        # 月次 (秒単位 + 分単位)
         "baseMonthlyQuotaSeconds": snapshot["baseMonthlyQuotaSeconds"],
         "usedBaseSecondsThisMonth": snapshot["usedBaseSecondsThisMonth"],
         "baseRemainingThisMonth": snapshot["baseRemainingThisMonth"],
+        "monthLimitMin": to_min(snapshot["baseMonthlyQuotaSeconds"]),
+        "monthUsedMin": to_min(snapshot["usedBaseSecondsThisMonth"]),
+        "monthRemainingMin": to_min(snapshot["baseRemainingThisMonth"]),
+
+        # チケット/合計
         "ticketSecondsBalance": snapshot["ticketSecondsBalance"],
-        "creditSeconds": snapshot["ticketSecondsBalance"],  # フロント互換性のため追加
+        "creditSeconds": snapshot["ticketSecondsBalance"],  # フロント互換性
         "totalAvailableThisMonth": snapshot["totalAvailableThisMonth"],
+
+        # 日次ジョブ数
+        "dayJobLimit": daily_job_limit,
+        "dayJobUsed": job_count_today,
+        "dayJobRemaining": day_job_remaining,
+
+        # 同時接続
+        "concurrentLimit": plan_config.get("maxConcurrentJobs", 1),
+        "concurrentActive": 1 if user_state.get("activeJobId") else 0,
+
+        # セッション/保持
         "maxSessionSeconds": plan_config.get("maxSessionSeconds"),
+        "retentionDays": plan_config.get("retentionDays", 7),
+
+        # 状態
         "activeJob": bool(user_state.get("activeJobId")),
         "monthKey": user_state.get("monthKey"),
         "dayKey": user_state.get("dayKey"),
         "nextResetAt": next_reset.isoformat(),
+
+        # Billing
+        "billingEnabled": True,
+        "purchaseAvailable": True,
     }
 
     if blocked_reason:
         response["blockedReason"] = blocked_reason
 
+    # 日次制限がある場合（freeプラン）
     if snapshot["baseDailyQuotaSeconds"] is not None:
         response.update(
             {
                 "baseDailyQuotaSeconds": snapshot["baseDailyQuotaSeconds"],
                 "usedSecondsToday": snapshot["usedSecondsToday"],
                 "dailyRemainingSeconds": snapshot["dailyRemainingSeconds"],
+                "dayLimitMin": to_min(snapshot["baseDailyQuotaSeconds"]),
+                "dayUsedMin": to_min(snapshot["usedSecondsToday"]),
+                "dayRemainingMin": to_min(snapshot["dailyRemainingSeconds"]),
             }
         )
 
@@ -1694,6 +1801,24 @@ async def get_billing_status(request: Request) -> JSONResponse:
     subscription_status = user_data.get("subscriptionStatus", "free")
     cancel_at_period_end = user_data.get("cancelAtPeriodEnd", False)
     current_period_end = user_data.get("currentPeriodEnd")
+    is_pro = plan == "pro"
+
+    # Stripe fallback: currentPeriodEnd が Firestore に無い場合、Stripe から取得してバックフィル
+    if not current_period_end and is_pro:
+        subscription_id = user_data.get("stripeSubscriptionId")
+        if subscription_id:
+            try:
+                secret_key = os.getenv("STRIPE_SECRET_KEY")
+                if secret_key:
+                    stripe.api_key = secret_key
+                    sub = stripe.Subscription.retrieve(subscription_id)
+                    cpe = sub.get("current_period_end")
+                    if cpe:
+                        current_period_end = datetime.fromtimestamp(cpe, tz=timezone.utc)
+                        user_ref.set({"currentPeriodEnd": current_period_end}, merge=True)
+                        logger.info(f"[billing_status] Backfilled currentPeriodEnd from Stripe | uid={uid}")
+            except Exception as e:
+                logger.warning(f"[billing_status] Stripe fallback failed | uid={uid} error={e}")
 
     # currentPeriodEnd を ISO 文字列に変換
     current_period_end_iso = None
@@ -1712,9 +1837,9 @@ async def get_billing_status(request: Request) -> JSONResponse:
         "cancelAtPeriodEnd": cancel_at_period_end,
         "currentPeriodEnd": current_period_end_iso,
         "currentPeriodEndUnix": current_period_end_unix,
-        "isPro": plan == "pro",
+        "isPro": is_pro,
         "isPastDue": subscription_status == "past_due",
-        "isCanceling": cancel_at_period_end and plan == "pro",
+        "isCanceling": cancel_at_period_end and is_pro,
     }
 
     logger.info(f"[billing_status] GET | {json.dumps({'uid': uid, 'plan': plan, 'status': subscription_status})}")
@@ -2001,14 +2126,13 @@ async def stripe_webhook(request: Request) -> JSONResponse:
 
 # ========== Ticket Purchase API ==========
 # Allowed ticket minutes (UI options)
-ALLOWED_TICKET_MINUTES = [120, 240, 300, 360, 1200, 1800, 3000]
+ALLOWED_TICKET_MINUTES = [120, 240, 360, 1200, 1800, 3000]
 
 # Ticket pack definitions (packId -> minutes, JPY price)
 # Price ID is resolved from STRIPE_TICKET_PRICE_MAP_JSON or price_T{minutes} env
 TICKET_PACKS = {
     "t120": {"minutes": 120, "price_jpy": 1440},
     "t240": {"minutes": 240, "price_jpy": 2440},
-    "t300": {"minutes": 300, "price_jpy": 2940},
     "t360": {"minutes": 360, "price_jpy": 3240},
     "t1200": {"minutes": 1200, "price_jpy": 9600},
     "t1800": {"minutes": 1800, "price_jpy": 12600},
@@ -2530,6 +2654,10 @@ async def convert_audio(request: Request, file: UploadFile = File(...)) -> JSONR
             input_path.unlink()
 
     download_url = f"/downloads/{output_path.name}"
+    try:
+        cleanup_downloads_dir()
+    except Exception:
+        logger.exception("cleanup after conversion failed")
     return JSONResponse({"url": download_url})
 
 

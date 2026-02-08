@@ -1,5 +1,7 @@
 # デプロイ・運用ガイド
 
+> 🚀 MVP ローンチ用チェックリスト → [docs/launch_mvp_runbook.md](docs/launch_mvp_runbook.md)
+
 ## アーキテクチャ
 
 - **バックエンド**: Cloud Run（FastAPI + uvicorn）
@@ -85,6 +87,54 @@ firebase init hosting
 
 # Firebaseプロジェクトと紐付け
 firebase use $PROJECT_ID
+```
+
+### 3.1 プロジェクト取り違え防止（必須）
+
+- 本番プロジェクトIDは `realtime-translator-pwa-483710`。
+- デプロイ前に必ず Active Project を確認する。
+
+```bash
+# 本番エイリアスを使う（.firebaserc: prod -> realtime-translator-pwa-483710）
+firebase use prod
+
+# Active Project を確認
+firebase use
+```
+
+```bash
+# 安全デプロイ（Hosting）
+firebase use prod && firebase deploy --only hosting --project realtime-translator-pwa-483710
+
+# 安全デプロイ（Firestore Rules）
+firebase use prod && firebase deploy --only firestore:rules --project realtime-translator-pwa-483710
+```
+
+- Console確認時も、画面上部のプロジェクトが `realtime-translator-pwa-483710` であることを毎回確認する。
+
+### 3.2 デプロイ前チェックリスト
+
+- [ ] `firebase use` で Active Project が `realtime-translator-pwa-483710` であることを確認
+- [ ] Firebase Console 画面上部のプロジェクトが `realtime-translator-pwa-483710` であることを確認
+- [ ] `--project realtime-translator-pwa-483710` を明示して実行
+
+#### コピペ用コマンド
+
+```bash
+# プロジェクト確認
+firebase use
+
+# Hosting デプロイ
+firebase deploy --only hosting --project realtime-translator-pwa-483710
+
+# Firestore Rules デプロイ
+firebase deploy --only firestore:rules --project realtime-translator-pwa-483710
+
+# Firestore Indexes デプロイ（必要時のみ）
+firebase deploy --only firestore:indexes --project realtime-translator-pwa-483710
+
+# プロジェクト一覧（必要時）
+firebase projects:list
 ```
 
 ### 4. Secret Manager にシークレット登録
@@ -417,12 +467,46 @@ stripe trigger invoice.payment_failed
 - [ ] `ENV=production` が設定されている
 - [ ] Secret Manager にすべてのシークレットが登録されている
 - [ ] Cloud Run のサービスアカウントに最小権限のみ付与
-- [ ] Firestore Security Rules が設定されている
+- [x] Firestore Security Rules が設定されている（firestore.rules: deny-all）
 - [ ] Cloud Storage bucket に適切なIAM設定
 - [ ] Stripe Webhook 署名検証が有効
 - [ ] Cloud Scheduler は専用Service Accountで実行
 - [ ] `/api/v1/test/*` エンドポイントが本番で無効化されている
 - [ ] ログに機密情報（トークン、APIキー等）が含まれていない
+
+---
+
+## Firestore運用方針（本番）
+
+- 現行構成では、Firestoreは **Cloud Run (Python / Admin SDK)** からのみアクセスする。
+- クライアント（`static/app.js`）は Firestore SDK を使わず、`/api/v1/*` 経由でのみデータ取得/更新する。
+- そのため `firestore.rules` は `deny-all` を維持する（最小権限）。
+
+### 事前検証（デプロイ前）
+
+```bash
+# 1) クライアントがFirestore SDKを直接使っていないことを確認
+rg -n "firebase-firestore|getFirestore|firebase\\.firestore|from 'firebase/firestore'" static public
+
+# 2) クライアントがAPI経由で動作していることを確認
+rg -n "/api/v1/" static/app.js
+```
+
+### Firestore Rules デプロイ
+
+```bash
+# ルールのみデプロイ
+firebase deploy --only firestore:rules --project realtime-translator-pwa-483710
+
+# （必要時のみ）indexesも反映
+firebase deploy --only firestore:indexes --project realtime-translator-pwa-483710
+```
+
+### デプロイ後スモーク
+
+- ログイン後に利用枠表示が更新される（`/api/v1/me` 経由）
+- 辞書の一覧/追加/更新/削除が動作する（`/api/v1/dictionary*` 経由）
+- 課金系導線が動作する（`/api/v1/billing/*` 経由）
 
 ---
 

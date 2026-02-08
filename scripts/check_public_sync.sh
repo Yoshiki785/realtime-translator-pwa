@@ -14,8 +14,26 @@ echo "=========================================="
 echo "Checking static/ <-> public/ sync"
 echo "=========================================="
 
+# Validate generated pricing/legal blocks are up to date
+echo "Checking generated pricing blocks"
+node ./scripts/generate_pricing.js --check
+
+require_dom_id() {
+  local file="$1"
+  local dom_id="$2"
+  if ! rg -q "id=[\"']${dom_id}[\"']" "$file"; then
+    echo "ERROR: required DOM id \"${dom_id}\" not found in ${file}" >&2
+    exit 1
+  fi
+}
+
+require_dom_id "static/index.html" "quotaInfo"
+require_dom_id "static/index.html" "billingSection"
+require_dom_id "static/index.html" "upgradeProBtn"
+require_dom_id "static/index.html" "buyTicketBtn"
+
 # Files to check
-FILES=("app.js" "index.html")
+FILES=("app.js" "index.html" "styles.css" "pricing.html" "privacy.html" "terms.html" "firebase-config.js" "manifest.json" "config/pricing.json")
 
 drift_found=0
 
