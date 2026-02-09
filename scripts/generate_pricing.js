@@ -153,6 +153,15 @@ const renderIndexTicketPacks = (config) => {
   return lines.join('\n');
 };
 
+const renderIndexPlanPolicySummary = (config) => {
+  const free = config.plans.free;
+  const pro = config.plans.pro;
+  return [
+    `      <p>保存期間: Free ${free.retentionDays}日 / Pro ${pro.retentionDays}日</p>`,
+    '      <p>返金: 原則返金なし（<a href="/terms.html#refund-policy" data-legal-link="terms" data-link-source="home-policy">利用規約</a>をご確認ください）</p>',
+  ].join('\n');
+};
+
 const applyTransforms = (config, filePath, source) => {
   let next = source;
   const relPath = path.relative(ROOT_DIR, filePath);
@@ -166,6 +175,7 @@ const applyTransforms = (config, filePath, source) => {
     next = replaceBlock(next, 'PRIVACY_RETENTION_LIST', renderPrivacyRetentionList(config));
   } else if (relPath === path.join('static', 'index.html')) {
     next = replaceBlock(next, 'INDEX_TICKET_PACKS', renderIndexTicketPacks(config));
+    next = replaceBlock(next, 'INDEX_PLAN_POLICY_SUMMARY', renderIndexPlanPolicySummary(config));
   } else {
     throw new Error(`Unsupported target file: ${relPath}`);
   }

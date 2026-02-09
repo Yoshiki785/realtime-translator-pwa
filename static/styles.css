@@ -1410,6 +1410,24 @@ button.disabled {
 }
 
 /* ========== Footer Nav ========== */
+.home-policy-summary {
+  margin-top: 10px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.6;
+}
+.home-policy-summary p {
+  margin: 0;
+}
+.home-policy-summary a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.home-policy-summary a:hover {
+  text-decoration: underline;
+}
+
 .footer-nav {
   display: flex;
   flex-wrap: wrap;
