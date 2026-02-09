@@ -3,135 +3,187 @@
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
   },
-  "hosting": {
-    "public": "public",
-    "predeploy": [
-      "./scripts/sync_public.sh",
-      "./scripts/check_public_sync.sh"
-    ],
-    "ignore": [
-      "firebase.json",
-      "**/.*",
-      "**/node_modules/**"
-    ],
-    "headers": [
-      {
-        "source": "/",
-        "headers": [
-          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
-        ]
-      },
-      {
-        "source": "/index.html",
-        "headers": [
-          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
-        ]
-      },
-      {
-        "source": "/app.js",
-        "headers": [
-          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
-        ]
-      },
-      {
-        "source": "/sw.js",
-        "headers": [
-          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
-        ]
-      },
-      {
-        "source": "/firebase-config.js",
-        "headers": [
-          { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
-        ]
-      },
-      {
-        "source": "**/*.@(png|jpg|jpeg|gif|ico|svg)",
-        "headers": [
-          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
-        ]
-      },
-      {
-        "source": "**/*.@(woff|woff2|ttf|eot)",
-        "headers": [
-          { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
-        ]
-      },
-      {
-        "source": "/styles.css",
-        "headers": [
-          { "key": "Cache-Control", "value": "public, max-age=86400" }
-        ]
-      }
-    ],
-    "rewrites": [
-      {
-        "source": "/openapi.json",
-        "run": {
-          "serviceId": "realtime-translator-api",
-          "region": "asia-northeast1"
+  "hosting": [
+    {
+      "target": "app",
+      "public": "public",
+      "predeploy": [
+        "./scripts/sync_public.sh",
+        "./scripts/check_public_sync.sh"
+      ],
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "/",
+          "headers": [
+            { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+          ]
+        },
+        {
+          "source": "/index.html",
+          "headers": [
+            { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+          ]
+        },
+        {
+          "source": "/app.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+          ]
+        },
+        {
+          "source": "/sw.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+          ]
+        },
+        {
+          "source": "/firebase-config.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+          ]
+        },
+        {
+          "source": "**/*.@(png|jpg|jpeg|gif|ico|svg)",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+          ]
+        },
+        {
+          "source": "**/*.@(woff|woff2|ttf|eot)",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+          ]
+        },
+        {
+          "source": "/styles.css",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=86400" }
+          ]
         }
-      },
-      {
-        "source": "/docs",
-        "run": {
-          "serviceId": "realtime-translator-api",
-          "region": "asia-northeast1"
+      ],
+      "rewrites": [
+        {
+          "source": "/openapi.json",
+          "run": {
+            "serviceId": "realtime-translator-api",
+            "region": "asia-northeast1"
+          }
+        },
+        {
+          "source": "/docs",
+          "run": {
+            "serviceId": "realtime-translator-api",
+            "region": "asia-northeast1"
+          }
+        },
+        {
+          "source": "/health",
+          "run": {
+            "serviceId": "realtime-translator-api",
+            "region": "asia-northeast1"
+          }
+        },
+        {
+          "source": "/audio_m4a",
+          "run": {
+            "serviceId": "realtime-translator-api",
+            "region": "asia-northeast1"
+          }
+        },
+        {
+          "source": "/summarize",
+          "run": {
+            "serviceId": "realtime-translator-api",
+            "region": "asia-northeast1"
+          }
+        },
+        {
+          "source": "/translate",
+          "run": {
+            "serviceId": "realtime-translator-api",
+            "region": "asia-northeast1"
+          }
+        },
+        {
+          "source": "/token",
+          "run": {
+            "serviceId": "realtime-translator-api",
+            "region": "asia-northeast1"
+          }
+        },
+        {
+          "source": "/api/**",
+          "run": {
+            "serviceId": "realtime-translator-api",
+            "region": "asia-northeast1"
+          }
+        },
+        {
+          "source": "/downloads/**",
+          "run": {
+            "serviceId": "realtime-translator-api",
+            "region": "asia-northeast1"
+          }
+        },
+        {
+          "source": "**",
+          "destination": "/index.html"
         }
-      },
-      {
-        "source": "/health",
-        "run": {
-          "serviceId": "realtime-translator-api",
-          "region": "asia-northeast1"
+      ]
+    },
+    {
+      "target": "marketing",
+      "public": "marketing_public",
+      "predeploy": [
+        "./scripts/sync_marketing.sh",
+        "./scripts/check_marketing_sync.sh"
+      ],
+      "ignore": [
+        "firebase.json",
+        "**/.*",
+        "**/node_modules/**"
+      ],
+      "headers": [
+        {
+          "source": "**/*.html",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=3600, stale-while-revalidate=86400" },
+            { "key": "X-Content-Type-Options", "value": "nosniff" },
+            { "key": "X-Frame-Options", "value": "DENY" }
+          ]
+        },
+        {
+          "source": "**/*.css",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=604800" }
+          ]
+        },
+        {
+          "source": "**/*.js",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=604800" }
+          ]
+        },
+        {
+          "source": "**/*.@(png|jpg|jpeg|gif|ico|svg|webp)",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+          ]
+        },
+        {
+          "source": "**/*.@(woff|woff2|ttf|eot)",
+          "headers": [
+            { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+          ]
         }
-      },
-      {
-        "source": "/audio_m4a",
-        "run": {
-          "serviceId": "realtime-translator-api",
-          "region": "asia-northeast1"
-        }
-      },
-      {
-        "source": "/summarize",
-        "run": {
-          "serviceId": "realtime-translator-api",
-          "region": "asia-northeast1"
-        }
-      },
-      {
-        "source": "/translate",
-        "run": {
-          "serviceId": "realtime-translator-api",
-          "region": "asia-northeast1"
-        }
-      },
-      {
-        "source": "/token",
-        "run": {
-          "serviceId": "realtime-translator-api",
-          "region": "asia-northeast1"
-        }
-      },
-      {
-        "source": "/api/**",
-        "run": {
-          "serviceId": "realtime-translator-api",
-          "region": "asia-northeast1"
-        }
-      },
-      {
-        "source": "/downloads/**",
-        "run": {
-          "serviceId": "realtime-translator-api",
-          "region": "asia-northeast1"
-        }
-      },
-      {
-        "source": "**",
-        "destination": "/index.html"
-      }
-    ]
-  }
+      ],
+      "cleanUrls": true,
+      "trailingSlash": false
+    }
+  ]
 }
