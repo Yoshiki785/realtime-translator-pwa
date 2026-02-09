@@ -1,0 +1,81 @@
+/* ============================================================
+   Scroll Animations
+   Controlled by IntersectionObserver in observer.js.
+   All animations respect prefers-reduced-motion.
+   ============================================================ */
+
+/* ── Initial state (before intersection) ── */
+[data-animate] {
+  opacity: 0;
+  transform: translateY(24px);
+  transition:
+    opacity var(--lp-duration-slow) var(--lp-ease-out),
+    transform var(--lp-duration-slow) var(--lp-ease-out);
+}
+
+[data-animate="fade-in"] {
+  transform: none;
+}
+
+[data-animate="fade-up"] {
+  transform: translateY(24px);
+}
+
+[data-animate="fade-left"] {
+  transform: translateX(24px);
+}
+
+[data-animate="fade-right"] {
+  transform: translateX(-24px);
+}
+
+[data-animate="scale-in"] {
+  transform: scale(0.95);
+}
+
+/* ── Visible state (after intersection) ── */
+[data-animate].is-visible {
+  opacity: 1;
+  transform: none;
+}
+
+/* ── Staggered children ── */
+[data-animate-stagger] > [data-animate] {
+  transition-delay: calc(var(--stagger-index, 0) * 100ms);
+}
+
+/* ============================================================
+   prefers-reduced-motion: reduce
+   MANDATORY. Disables ALL transitions, transforms, animations.
+   Content remains fully visible — only motion is removed.
+   ============================================================ */
+@media (prefers-reduced-motion: reduce) {
+  [data-animate] {
+    opacity: 1 !important;
+    transform: none !important;
+    transition: none !important;
+  }
+
+  .lp-hero-glow {
+    display: none;
+  }
+
+  .lp-feature-item:hover,
+  .lp-cta:hover,
+  .lp-nav-cta:hover {
+    transform: none;
+  }
+
+  * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ── JS-disabled fallback ── */
+.no-js [data-animate] {
+  opacity: 1;
+  transform: none;
+}

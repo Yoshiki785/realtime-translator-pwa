@@ -1,0 +1,92 @@
+/* ============================================================
+   LingoFlow LP Design Tokens
+   Termius-inspired: dark base, vibrant accents, generous whitespace.
+   Prefix: --lp-* (avoids collision with PWA's --bg/--fg/--accent)
+   ============================================================ */
+
+:root {
+  /* ── Color Palette ── */
+  --lp-bg:            #0a0e1a;
+  --lp-bg-subtle:     #111827;
+  --lp-surface:       rgba(255, 255, 255, 0.04);
+  --lp-surface-hover: rgba(255, 255, 255, 0.08);
+  --lp-border:        rgba(255, 255, 255, 0.08);
+
+  --lp-fg:            #f1f5f9;
+  --lp-fg-muted:      #94a3b8;
+  --lp-fg-subtle:     #64748b;
+
+  --lp-accent:        #38bdf8;
+  --lp-accent-hover:  #0ea5e9;
+  --lp-accent-glow:   rgba(56, 189, 248, 0.15);
+
+  --lp-secondary:     #a78bfa;
+  --lp-secondary-glow: rgba(167, 139, 250, 0.12);
+
+  --lp-gradient-hero: linear-gradient(
+    135deg,
+    rgba(56, 189, 248, 0.08) 0%,
+    rgba(167, 139, 250, 0.06) 50%,
+    transparent 100%
+  );
+
+  --lp-gradient-cta: linear-gradient(135deg, #38bdf8, #22d3ee);
+
+  /* ── Typography ── */
+  --lp-font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --lp-font-mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+
+  --lp-text-xs:   0.75rem;
+  --lp-text-sm:   0.875rem;
+  --lp-text-base: 1rem;
+  --lp-text-lg:   1.125rem;
+  --lp-text-xl:   1.25rem;
+  --lp-text-2xl:  1.5rem;
+  --lp-text-3xl:  1.875rem;
+  --lp-text-4xl:  2.25rem;
+  --lp-text-5xl:  3rem;
+
+  --lp-leading-tight:   1.2;
+  --lp-leading-normal:  1.6;
+  --lp-leading-relaxed: 1.8;
+
+  /* ── Spacing (8px base grid) ── */
+  --lp-space-1:   0.25rem;
+  --lp-space-2:   0.5rem;
+  --lp-space-3:   0.75rem;
+  --lp-space-4:   1rem;
+  --lp-space-6:   1.5rem;
+  --lp-space-8:   2rem;
+  --lp-space-12:  3rem;
+  --lp-space-16:  4rem;
+  --lp-space-20:  5rem;
+  --lp-space-24:  6rem;
+
+  /* ── Layout ── */
+  --lp-container-max:     1200px;
+  --lp-container-padding: var(--lp-space-6);
+
+  /* ── Borders & Radii ── */
+  --lp-radius-sm:   0.5rem;
+  --lp-radius-md:   0.75rem;
+  --lp-radius-lg:   1rem;
+  --lp-radius-xl:   1.5rem;
+  --lp-radius-full: 9999px;
+
+  /* ── Shadows ── */
+  --lp-shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --lp-shadow-md: 0 8px 24px rgba(0, 0, 0, 0.3);
+  --lp-shadow-lg: 0 20px 50px rgba(0, 0, 0, 0.4);
+  --lp-shadow-glow: 0 0 40px var(--lp-accent-glow);
+
+  /* ── Transitions ── */
+  --lp-duration-fast:   150ms;
+  --lp-duration-normal: 300ms;
+  --lp-duration-slow:   600ms;
+  --lp-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* ── Z-index scale ── */
+  --lp-z-header:  100;
+  --lp-z-overlay: 200;
+  --lp-z-modal:   300;
+}

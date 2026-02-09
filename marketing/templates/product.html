@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" class="no-js">
+<head>
+    <!-- INCLUDE:_head.html -->
+    <title>{{name}} - LingoFlow</title>
+    <meta name="description" content="{{tagline}}" />
+    <link rel="canonical" href="{{canonical_url}}" />
+    <meta property="og:type" content="product" />
+    <meta property="og:title" content="{{name}} - LingoFlow" />
+    <meta property="og:description" content="{{tagline}}" />
+    <meta property="og:image" content="https://lingoflow-ai.com{{og_image}}" />
+    <meta property="og:url" content="{{canonical_url}}" />
+    <meta name="twitter:card" content="summary_large_image" />
+</head>
+<body>
+<!-- INCLUDE:_header.html -->
+
+<main>
+  <section class="lp-hero">
+    <div class="lp-hero-glow lp-hero-glow--primary"></div>
+    <div class="lp-hero-glow lp-hero-glow--secondary"></div>
+    <div class="lp-container">
+      <h1 data-animate="fade-up">{{name}} {{status_badge}}</h1>
+      <p data-animate="fade-up">{{description}}</p>
+      <div data-animate="fade-up">
+        <a href="{{cta_url}}" class="lp-cta" data-analytics="cta_click" data-analytics-label="product-hero-{{slug}}">{{cta_text}}</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="lp-section" data-section="features">
+    <div class="lp-container">
+      <div class="lp-section-header" data-animate="fade-up">
+        <h2>Features</h2>
+      </div>
+      <ul class="lp-feature-grid" data-animate-stagger>
+        {{features_list}}
+      </ul>
+    </div>
+  </section>
+
+  <section class="lp-section lp-text-center" data-section="cta-bottom">
+    <div class="lp-container" data-animate="fade-up">
+      <h2>Ready to get started?</h2>
+      <p style="color: var(--lp-fg-muted); margin: var(--lp-space-4) auto var(--lp-space-8); max-width: 480px;">
+        Start using {{name}} for free. No credit card required.
+      </p>
+      <a href="{{cta_url}}" class="lp-cta" data-analytics="cta_click" data-analytics-label="product-bottom-{{slug}}">{{cta_text}}</a>
+    </div>
+  </section>
+</main>
+
+<!-- INCLUDE:_footer.html -->
+</body>
+</html>

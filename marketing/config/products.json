@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "site_url": "https://lingoflow-ai.com",
+  "app_url": "https://app.lingoflow-ai.com",
+  "products": [
+    {
+      "slug": "realtime-translator",
+      "name": "Realtime Translator",
+      "tagline": "AI-powered real-time speech translation for meetings and conferences",
+      "description": "Break language barriers in real-time. LingoFlow's Realtime Translator captures speech, transcribes it instantly, and delivers translations in your target language — all within your browser. No installation required.",
+      "features": [
+        {
+          "title": "Real-time Speech Recognition",
+          "description": "Powered by OpenAI's latest models with automatic language detection across Japanese, English, and Chinese."
+        },
+        {
+          "title": "Instant Translation",
+          "description": "See translations appear as words are spoken. Perfect for live meetings, presentations, and international conferences."
+        },
+        {
+          "title": "Session History & Export",
+          "description": "Review past sessions with full transcript and translation logs. Export as text or audio files."
+        },
+        {
+          "title": "Custom Dictionary",
+          "description": "Upload specialized terminology via CSV. Ensure industry jargon and proper nouns are translated accurately."
+        },
+        {
+          "title": "Works Everywhere",
+          "description": "Progressive Web App that runs in any modern browser. Install on mobile or desktop for app-like experience."
+        }
+      ],
+      "cta_url": "https://app.lingoflow-ai.com",
+      "cta_text": "Try Free",
+      "hero_image": "/assets/images/og-default.png",
+      "og_image": "/assets/images/og-default.png",
+      "status": "active",
+      "sort_order": 1
+    }
+  ]
+}
