@@ -996,6 +996,16 @@ button.small:active {
   text-decoration: underline;
 }
 
+/* Help & Feedback dialog */
+.faq-item { margin-bottom: 0.5rem; }
+.faq-item summary { cursor: pointer; font-weight: 500; }
+.faq-item p { margin: 0.25rem 0 0 1rem; opacity: 0.85; font-size: 13px; }
+.help-links { display: flex; flex-wrap: wrap; gap: 8px 16px; margin-top: 0.75rem; }
+.help-links a { color: var(--accent); text-decoration: none; font-size: 13px; }
+.help-links a:hover { text-decoration: underline; }
+.feedback-actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem; }
+.feedback-status { color: var(--accent); font-size: 12px; }
+
 /* Ticket Purchase Modal */
 .ticket-modal {
   max-width: 400px;

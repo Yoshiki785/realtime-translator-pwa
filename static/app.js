@@ -1065,6 +1065,13 @@ const cacheElements = () => {
     dictTableBody: document.getElementById('dictTableBody'),
     dictLoadMore: document.getElementById('dictLoadMore'),
     dictListCount: document.getElementById('dictListCount'),
+    // Help & Feedback
+    helpBtn: document.getElementById('helpBtn'),
+    helpModal: document.getElementById('helpModal'),
+    closeHelpBtn: document.getElementById('closeHelpBtn'),
+    feedbackText: document.getElementById('feedbackText'),
+    sendFeedbackBtn: document.getElementById('sendFeedbackBtn'),
+    feedbackStatus: document.getElementById('feedbackStatus'),
     // SW Update UI
     swUpdateBanner: document.getElementById('swUpdateBanner'),
     swUpdateBtn: document.getElementById('swUpdateBtn'),
@@ -1110,15 +1117,20 @@ const generateSessionId = () => {
 const EVENT_SCHEMA = {
   login:             ['method'],
   logout:            [],
+  try_start:         ['entry'],
   session_start:     ['input_lang', 'output_lang'],
   session_end:       ['duration_bucket', 'utterance_count_bucket', 'result'],
   session_error:     ['error_class', 'phase'],
   quota_blocked:     ['reason'],
   upgrade_initiated: ['source'],
   ticket_purchased:  ['pack_id', 'quantity_bucket'],
+  purchase_success:  ['plan', 'pack_id', 'currency'],
   settings_changed:  ['setting_key'],
   legal_link_clicked: ['link_type', 'source'],
   contact_link_clicked: ['channel', 'source'],
+  help_open:         ['source'],
+  feedback_open:     ['source'],
+  feedback_submit:   ['length_bucket'],
 };
 
 // === Analytics Module (Best-Effort, No PII) ===
@@ -3733,6 +3745,11 @@ const handleHashRoute = async () => {
   hideHistoryDetailView();
 
   if (hash === '#/billing/success') {
+    analytics.log('purchase_success', {
+      plan: 'pro',
+      pack_id: 'pro_monthly',
+      currency: 'JPY',
+    });
     // Show success banner with polling
     showBillingBanner('pending');
     const upgraded = await pollForPlanUpdate();
@@ -3763,6 +3780,11 @@ const handleHashRoute = async () => {
     analytics.log('ticket_purchased', {
       pack_id: ticketPackId || 'unknown',
       quantity_bucket: ticketMinutes ? analytics.minutesBucket(ticketMinutes) : 'unknown',
+    });
+    analytics.log('purchase_success', {
+      plan: 'ticket',
+      pack_id: ticketPackId || 'unknown',
+      currency: 'JPY',
     });
     showBillingBanner('ticket-success');
     addDiagLog('Tickets: Purchase successful');
@@ -5130,6 +5152,13 @@ const start = async () => {
       return;
     }
 
+    // Funnel event: user confirmed intent to start (passed auth/quota checks)
+    analytics.log('try_start', {
+      entry: (document.referrer && document.referrer.includes('lingoflow-ai.com')
+              && !document.referrer.includes('app.lingoflow-ai.com'))
+        ? 'lp' : 'direct',
+    });
+
     // Update UI state
     els.start.disabled = true;
     els.stop.disabled = false;
@@ -5690,6 +5719,39 @@ document.addEventListener('DOMContentLoaded', () => {
   if (els.settingsBtn && els.settingsModal) {
     els.settingsBtn.addEventListener('click', () => {
       openSettingsModal();
+    });
+  }
+
+  // Help & Feedback dialog
+  if (els.helpBtn && els.helpModal) {
+    els.helpBtn.addEventListener('click', () => {
+      analytics.log('help_open', { source: 'header' });
+      els.helpModal.showModal();
+    });
+  }
+  if (els.closeHelpBtn && els.helpModal) {
+    els.closeHelpBtn.addEventListener('click', () => {
+      els.helpModal.close();
+    });
+  }
+  if (els.feedbackText) {
+    els.feedbackText.addEventListener('focus', () => {
+      analytics.log('feedback_open', { source: 'help_dialog' });
+    }, { once: true });
+  }
+  if (els.sendFeedbackBtn) {
+    els.sendFeedbackBtn.addEventListener('click', () => {
+      const text = (els.feedbackText.value || '').trim();
+      if (!text) return;
+      const len = text.length;
+      const bucket = len < 50 ? '<50' : len < 200 ? '50-200' : '200+';
+      analytics.log('feedback_submit', { length_bucket: bucket });
+      console.log('[Feedback]', text); // TODO: send to API endpoint
+      els.feedbackText.value = '';
+      if (els.feedbackStatus) {
+        els.feedbackStatus.textContent = t('feedbackThanks') || 'ありがとうございます！';
+        setTimeout(() => { els.feedbackStatus.textContent = ''; }, 3000);
+      }
     });
   }
 

@@ -71,7 +71,9 @@
     // target="_blank" / mailto: / 非リンク / Ctrl·Meta·中クリック → race なし
     if (!anchor || opensNewTab || isMailto || isModified) {
       pushEvent('cta_click', 'engagement', 'click', label, undefined, {
-        transport_type: 'beacon'
+        transport_type: 'beacon',
+        cta_id: label,
+        link_url: href || undefined
       });
       return;
     }
@@ -88,7 +90,9 @@
 
     pushEvent('cta_click', 'engagement', 'click', label, undefined, {
       transport_type: 'beacon',
-      event_callback: navigate
+      event_callback: navigate,
+      cta_id: label,
+      link_url: href
     });
 
     setTimeout(navigate, 250);
