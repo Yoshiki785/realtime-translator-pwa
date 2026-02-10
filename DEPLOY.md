@@ -365,6 +365,7 @@ gcloud scheduler jobs create http cleanup-expired-jobs \
 # Stripe Dashboard (https://dashboard.stripe.com/webhooks) で設定
 # Endpoint URL: https://your-cloud-run-url.run.app/api/v1/billing/stripe/webhook
 # Events to send:
+#   - checkout.session.completed          (サブスク/チケット両方のFirestore反映に必須)
 #   - customer.subscription.created
 #   - customer.subscription.updated
 #   - customer.subscription.deleted
@@ -374,6 +375,20 @@ gcloud scheduler jobs create http cleanup-expired-jobs \
 # Webhook署名シークレットを取得してSecret Managerに登録
 echo -n "whsec_LIVE_WEBHOOK_SECRET" | gcloud secrets versions add STRIPE_WEBHOOK_SECRET --data-file=-
 ```
+
+### Stripe Live Webhook 作成チェックリスト（コピペ用）
+
+Stripe Dashboard > Developers > Webhooks > Add endpoint (Live mode):
+
+- **Endpoint URL**: `https://<CLOUD_RUN_URL>/api/v1/billing/stripe/webhook`
+- **Events** (6 種、全て必須):
+  - [ ] `checkout.session.completed` — サブスク購入 + チケット購入の Firestore 反映
+  - [ ] `customer.subscription.created` — プラン有効化
+  - [ ] `customer.subscription.updated` — プラン変更/キャンセル予約
+  - [ ] `customer.subscription.deleted` — プラン失効 → free リセット
+  - [ ] `invoice.paid` — 支払い成功ログ
+  - [ ] `invoice.payment_failed` — subscriptionStatus → past_due
+- **Signing secret**: `whsec_...` → Secret Manager `STRIPE_WEBHOOK_SECRET` に登録
 
 ---
 
