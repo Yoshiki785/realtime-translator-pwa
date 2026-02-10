@@ -8,6 +8,9 @@
  */
 
 import { chromium } from '@playwright/test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 const MEASUREMENT_ID = 'G-39NFY1FDW9';
 
@@ -18,6 +21,41 @@ const targets = [
   { url: 'https://app.lingoflow-ai.com/pricing.html', expectCollect: true },
   { url: 'https://app.lingoflow-ai.com/',             expectCollect: false },
 ];
+
+function findPlayableExecutablePath() {
+  const candidates = [chromium.executablePath()];
+  const cacheRoot = path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright');
+
+  if (fs.existsSync(cacheRoot)) {
+    const dirs = fs.readdirSync(cacheRoot);
+    const shellDirs = dirs.filter((d) => d.startsWith('chromium_headless_shell-')).sort().reverse();
+    const chromiumDirs = dirs.filter((d) => d.startsWith('chromium-')).sort().reverse();
+
+    for (const d of shellDirs) {
+      candidates.push(path.join(cacheRoot, d, 'chrome-headless-shell-mac-arm64', 'chrome-headless-shell'));
+      candidates.push(path.join(cacheRoot, d, 'chrome-headless-shell-mac-x64', 'chrome-headless-shell'));
+    }
+    for (const d of chromiumDirs) {
+      candidates.push(path.join(cacheRoot, d, 'chrome-mac-arm64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'));
+      candidates.push(path.join(cacheRoot, d, 'chrome-mac-x64', 'Google Chrome for Testing.app', 'Contents', 'MacOS', 'Google Chrome for Testing'));
+    }
+  }
+
+  return candidates.find((p) => !!p && fs.existsSync(p));
+}
+
+async function launchBrowser() {
+  try {
+    return await chromium.launch({ headless: true });
+  } catch (err) {
+    const fallbackPath = findPlayableExecutablePath();
+    if (!fallbackPath) {
+      throw err;
+    }
+    console.warn('[verify_ga4_collect] default launch failed; retrying with executablePath:', fallbackPath);
+    return await chromium.launch({ headless: true, executablePath: fallbackPath });
+  }
+}
 
 async function verify(page, target) {
   const collected = [];
@@ -63,6 +101,7 @@ async function verify(page, target) {
 
 async function verifyCTAClick(page) {
   const collected = [];
+  let ctaParamsOk = false; // track ep.cta_id and ep.link_url
 
   page.on('request', (req) => {
     try {
@@ -74,15 +113,41 @@ async function verifyCTAClick(page) {
         let tid = u.searchParams.get('tid');
         let en = u.searchParams.get('en');
 
-        // GA4 batches events in POST body: last line contains the newest event
+        // GA4 batches events in POST body — parse all lines
         const postData = req.postData();
-        if (!en && postData && postData.includes('en=')) {
-          const bodyParams = new URLSearchParams(postData.split('\n').pop());
-          en = en || bodyParams.get('en');
-          tid = tid || bodyParams.get('tid');
+        if (postData) {
+          const lines = postData.split('\n');
+          for (const line of lines) {
+            const p = new URLSearchParams(line);
+            const lineEn = p.get('en');
+            const lineTid = p.get('tid');
+            if (lineEn) {
+              collected.push({
+                tid: lineTid || tid,
+                en: lineEn,
+                url: req.url(),
+              });
+              // Check cta_click params enrichment
+              if (lineEn === 'cta_click') {
+                const hasCTAId = p.has('ep.cta_id');
+                const hasLinkUrl = p.has('ep.link_url');
+                if (hasCTAId && hasLinkUrl) ctaParamsOk = true;
+              }
+            }
+          }
         }
 
-        collected.push({ tid, en, url: req.url() });
+        // Check URL-level cta_click params (single-event / non-batched beacons)
+        if (en === 'cta_click') {
+          const hasCTAId = u.searchParams.has('ep.cta_id');
+          const hasLinkUrl = u.searchParams.has('ep.link_url');
+          if (hasCTAId && hasLinkUrl) ctaParamsOk = true;
+        }
+
+        // Also handle URL-param-only requests (non-POST)
+        if (en && !postData) {
+          collected.push({ tid, en, url: req.url() });
+        }
       }
     } catch {
       // ignore non-URL requests
@@ -116,18 +181,23 @@ async function verifyCTAClick(page) {
   );
 
   const hasCollect = matching.length > 0;
+  const paramsNote = hasCollect
+    ? (ctaParamsOk ? 'cta_id=OK link_url=OK' : 'cta_id=NG link_url=NG')
+    : '';
+
   return {
     url: 'https://lingoflow-ai.com/ (CTA click)',
     expectCollect: true,
     actualCollect: hasCollect,
     collectCount: matching.length,
     totalCollects: collected.length,
-    status: hasCollect ? 'OK' : 'NG',
+    status: hasCollect && ctaParamsOk ? 'OK' : hasCollect ? `NG: ${paramsNote}` : 'NG',
+    params: paramsNote,
   };
 }
 
 async function main() {
-  const browser = await chromium.launch({ headless: true });
+  const browser = await launchBrowser();
 
   const results = [];
   for (const target of targets) {
@@ -180,9 +250,10 @@ async function main() {
       'Expected'.padEnd(10) +
       'Actual'.padEnd(10) +
       'Count'.padEnd(8) +
-      'Status'
+      'Status'.padEnd(10) +
+      'Params'
   );
-  console.log('-'.repeat(85));
+  console.log('-'.repeat(115));
 
   let allOk = true;
   for (const r of results) {
@@ -192,11 +263,12 @@ async function main() {
         String(r.expectCollect).padEnd(10) +
         String(r.actualCollect).padEnd(10) +
         String(r.collectCount).padEnd(8) +
-        r.status
+        r.status.padEnd(10) +
+        (r.params || '')
     );
   }
 
-  console.log('-'.repeat(85));
+  console.log('-'.repeat(115));
   console.log(allOk ? '\nAll checks PASSED.' : '\nSome checks FAILED.');
 
   process.exit(allOk ? 0 : 1);

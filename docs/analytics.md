@@ -174,7 +174,77 @@
 | Param | Enum Values |
 |-------|-------------|
 | `channel` | `'email'` \| `'form'` |
-| `source` | `'footer'` \| `'settings'` \| `'unknown'` |
+| `source` | `'footer'` \| `'settings'` \| `'help'` \| `'unknown'` |
+
+### 12. `try_start`
+
+| Item | Value |
+|------|-------|
+| Trigger | Start ボタンクリック（認証/クオータチェック通過後、`reserveJobSlot()` 前） |
+| Location | `static/app.js` `start()` 関数内 |
+| Params | `entry` |
+
+| Param | Enum Values |
+|-------|-------------|
+| `entry` | `'lp'` \| `'direct'` |
+
+> `entry` は `document.referrer` で判定。LP ドメインからの流入は `'lp'`、それ以外は `'direct'`。
+
+### 13. `purchase_success`
+
+| Item | Value |
+|------|-------|
+| Trigger | Stripe 購入成功（`#/billing/success` または `#/tickets/success`） |
+| Location | `static/app.js` `handleHashRoute()` 内 |
+| Params | `plan`, `pack_id`, `currency` |
+
+| Param | Enum Values |
+|-------|-------------|
+| `plan` | `'pro'` \| `'ticket'` |
+| `pack_id` | `'pro_monthly'` \| `'t120'` \| `'t240'` \| `'t360'` \| `'t1200'` \| `'t1800'` \| `'t3000'` \| `'unknown'` |
+| `currency` | `'JPY'` |
+
+> 既存 `ticket_purchased` と並行で発火（後方互換維持）。
+
+### 14. `help_open`
+
+| Item | Value |
+|------|-------|
+| Trigger | ヘッダーの Help ボタン（?）クリック |
+| Location | `static/app.js` Help ダイアログ開閉ハンドラ |
+| Params | `source` |
+
+| Param | Enum Values |
+|-------|-------------|
+| `source` | `'header'` |
+
+### 15. `feedback_open`
+
+| Item | Value |
+|------|-------|
+| Trigger | Help ダイアログ内のフィードバック textarea にフォーカス |
+| Location | `static/app.js` feedbackText focus ハンドラ |
+| Params | `source` |
+
+| Param | Enum Values |
+|-------|-------------|
+| `source` | `'help_dialog'` |
+
+> `{ once: true }` で 1 セッション 1 回のみ発火。
+
+### 16. `feedback_submit`
+
+| Item | Value |
+|------|-------|
+| Trigger | フィードバック送信ボタンクリック |
+| Location | `static/app.js` sendFeedbackBtn click ハンドラ |
+| Params | `length_bucket` |
+
+| Param | Enum Values |
+|-------|-------------|
+| `length_bucket` | `'<50'` \| `'50-200'` \| `'200+'` |
+
+> 送信先は現在 `console.log` のみ。将来 API エンドポイントに切り替え予定。
 
 ---
 
@@ -207,9 +277,13 @@ UI 側はユーザー向けに詳細な分類を使用する。
 ### Core Funnel
 
 ```
-login → session_start → session_end(result='success')
+cta_click (LP, G-39NFY1FDW9)
+  → try_start (App, G-NSMYHFHFKB)
+    → login → session_start → session_end(result='success')
 ```
 
+- **LP → App 転換率**: try_start(entry='lp') / cta_click（クロスプロパティ推定）
+- **Try → Login 率**: login / try_start（同日）
 - **Login → Session 開始率**: session_start / login（同日）
 - **Session 完走率**: session_end(success) / session_start
 - **Cancel 率**: session_end(cancel) / session_start
@@ -222,8 +296,8 @@ login → session_start → session_end(result='success')
 
 ### Revenue
 
-- **Pro 転換**: upgrade_initiated → billing_success（hash route）の転換率
-- **Ticket 購入**: ticket_purchased の pack_id 分布
+- **Pro 転換**: upgrade_initiated → purchase_success(plan='pro') の転換率
+- **Ticket 購入**: purchase_success(plan='ticket') の pack_id 分布
 - **ARPU 推計**: pack_id ごとの分単価 × 購入回数
 
 ### Error Health
@@ -241,6 +315,9 @@ login → session_start → session_end(result='success')
 
 - **法務ページ導線CTR**: legal_link_clicked / セッション数
 - **問い合わせチャネル比率**: contact_link_clicked の channel 内訳（email vs form）
+- **Help 利用率**: help_open / セッション数
+- **Feedback 率**: feedback_submit / help_open
+- **Feedback 送信量**: feedback_submit の length_bucket 分布
 
 ---
 

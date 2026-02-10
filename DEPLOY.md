@@ -278,6 +278,41 @@ rm -rf public/* && cp -R static/* public/
 firebase deploy --only hosting
 ```
 
+#### ローカル安定実行（verify → deploy 再現性向上）
+
+ローカル実行時の不安定要因（`npx` のEPERM、`firebase-tools` のupdate-check exit 2、Playwrightのブラウザキャッシュ競合やCDN timeout）を回避するため、以下の手順で実行する。
+
+> 注意: `public/` と `marketing_public/` は生成物。直接編集しない（SoTは `static/` と `marketing/`）。
+
+```bash
+# Node 20 を利用（nvmが無い/失敗しても継続）
+export NVM_DIR="$HOME/.nvm"
+[ -s "$NVM_DIR/nvm.sh" ] && . "$NVM_DIR/nvm.sh" || true
+command -v nvm >/dev/null && (nvm install 20 && nvm use 20) || true
+
+# npm / Playwright / firebase-tools config を /tmp に固定
+export npm_config_cache=/tmp/.npm-cache
+export PLAYWRIGHT_BROWSERS_PATH=/tmp/ms-playwright
+export XDG_CONFIG_HOME=/tmp/.config
+mkdir -p /tmp/.npm-cache /tmp/ms-playwright /tmp/.config/configstore
+
+# XDG_CONFIG_HOME=/tmp 利用時の firebase auth 維持（存在する場合のみコピー）
+if [ -f "$HOME/.config/configstore/firebase-tools.json" ]; then cp "$HOME/.config/configstore/firebase-tools.json" /tmp/.config/configstore/firebase-tools.json; fi
+
+# 必要時のみ（初回/ブラウザ未導入時）
+# npx playwright install chromium
+
+# 実行順: sync_marketing -> check_marketing -> sync_public -> check_public -> verify -> deploy(marketing) -> deploy(app) -> verify
+bash scripts/sync_marketing.sh
+bash scripts/check_marketing_sync.sh
+bash scripts/sync_public.sh
+bash scripts/check_public_sync.sh
+node scripts/verify_ga4_collect.mjs
+npx firebase-tools deploy --only hosting:marketing --project realtime-translator-pwa-483710
+npx firebase-tools deploy --only hosting:app --project realtime-translator-pwa-483710
+node scripts/verify_ga4_collect.mjs
+```
+
 #### Service Worker とキャッシュ
 
 - **通常モード**: SW が network-first で `app.js`, `index.html` を取得（常に最新版）

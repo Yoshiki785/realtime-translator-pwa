@@ -32,6 +32,7 @@
         <button id="logoutBtn" class="icon-button" aria-label="logout" style="display:none;" data-i18n="logout">ログアウト</button>
         <button id="openHistoryBtn" class="icon-button" aria-label="history" title="履歴">📋</button>
         <button class="icon-button" id="settingsBtn" aria-label="settings">⚙︎</button>
+        <button class="icon-button" id="helpBtn" aria-label="help">?</button>
         <button class="icon-button dev-only" id="devPanelBtn" aria-label="developer" style="display:none;">Dev</button>
       </div>
     </header>
@@ -250,6 +251,43 @@
         <button value="default" id="saveSettings" data-i18n="save">保存</button>
       </div>
     </form>
+  </dialog>
+
+  <dialog id="helpModal">
+    <div class="modal">
+      <header><h2 data-i18n="helpAndFeedback">ヘルプ・フィードバック</h2></header>
+      <section class="help-section">
+        <h3 data-i18n="helpTitle">サポート</h3>
+        <details class="faq-item">
+          <summary data-i18n="faqSessionLimit">セッション時間の上限は？</summary>
+          <p data-i18n="faqSessionLimitAnswer">Freeプラン: 月20分(1日10分) / Proプラン: 月120分(1日上限なし)</p>
+        </details>
+        <details class="faq-item">
+          <summary data-i18n="faqTicket">追加時間を購入するには？</summary>
+          <p data-i18n="faqTicketAnswer">設定画面の「追加購入」ボタンからチケットを購入できます(Proプランのみ)。</p>
+        </details>
+        <details class="faq-item">
+          <summary data-i18n="faqRefund">返金ポリシーは？</summary>
+          <p data-i18n="faqRefundAnswer">原則返金不可です。詳しくは<a href="/terms.html#refund-policy">利用規約</a>をご覧ください。</p>
+        </details>
+        <div class="help-links">
+          <a href="mailto:lingoflow.cus@gmail.com" data-contact-channel="email" data-link-source="help">メールで問い合わせ</a>
+          <a href="https://docs.google.com/forms/d/e/1FAIpQLSevSNsYZtukK-MYwuPyz07O0qCKWy_2GUL-fa0BinjLi5WwEQ/viewform?usp=header" target="_blank" rel="noopener noreferrer" data-contact-channel="form" data-link-source="help">お問い合わせフォーム</a>
+        </div>
+      </section>
+      <hr class="settings-divider" />
+      <section class="feedback-section">
+        <h3 data-i18n="feedbackTitle">フィードバック</h3>
+        <textarea id="feedbackText" class="settings-textarea" rows="4" maxlength="1000" placeholder="ご意見・ご要望をお聞かせください"></textarea>
+        <div class="feedback-actions">
+          <button type="button" id="sendFeedbackBtn" class="cta small" data-i18n="send">送信</button>
+          <small id="feedbackStatus" class="feedback-status"></small>
+        </div>
+      </section>
+      <div class="modal-actions">
+        <button type="button" id="closeHelpBtn" class="secondary" data-i18n="close">閉じる</button>
+      </div>
+    </div>
   </dialog>
 
   <dialog id="devPanelModal">
