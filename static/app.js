@@ -20,6 +20,12 @@ const STRINGS = {
     historyEmptyFiltered: '期限切れの履歴は非表示です',
     historyNoOriginal: '（原文なし）',
     historyNoTranslation: '（翻訳なし）',
+    historyEditTitle: 'タイトルを編集',
+    historyTitleSaved: 'タイトルを保存しました',
+    historyTitleError: 'タイトルの保存に失敗しました',
+    historyTitleTooLong: 'タイトルは80文字以内です',
+    historyTitleRequired: 'タイトルを入力してください',
+    historyTitleInvalidChars: 'タイトルに使用できない文字が含まれています',
     preset: 'プリセット:',
     presetFast: '速い',
     presetBalanced: 'バランス',
@@ -133,6 +139,12 @@ const STRINGS = {
     historyEmptyFiltered: 'Expired history entries are hidden.',
     historyNoOriginal: '(no original)',
     historyNoTranslation: '(no translation)',
+    historyEditTitle: 'Edit title',
+    historyTitleSaved: 'Title saved',
+    historyTitleError: 'Failed to save title',
+    historyTitleTooLong: 'Title must be 80 characters or less',
+    historyTitleRequired: 'Please enter a title',
+    historyTitleInvalidChars: 'Title contains invalid characters',
     preset: 'Preset:',
     presetFast: 'Fast',
     presetBalanced: 'Balanced',
@@ -262,6 +274,12 @@ const STRINGS = {
     // 拼音: （Wú fānyì）
     // 日本語訳: （翻訳なし）
     historyNoTranslation: '（无翻译）',
+    historyEditTitle: '编辑标题',
+    historyTitleSaved: '标题已保存',
+    historyTitleError: '保存标题失败',
+    historyTitleTooLong: '标题不能超过80个字符',
+    historyTitleRequired: '请输入标题',
+    historyTitleInvalidChars: '标题包含无效字符',
     preset: '预设:',
     presetFast: '快速',
     presetBalanced: '平衡',
@@ -1327,6 +1345,7 @@ const state = {
   uiBound: false, // UIイベントハンドラが登録済みか（二重登録防止）
   linkAnalyticsBound: false, // 導線クリック計測の二重登録防止
   historyListBound: false, // 履歴一覧クリックハンドラの二重登録防止
+  titleEditInFlight: false, // タイトル編集中のAPI呼び出しガード
   historyEmptyDefault: '',
   serverTimeOffsetMs: null, // サーバ時刻との差分（ms）
   // スロットル/クールダウン管理
@@ -1657,7 +1676,9 @@ const historyStorage = {
 
 // ========== Title Generation (MVP) ==========
 const TITLE_MAX_LENGTH = 40;
+const TITLE_EDIT_MAX_LENGTH = 80;
 const TITLE_FORBIDDEN_CHARS = /[\/\\:*?"<>|]/g;
+const TITLE_FORBIDDEN_CHARS_RE = /[\/\\:*?"<>|]/;
 
 const generateSessionTitle = (text) => {
   if (!text || typeof text !== 'string') return '';
@@ -3421,6 +3442,12 @@ const handleHistoryListClick = (e) => {
     window.location.hash = `#/history/${id}`;
   } else if (btn.classList.contains('hist-delete-btn')) {
     deleteHistoryEntry(id);
+  } else if (btn.classList.contains('hist-edit-title-btn')) {
+    const item = btn.closest('.history-item');
+    if (!item) return;
+    const titleEl = item.querySelector('.history-item-title');
+    if (!titleEl) return;
+    startInlineTitleEdit(titleEl, id, titleEl.textContent);
   }
 };
 
@@ -3471,15 +3498,28 @@ const loadHistoryList = async () => {
       const info = document.createElement('div');
       info.className = 'history-item-info';
 
+      const titleRow = document.createElement('div');
+      titleRow.className = 'history-item-title-row';
+
       const title = document.createElement('div');
       title.className = 'history-item-title';
       title.textContent = session.title || 'Untitled';
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'icon-button small hist-edit-title-btn';
+      editBtn.dataset.id = session.id;
+      editBtn.textContent = '\u270E';
+      editBtn.title = t('historyEditTitle');
+      editBtn.setAttribute('aria-label', t('historyEditTitle'));
+
+      titleRow.appendChild(title);
+      titleRow.appendChild(editBtn);
 
       const meta = document.createElement('div');
       meta.className = 'history-item-meta';
       meta.textContent = buildHistoryMetaText(session);
 
-      info.appendChild(title);
+      info.appendChild(titleRow);
       info.appendChild(meta);
 
       const actions = document.createElement('div');
@@ -3528,6 +3568,141 @@ const deleteHistoryEntry = async (id) => {
   }
 };
 
+// ========== Title Editing ==========
+
+const normalizeTitleInput = (raw) => {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\s+/g, ' ').trim();
+};
+
+const validateTitle = (title) => {
+  if (!title) return 'historyTitleRequired';
+  if (title.length > TITLE_EDIT_MAX_LENGTH) return 'historyTitleTooLong';
+  if (TITLE_FORBIDDEN_CHARS_RE.test(title)) return 'historyTitleInvalidChars';
+  return null;
+};
+
+const updateSessionTitle = async (sessionId, rawNewTitle) => {
+  const newTitle = normalizeTitleInput(rawNewTitle);
+  const error = validateTitle(newTitle);
+  if (error) return { success: false, error };
+
+  const session = await historyStorage.get(sessionId);
+  if (!session) return { success: false, error: 'not_found' };
+
+  const previousTitle = session.title;
+  session.title = newTitle;
+  await historyStorage.save(session);
+
+  if (session.jobId) {
+    state.titleEditInFlight = true;
+    try {
+      const res = await authFetch(`/api/v1/jobs/${session.jobId}/title`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle }),
+      });
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
+      addDiagLog(`Title updated: sessionId=${sessionId} jobId=${session.jobId}`);
+      return { success: true };
+    } catch (err) {
+      session.title = previousTitle;
+      await historyStorage.save(session);
+      addDiagLog(`Title update failed, rolled back: ${err.message}`);
+      return { success: false, error: 'server_error' };
+    } finally {
+      state.titleEditInFlight = false;
+    }
+  }
+
+  addDiagLog(`Title updated (local only): sessionId=${sessionId}`);
+  return { success: true };
+};
+
+const startInlineTitleEdit = (titleEl, sessionId, currentTitle, onDone) => {
+  if (state.titleEditInFlight) return;
+
+  const container = titleEl.parentElement;
+  const originalDisplay = titleEl.style.display;
+  titleEl.style.display = 'none';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'history-title-edit-wrapper';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'history-title-editing';
+  input.value = currentTitle || '';
+  input.maxLength = TITLE_EDIT_MAX_LENGTH;
+  input.setAttribute('aria-label', t('historyEditTitle'));
+
+  const actions = document.createElement('div');
+  actions.className = 'history-title-edit-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'secondary small hist-title-save-btn';
+  saveBtn.textContent = '\u2713';
+  saveBtn.title = t('save');
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'secondary small hist-title-cancel-btn';
+  cancelBtn.textContent = '\u2717';
+  cancelBtn.title = t('close');
+
+  actions.appendChild(saveBtn);
+  actions.appendChild(cancelBtn);
+  wrapper.appendChild(input);
+  wrapper.appendChild(actions);
+  container.insertBefore(wrapper, titleEl.nextSibling);
+
+  input.focus();
+  input.select();
+
+  const cleanup = () => {
+    wrapper.remove();
+    titleEl.style.display = originalDisplay;
+  };
+
+  const commit = async () => {
+    const normalized = normalizeTitleInput(input.value);
+    if (!normalized || normalized === currentTitle) {
+      cleanup();
+      return;
+    }
+    const validationError = validateTitle(normalized);
+    if (validationError) {
+      setError(t(validationError));
+      return;
+    }
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    input.disabled = true;
+    const result = await updateSessionTitle(sessionId, normalized);
+    if (result.success) {
+      titleEl.textContent = normalized;
+      cleanup();
+      if (onDone) onDone(normalized);
+    } else {
+      setError(t('historyTitleError'));
+      saveBtn.disabled = false;
+      cancelBtn.disabled = false;
+      input.disabled = false;
+      input.focus();
+    }
+  };
+
+  const cancel = () => cleanup();
+
+  saveBtn.addEventListener('click', commit);
+  cancelBtn.addEventListener('click', cancel);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+};
+
 const showHistoryDetailView = async (sessionId) => {
   if (!els.historyDetailView || !els.historyDetailContent) return;
 
@@ -3560,6 +3735,19 @@ const showHistoryDetailView = async (sessionId) => {
 
     if (els.historyDetailTitle) {
       els.historyDetailTitle.textContent = session.title || 'セッション詳細';
+
+      const existingEditBtn = els.historyDetailTitle.parentElement.querySelector('.hist-detail-edit-title-btn');
+      if (existingEditBtn) existingEditBtn.remove();
+
+      const editTitleBtn = document.createElement('button');
+      editTitleBtn.className = 'icon-button small hist-detail-edit-title-btn';
+      editTitleBtn.textContent = '\u270E';
+      editTitleBtn.title = t('historyEditTitle');
+      editTitleBtn.setAttribute('aria-label', t('historyEditTitle'));
+      editTitleBtn.addEventListener('click', () => {
+        startInlineTitleEdit(els.historyDetailTitle, session.id, els.historyDetailTitle.textContent);
+      });
+      els.historyDetailTitle.parentElement.appendChild(editTitleBtn);
     }
 
     const originals = (session.originals || []).join('\n');
@@ -5296,6 +5484,7 @@ const stop = async () => {
     serverTimestampMs: null,
     inputLang: state.inputLang,
     outputLang: state.outputLang,
+    jobId: state.currentJob?.jobId || null,
   };
 
   if (state.recorder) {
@@ -5370,7 +5559,7 @@ const stop = async () => {
   // Save to history (even if incomplete)
   try {
     await historyStorage.save(state.currentSessionResult);
-    addDiagLog(`History saved: ${sessionId}`);
+    addDiagLog(`History saved: sessionId=${sessionId} jobId=${state.currentSessionResult.jobId || 'none'}`);
   } catch (err) {
     addDiagLog(`History save failed: ${err.message}`);
   }

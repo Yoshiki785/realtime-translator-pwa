@@ -1342,9 +1342,78 @@ button.disabled {
   margin-top: 4px;
 }
 
+.history-item-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.history-item-title-row .history-item-title {
+  flex: 1;
+}
+
 .history-item-actions {
   display: flex;
   gap: 8px;
+}
+
+/* ========== Title Inline Editing ========== */
+.hist-edit-title-btn,
+.hist-detail-edit-title-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 2px 4px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.hist-edit-title-btn:hover,
+.hist-detail-edit-title-btn:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.history-title-edit-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-title-editing {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
+  outline: none;
+}
+
+.history-title-editing:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb, 100, 149, 237), 0.2);
+}
+
+.history-title-edit-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.hist-title-save-btn,
+.hist-title-cancel-btn {
+  font-size: 14px;
+  padding: 2px 8px;
+  min-width: 28px;
 }
 
 /* ========== History Detail View ========== */
