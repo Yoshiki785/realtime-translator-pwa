@@ -1295,6 +1295,46 @@ button.disabled {
   flex: 1;
 }
 
+.history-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.history-search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.history-search-input:focus {
+  border-color: var(--accent);
+}
+
+.history-search-clear {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.history-search-status {
+  width: 100%;
+  font-size: 13px;
+  color: var(--muted);
+  padding-top: 4px;
+}
+
 .hist-loading,
 .hist-empty {
   padding: 24px;

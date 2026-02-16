@@ -26,6 +26,10 @@ const STRINGS = {
     historyTitleTooLong: 'タイトルは80文字以内です',
     historyTitleRequired: 'タイトルを入力してください',
     historyTitleInvalidChars: 'タイトルに使用できない文字が含まれています',
+    historySearchPlaceholder: '発話内容を検索…',
+    historySearchClear: '検索をクリア',
+    historySearchNoResults: '一致する履歴がありません',
+    historySearchCount: '{count}件の一致',
     preset: 'プリセット:',
     presetFast: '速い',
     presetBalanced: 'バランス',
@@ -145,6 +149,10 @@ const STRINGS = {
     historyTitleTooLong: 'Title must be 80 characters or less',
     historyTitleRequired: 'Please enter a title',
     historyTitleInvalidChars: 'Title contains invalid characters',
+    historySearchPlaceholder: 'Search utterances…',
+    historySearchClear: 'Clear search',
+    historySearchNoResults: 'No matching history',
+    historySearchCount: '{count} match(es)',
     preset: 'Preset:',
     presetFast: 'Fast',
     presetBalanced: 'Balanced',
@@ -280,6 +288,18 @@ const STRINGS = {
     historyTitleTooLong: '标题不能超过80个字符',
     historyTitleRequired: '请输入标题',
     historyTitleInvalidChars: '标题包含无效字符',
+    // 拼音: Sōusuǒ fāyán nèiróng…
+    // 日本語訳: 発話内容を検索…
+    historySearchPlaceholder: '搜索发言内容…',
+    // 拼音: Qīngchú sōusuǒ
+    // 日本語訳: 検索をクリア
+    historySearchClear: '清除搜索',
+    // 拼音: Méiyǒu pǐpèi de jìlù
+    // 日本語訳: 一致する履歴がありません
+    historySearchNoResults: '没有匹配的记录',
+    // 拼音: {count} tiáo pǐpèi
+    // 日本語訳: {count}件の一致
+    historySearchCount: '{count}条匹配',
     preset: '预设:',
     presetFast: '快速',
     presetBalanced: '平衡',
@@ -1347,6 +1367,8 @@ const state = {
   historyListBound: false, // 履歴一覧クリックハンドラの二重登録防止
   titleEditInFlight: false, // タイトル編集中のAPI呼び出しガード
   historyEmptyDefault: '',
+  historySearchQuery: '',          // 履歴検索クエリ
+  historySearchDebounceId: null,   // 検索debounce用タイマーID
   serverTimeOffsetMs: null, // サーバ時刻との差分（ms）
   // スロットル/クールダウン管理
   lastJobCreateAt: 0, // 最後にjobs/createを呼んだ時刻（Date.now()）
@@ -3401,6 +3423,102 @@ const isSessionExpired = (session) => {
   return nowMs - tsInfo.ts >= retentionMs;
 };
 
+// ========== History Search ==========
+const ensureHistorySearchUI = () => {
+  const existing = document.getElementById('historySearchBar');
+  if (existing) {
+    const input = document.getElementById('historySearchInput');
+    if (input) {
+      input.placeholder = t('historySearchPlaceholder');
+      input.setAttribute('aria-label', t('historySearchPlaceholder'));
+      input.value = state.historySearchQuery || '';
+    }
+    const clearBtn = document.getElementById('historySearchClearBtn');
+    if (clearBtn) {
+      clearBtn.title = t('historySearchClear');
+      clearBtn.setAttribute('aria-label', t('historySearchClear'));
+      clearBtn.style.display = state.historySearchQuery ? 'inline-block' : 'none';
+    }
+    return;
+  }
+
+  const bar = document.createElement('div');
+  bar.className = 'history-search-bar';
+  bar.id = 'historySearchBar';
+
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.id = 'historySearchInput';
+  input.className = 'history-search-input';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.placeholder = t('historySearchPlaceholder');
+  input.setAttribute('aria-label', t('historySearchPlaceholder'));
+  input.value = state.historySearchQuery || '';
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.id = 'historySearchClearBtn';
+  clearBtn.className = 'history-search-clear secondary small';
+  clearBtn.textContent = '\u00D7';
+  clearBtn.title = t('historySearchClear');
+  clearBtn.setAttribute('aria-label', t('historySearchClear'));
+  clearBtn.style.display = state.historySearchQuery ? 'inline-block' : 'none';
+
+  const statusEl = document.createElement('div');
+  statusEl.id = 'historySearchStatus';
+  statusEl.className = 'history-search-status';
+  statusEl.style.display = 'none';
+
+  bar.appendChild(input);
+  bar.appendChild(clearBtn);
+  bar.appendChild(statusEl);
+
+  if (els.historyListLoading && els.historyView) {
+    const container = els.historyView.querySelector('.history-view-container');
+    if (container) {
+      container.insertBefore(bar, els.historyListLoading);
+    }
+  }
+
+  input.addEventListener('input', () => {
+    if (state.historySearchDebounceId) {
+      clearTimeout(state.historySearchDebounceId);
+    }
+    state.historySearchDebounceId = setTimeout(() => {
+      state.historySearchQuery = input.value;
+      clearBtn.style.display = state.historySearchQuery ? 'inline-block' : 'none';
+      loadHistoryList();
+    }, 200);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    state.historySearchQuery = '';
+    input.value = '';
+    clearBtn.style.display = 'none';
+    loadHistoryList();
+  });
+};
+
+const sessionMatchesQuery = (session, query) => {
+  if (!query) return true;
+  const originals = Array.isArray(session.originals) ? session.originals.join('\n') : '';
+  const translations = Array.isArray(session.translations) ? session.translations.join('\n') : '';
+  const haystack = (originals + '\n' + translations).toLowerCase();
+  return haystack.includes(query);
+};
+
+const updateHistorySearchStatus = (matchCount) => {
+  const statusEl = document.getElementById('historySearchStatus');
+  if (!statusEl) return;
+  if (!state.historySearchQuery) {
+    statusEl.style.display = 'none';
+    return;
+  }
+  statusEl.textContent = t('historySearchCount').replace('{count}', matchCount);
+  statusEl.style.display = 'block';
+};
+
 // ========== History View Navigation ==========
 const navigateToHistory = () => {
   window.location.hash = '#/history';
@@ -3455,11 +3573,16 @@ const showHistoryView = async () => {
   if (!els.historyView) return;
   if (els.appShell) els.appShell.style.display = 'none';
   els.historyView.style.display = 'block';
+  ensureHistorySearchUI();
   await loadHistoryList();
 };
 
 const hideHistoryView = () => {
   if (!els.historyView) return;
+  if (state.historySearchDebounceId) {
+    clearTimeout(state.historySearchDebounceId);
+    state.historySearchDebounceId = null;
+  }
   els.historyView.style.display = 'none';
   if (els.appShell) els.appShell.style.display = 'flex';
 };
@@ -3474,6 +3597,10 @@ const loadHistoryList = async () => {
   try {
     const sessions = await historyStorage.getAll();
     const visibleSessions = sessions.filter((session) => !isSessionExpired(session));
+    const query = (state.historySearchQuery || '').toLowerCase();
+    const filteredSessions = query
+      ? visibleSessions.filter((s) => sessionMatchesQuery(s, query))
+      : visibleSessions;
 
     els.historyListLoading.style.display = 'none';
 
@@ -3482,17 +3609,28 @@ const loadHistoryList = async () => {
         els.historyListEmpty.textContent = state.historyEmptyDefault;
       }
       els.historyListEmpty.style.display = 'block';
+      updateHistorySearchStatus(0);
       return;
     }
 
     if (visibleSessions.length === 0) {
       els.historyListEmpty.textContent = t('historyEmptyFiltered');
       els.historyListEmpty.style.display = 'block';
+      updateHistorySearchStatus(0);
+      return;
+    }
+
+    if (query && filteredSessions.length === 0) {
+      clearElement(els.historyList);
+      els.historyList.style.display = 'none';
+      els.historyListEmpty.textContent = t('historySearchNoResults');
+      els.historyListEmpty.style.display = 'block';
+      updateHistorySearchStatus(0);
       return;
     }
 
     clearElement(els.historyList);
-    visibleSessions.forEach((session) => {
+    filteredSessions.forEach((session) => {
       const item = document.createElement('div');
       item.className = 'history-item';
       const info = document.createElement('div');
@@ -3548,6 +3686,7 @@ const loadHistoryList = async () => {
       state.historyListBound = true;
     }
 
+    updateHistorySearchStatus(filteredSessions.length);
     els.historyList.style.display = 'flex';
   } catch (err) {
     els.historyListLoading.style.display = 'none';
