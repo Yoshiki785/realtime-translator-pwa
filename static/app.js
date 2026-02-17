@@ -125,6 +125,23 @@ const STRINGS = {
     copyDiagnostics: '診断情報をコピー',
     diagnosticsCopied: '診断情報をコピーしました',
     diagnosticsCopyFailed: 'コピーに失敗しました',
+    // STT品質改善 i18n
+    vadPresetLabel: '環境プリセット',
+    vadPresetQuiet: '静か（会議室等）',
+    vadPresetNormal: '標準',
+    vadPresetNoisy: '騒がしい（カフェ等）',
+    vadPresetCustom: 'カスタム（手動設定）',
+    noiseReductionLabel: 'ノイズ抑制',
+    noiseReductionAuto: '自動（API既定）',
+    noiseReductionNearField: '標準（近距離マイク）',
+    noiseReductionFarField: '強（遠距離マイク）',
+    noiseReductionOff: '無効',
+    langDetecting: '言語: 自動検出中…',
+    langLocked: '言語: {lang}に固定',
+    langUncertain: '言語: 判定保留',
+    langLockedNotice: '言語を「{lang}」に固定しました（タップで再検出）',
+    langResetNotice: '言語の自動検出を再開しました',
+    langUncertainHint: '言語が判定しづらいです。日本語/英語/中国語を選ぶと安定します。',
   },
   en: {
     login: 'Login',
@@ -248,6 +265,23 @@ const STRINGS = {
     copyDiagnostics: 'Copy Diagnostics',
     diagnosticsCopied: 'Diagnostics copied',
     diagnosticsCopyFailed: 'Copy failed',
+    // STT quality i18n
+    vadPresetLabel: 'Environment Preset',
+    vadPresetQuiet: 'Quiet (meeting room)',
+    vadPresetNormal: 'Normal',
+    vadPresetNoisy: 'Noisy (cafe, etc.)',
+    vadPresetCustom: 'Custom (manual)',
+    noiseReductionLabel: 'Noise Reduction',
+    noiseReductionAuto: 'Auto (API default)',
+    noiseReductionNearField: 'Standard (Near-field mic)',
+    noiseReductionFarField: 'High (Far-field mic)',
+    noiseReductionOff: 'Off',
+    langDetecting: 'Language: Detecting…',
+    langLocked: 'Language: Locked to {lang}',
+    langUncertain: 'Language: Uncertain',
+    langLockedNotice: 'Locked language to {lang}. (Tap to re-detect)',
+    langResetNotice: 'Language auto-detection restarted.',
+    langUncertainHint: 'Language is unclear. Choosing Japanese/English/Chinese improves stability.',
   },
   'zh-Hans': {
     login: '登录',
@@ -401,6 +435,39 @@ const STRINGS = {
     copyDiagnostics: '复制诊断信息',
     diagnosticsCopied: '诊断信息已复制',
     diagnosticsCopyFailed: '复制失败',
+    // STT品质改善 i18n
+    // 拼音: Huánjìng yùshè
+    vadPresetLabel: '环境预设',
+    // 拼音: Ānjìng (huìyìshì děng)
+    vadPresetQuiet: '安静（会议室等）',
+    // 拼音: Biāozhǔn
+    vadPresetNormal: '标准',
+    // 拼音: Cáozá (kāfēitīng děng)
+    vadPresetNoisy: '嘈杂（咖啡厅等）',
+    // 拼音: Zìdìngyì (shǒudòng)
+    vadPresetCustom: '自定义（手动）',
+    // 拼音: Jiàngzào
+    noiseReductionLabel: '降噪',
+    // 拼音: Zìdòng (API mòrèn)
+    noiseReductionAuto: '自动（API默认）',
+    // 拼音: Biāozhǔn (jìn jùlí màikèfēng)
+    noiseReductionNearField: '标准（近距离麦克风）',
+    // 拼音: Qiáng (yuǎn jùlí màikèfēng)
+    noiseReductionFarField: '强（远距离麦克风）',
+    // 拼音: Guānbì
+    noiseReductionOff: '关闭',
+    // 拼音: Yǔyán: zìdòng jiǎncè zhōng…
+    langDetecting: '语言：自动检测中…',
+    // 拼音: Yǔyán: yǐ suǒdìng wèi {lang}
+    langLocked: '语言：已锁定为{lang}',
+    // 拼音: Yǔyán: zànshí wúfǎ quèdìng
+    langUncertain: '语言：暂时无法确定',
+    // 拼音: Yǐ jiāng yǔyán suǒdìng wèi "{lang}" (diǎnjī chóngxīn jiǎncè)
+    langLockedNotice: '已将语言锁定为"{lang}"（点击重新检测）',
+    // 拼音: Yǐ chóngxīn kāishǐ zìdòng jiǎncè yǔyán
+    langResetNotice: '已重新开始自动检测语言',
+    // 拼音: Yǔyán bù tài míngquè. Xuǎnzé rìyǔ/yīngyǔ/zhōngwén huì gèng wěndìng.
+    langUncertainHint: '语言不太明确。选择日语/英语/中文会更稳定。',
   },
 };
 
@@ -413,10 +480,24 @@ const t = (key) => {
   return STRINGS[lang]?.[key] || STRINGS['ja'][key] || key;
 };
 
+// Localized language names for {lang} placeholder substitution
+const LANG_NAMES_I18N = {
+  ja: { ja: '日本語', en: '英語', zh: '中国語' },
+  en: { ja: 'Japanese', en: 'English', zh: 'Chinese' },
+  'zh-Hans': { ja: '日语', en: '英语', zh: '中文' },
+};
+
 // Apply i18n to all elements with data-i18n attribute
 const applyI18n = () => {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
+    if (key && STRINGS[getUiLang()]?.[key]) {
+      el.textContent = t(key);
+    }
+  });
+  // Also translate <option> elements with data-i18n-option attribute
+  document.querySelectorAll('[data-i18n-option]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-option');
     if (key && STRINGS[getUiLang()]?.[key]) {
       el.textContent = t(key);
     }
@@ -1157,7 +1238,7 @@ const EVENT_SCHEMA = {
   logout:            [],
   try_start:         ['entry'],
   session_start:     ['input_lang', 'output_lang'],
-  session_end:       ['duration_bucket', 'utterance_count_bucket', 'result'],
+  session_end:       ['duration_bucket', 'utterance_count_bucket', 'result', 'stt_total', 'stt_filtered', 'stt_committed', 'lang_locked', 'lang_locked_to'],
   session_error:     ['error_class', 'phase'],
   quota_blocked:     ['reason'],
   upgrade_initiated: ['source'],
@@ -1383,11 +1464,11 @@ const state = {
   sttSettings: {
     // Selected values (persisted to localStorage)
     inputLang: localStorage.getItem('stt_input_lang') || 'auto', // auto/zh/ja/en
-    vadPreset: localStorage.getItem('stt_vad_preset') || 'stable', // stable/fast/custom
+    vadPreset: (() => { const v = localStorage.getItem('stt_vad_preset'); if (v === 'stable') return 'normal'; if (v === 'fast') return 'quiet'; return v || 'normal'; })(), // quiet/normal/noisy/custom (legacy: stable→normal, fast→quiet)
     vadThreshold: Number(localStorage.getItem('stt_vad_threshold')) || 0.65,
     vadSilence: Number(localStorage.getItem('stt_vad_silence')) || 800,
     vadPrefix: Number(localStorage.getItem('stt_vad_prefix')) || 500,
-    noiseReduction: localStorage.getItem('stt_noise_reduction') || 'auto', // auto=don't send, near_field/far_field/off
+    noiseReduction: localStorage.getItem('stt_noise_reduction') || 'near_field', // near_field=default, auto=don't send, far_field/off
     transcriptionModel: localStorage.getItem('stt_transcription_model') || 'auto', // auto=gpt-4o-mini-transcribe (default), gpt-4o-transcribe
     // Dirty flags (true = user changed this setting, should be sent to API)
     dirty: {
@@ -1406,6 +1487,15 @@ const state = {
   currentSessionResult: null, // { id, timestamp, title, originals, translations, summary, audioUrl, m4aUrl }
   // Temporary Blob URLs for cleanup (memory management)
   objectUrls: [],
+  // STT quality telemetry counters (reset per session)
+  sttCounters: {
+    totalCompleted: 0,
+    filteredNoise: 0,
+    committedTranscripts: 0,
+    langVotesCast: 0,
+    langLocked: false,
+    langLockedTo: null,
+  },
 };
 
 // ========== Glossary Storage Adapter ==========
@@ -1868,15 +1958,15 @@ const buildSttPayload = () => {
       turn_detection.silence_duration_ms = stt.vadSilence;
       turn_detection.prefix_padding_ms = stt.vadPrefix;
     } else {
-      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.stable;
+      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.normal;
       turn_detection.threshold = preset.threshold;
       turn_detection.silence_duration_ms = preset.silence_duration_ms;
       turn_detection.prefix_padding_ms = preset.prefix_padding_ms;
     }
   }
 
-  // Noise reduction (only if dirty and not auto)
-  if (dirty.noiseReduction && stt.noiseReduction !== 'auto') {
+  // Noise reduction: always send when not 'auto' (regardless of dirty flag)
+  if (stt.noiseReduction && stt.noiseReduction !== 'auto') {
     noiseReduction = stt.noiseReduction;
   }
 
@@ -1962,7 +2052,7 @@ const sendSessionUpdate = () => {
         prefix_padding_ms: stt.vadPrefix,
       };
     } else {
-      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.stable;
+      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.normal;
       vadConfig = {
         threshold: preset.threshold,
         silence_duration_ms: preset.silence_duration_ms,
@@ -1970,9 +2060,9 @@ const sendSessionUpdate = () => {
       };
     }
   } else {
-    // Use legacy settings (backward compatible - existing behavior)
+    // Use legacy settings (backward compatible - raised threshold for noise reduction)
     vadConfig = {
-      threshold: 0.5,
+      threshold: 0.6,
       silence_duration_ms: Number(state.vadSilence) || 500,
       prefix_padding_ms: 300,
     };
@@ -2001,8 +2091,8 @@ const sendSessionUpdate = () => {
     },
   };
 
-  // Add noise reduction if dirty and not auto
-  if (stt.dirty.noiseReduction && stt.noiseReduction !== 'auto') {
+  // Noise reduction: always send when not 'auto' (regardless of dirty flag)
+  if (stt.noiseReduction && stt.noiseReduction !== 'auto') {
     input.noise_reduction = { type: stt.noiseReduction };
   }
 
@@ -2214,10 +2304,30 @@ const PRESETS = {
   stable: { maxChars: 360, gapMs: 1500, vadSilence: 550 },
 };
 
-// STT VAD Presets for OpenAI Realtime API turn_detection
+// STT VAD Presets: environment-based (quiet/normal/noisy)
+// Legacy mapping: stable→normal, fast→quiet
 const STT_VAD_PRESETS = {
-  stable: { threshold: 0.65, silence_duration_ms: 800, prefix_padding_ms: 500 },
-  fast: { threshold: 0.45, silence_duration_ms: 400, prefix_padding_ms: 300 },
+  quiet:  { threshold: 0.55, silence_duration_ms: 350, prefix_padding_ms: 400, minVoteChars: 10 },
+  normal: { threshold: 0.60, silence_duration_ms: 450, prefix_padding_ms: 400, minVoteChars: 12 },
+  noisy:  { threshold: 0.68, silence_duration_ms: 600, prefix_padding_ms: 500, minVoteChars: 16 },
+  // Legacy aliases
+  stable: { threshold: 0.60, silence_duration_ms: 450, prefix_padding_ms: 400, minVoteChars: 12 },
+  fast:   { threshold: 0.55, silence_duration_ms: 350, prefix_padding_ms: 400, minVoteChars: 10 },
+};
+
+// Transcript noise filtering: skip translation for noise/filler transcripts
+const MIN_COMMIT_CHARS = 2;
+const NOISE_PATTERNS = [
+  /^[.…。、,，\s\u200B\u3000]+$/,                    // punctuation/whitespace only
+  /^(uh+|um+|hmm+|ah+|oh+|eh+|mhm+)\.?$/i,         // English fillers
+  /^(えっ?と?|あの[ー～]?|うん|ん[ー～]?)$/,           // Japanese fillers
+  /^(那个|嗯+|啊+|哦+)$/,                              // Chinese fillers
+];
+
+const isNoiseTranscript = (text) => {
+  const t = text.trim();
+  if (t.length < MIN_COMMIT_CHARS) return true;
+  return NOISE_PATTERNS.some(re => re.test(t));
 };
 
 const applyPreset = (name) => {
@@ -5148,6 +5258,15 @@ const translateCompleted = async (text) => {
 
 const commitLog = (text, itemId = null) => {
   if (!text || !text.trim()) return;
+  // Noise transcript filtering: skip translation but keep diag log
+  if (isNoiseTranscript(text)) {
+    addDiagLog(`commitLog filtered noise: "${text.trim().substring(0, 30)}"`);
+    if (state.sttCounters) state.sttCounters.filteredNoise++;
+    if (itemId) state.committedItems.add(itemId);
+    state.liveOriginal = '';
+    return;
+  }
+  if (state.sttCounters) state.sttCounters.committedTranscripts++;
   state.logs.push(text);
   addTranscriptLog(text);
   translateCompleted(text);
@@ -5203,6 +5322,8 @@ const handleCompleted = (payload) => {
   const buffered = state.partialByItem.get(itemId) || '';
   const text =
     payload.transcript || payload.text || payload.content?.[0]?.transcript || buffered;
+
+  if (state.sttCounters) state.sttCounters.totalCompleted++;
 
   if (!text) {
     state.partialByItem.delete(itemId);
@@ -5306,6 +5427,12 @@ const fetchToken = async () => {
   state.sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   addDiagLog(`Session started: sid=${state.sessionId} build=${state.buildVersion || 'unknown'}`);
 
+  // Reset STT quality counters for new session
+  state.sttCounters = {
+    totalCompleted: 0, filteredNoise: 0, committedTranscripts: 0,
+    langVotesCast: 0, langLocked: false, langLockedTo: null,
+  };
+
   const pc = new RTCPeerConnection();
   state.pc = pc;
 
@@ -5340,7 +5467,24 @@ const fetchToken = async () => {
     }
   };
 
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // Staged getUserMedia with progressive constraint fallback
+  const audioConstraints = [
+    { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    { echoCancellation: true, noiseSuppression: true },
+    { echoCancellation: true },
+    true,
+  ];
+  let stream;
+  for (let i = 0; i < audioConstraints.length; i++) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints[i] });
+      if (i > 0) addDiagLog(`getUserMedia: fell back to constraint level ${i}`);
+      break;
+    } catch (err) {
+      if (i === audioConstraints.length - 1) throw err;
+      addDiagLog(`getUserMedia: constraint level ${i} failed (${err.name}), trying next`);
+    }
+  }
   state.mediaStream = stream;
   stream.getTracks().forEach((track) => pc.addTrack(track, stream));
   startRecorder(stream);
@@ -5674,10 +5818,17 @@ const stop = async () => {
     addDiagLog('Stop: no active job to complete');
   }
 
+  const ctr = state.sttCounters || {};
+  addDiagLog(`STT_COUNTERS | total=${ctr.totalCompleted || 0} filtered=${ctr.filteredNoise || 0} committed=${ctr.committedTranscripts || 0} langLocked=${ctr.langLocked || false} langLockedTo=${ctr.langLockedTo || 'none'}`);
   analytics.log('session_end', {
     duration_bucket: analytics.durationBucket(elapsedSeconds),
     utterance_count_bucket: 'unknown',
     result: sessionEndResult,
+    stt_total: ctr.totalCompleted || 0,
+    stt_filtered: ctr.filteredNoise || 0,
+    stt_committed: ctr.committedTranscripts || 0,
+    lang_locked: ctr.langLocked ? 'yes' : 'no',
+    lang_locked_to: ctr.langLockedTo || 'none',
   });
 
   if (completionData && typeof completionData.actualSeconds === 'number') {
@@ -6194,6 +6345,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const initSttSettingsUI = () => {
     const stt = state.sttSettings;
     if (els.sttInputLang) els.sttInputLang.value = stt.inputLang;
+    // Legacy vadPreset migration: stable→normal, fast→quiet (+ persist to localStorage)
+    if (stt.vadPreset === 'stable') { stt.vadPreset = 'normal'; localStorage.setItem('stt_vad_preset', 'normal'); }
+    if (stt.vadPreset === 'fast') { stt.vadPreset = 'quiet'; localStorage.setItem('stt_vad_preset', 'quiet'); }
     if (els.sttVadPreset) els.sttVadPreset.value = stt.vadPreset;
     if (els.sttVadThreshold) els.sttVadThreshold.value = stt.vadThreshold;
     if (els.sttVadSilence) els.sttVadSilence.value = stt.vadSilence;

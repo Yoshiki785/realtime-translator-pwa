@@ -186,11 +186,12 @@
             <option value="zh">中文</option>
           </select>
         </label>
-        <label>VADプリセット
+        <label data-i18n="vadPresetLabel">環境プリセット
           <select id="sttVadPreset" class="settings-select">
-            <option value="stable">Stable（安定・長め発話向け）</option>
-            <option value="fast">Fast（素早い応答・短め発話向け）</option>
-            <option value="custom">Custom（手動設定）</option>
+            <option value="quiet" data-i18n-option="vadPresetQuiet">静か（会議室等）</option>
+            <option value="normal" selected data-i18n-option="vadPresetNormal">標準</option>
+            <option value="noisy" data-i18n-option="vadPresetNoisy">騒がしい（カフェ等）</option>
+            <option value="custom" data-i18n-option="vadPresetCustom">カスタム（手動設定）</option>
           </select>
         </label>
         <div id="sttVadCustom" class="stt-vad-custom" style="display:none;">
@@ -204,12 +205,12 @@
             <input id="sttVadPrefix" type="number" min="100" max="1000" step="50" value="500" />
           </label>
         </div>
-        <label>Noise Reduction
+        <label data-i18n="noiseReductionLabel">ノイズ抑制
           <select id="sttNoiseReduction" class="settings-select">
-            <option value="auto">Auto（API既定）</option>
-            <option value="near_field">Near Field（近距離マイク）</option>
-            <option value="far_field">Far Field（遠距離マイク）</option>
-            <option value="off">Off（無効）</option>
+            <option value="auto" data-i18n-option="noiseReductionAuto">自動（API既定）</option>
+            <option value="near_field" selected data-i18n-option="noiseReductionNearField">標準（近距離マイク）</option>
+            <option value="far_field" data-i18n-option="noiseReductionFarField">強（遠距離マイク）</option>
+            <option value="off" data-i18n-option="noiseReductionOff">無効</option>
           </select>
         </label>
         <label>Transcription Model
