@@ -132,6 +132,10 @@ PLANS = {
 
 FINAL_JOB_STATUSES = {"succeeded", "completed", "failed", "stopped_quota", "expired"}
 
+TITLE_FORBIDDEN_CHARS_RE = re.compile(r'[/\\:*?"<>|]')
+TITLE_MAX_LENGTH = 80
+TITLE_EDITABLE_STATUSES = {"completed", "succeeded"}
+
 _firestore_client = None
 _storage_client = None
 _mock_db = {}  # In-memory mock database for DEBUG_AUTH_BYPASS mode
@@ -1392,6 +1396,62 @@ async def complete_job(request: Request) -> JSONResponse:
     }
     logger.info(f"Job completed | {json.dumps(log_payload)}")
     return JSONResponse(result)
+
+
+@app.patch("/api/v1/jobs/{job_id}/title")
+async def update_job_title(job_id: str, request: Request) -> JSONResponse:
+    uid = get_uid_from_request(request)
+    body = await request.json()
+    raw_title = body.get("title")
+    if not isinstance(raw_title, str):
+        raise HTTPException(status_code=400, detail="title_required")
+
+    # Normalize: trim + collapse internal whitespace
+    title = re.sub(r"\s+", " ", raw_title).strip()
+
+    if not title:
+        raise HTTPException(status_code=400, detail="title_required")
+    if len(title) > TITLE_MAX_LENGTH:
+        raise HTTPException(status_code=400, detail="title_too_long")
+    if TITLE_FORBIDDEN_CHARS_RE.search(title):
+        raise HTTPException(status_code=400, detail="title_invalid_chars")
+
+    db = get_firestore_client()
+    job_ref = db.collection("jobs").document(job_id)
+    job_snap = job_ref.get()
+
+    if not job_snap.exists:
+        raise HTTPException(status_code=404, detail="job_not_found")
+
+    job_data = job_snap.to_dict() or {}
+    if job_data.get("uid") != uid:
+        raise HTTPException(status_code=403, detail="forbidden")
+
+    if job_data.get("status") not in TITLE_EDITABLE_STATUSES:
+        raise HTTPException(status_code=409, detail="job_not_completed")
+
+    delete_at = job_data.get("deleteAt")
+    now_utc = datetime.now(timezone.utc)
+    if delete_at:
+        # Firestore timestamps → datetime comparison
+        delete_at_dt = delete_at if isinstance(delete_at, datetime) else delete_at.replace(tzinfo=timezone.utc)
+        if now_utc > delete_at_dt:
+            raise HTTPException(status_code=409, detail="job_expired")
+
+    title_updated_at = now_utc
+    job_ref.update({
+        "title": title,
+        "titleUpdatedAt": title_updated_at,
+        "updatedAt": firebase_firestore.SERVER_TIMESTAMP,
+    })
+
+    logger.info(f"Job title updated | uid={uid} jobId={job_id} title={title!r}")
+    return JSONResponse({
+        "jobId": job_id,
+        "title": title,
+        "titleUpdatedAt": title_updated_at.isoformat(),
+        "serverTime": now_utc.isoformat(),
+    })
 
 
 @app.get("/api/v1/usage/remaining")

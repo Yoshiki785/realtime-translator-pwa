@@ -20,6 +20,16 @@ const STRINGS = {
     historyEmptyFiltered: '期限切れの履歴は非表示です',
     historyNoOriginal: '（原文なし）',
     historyNoTranslation: '（翻訳なし）',
+    historyEditTitle: 'タイトルを編集',
+    historyTitleSaved: 'タイトルを保存しました',
+    historyTitleError: 'タイトルの保存に失敗しました',
+    historyTitleTooLong: 'タイトルは80文字以内です',
+    historyTitleRequired: 'タイトルを入力してください',
+    historyTitleInvalidChars: 'タイトルに使用できない文字が含まれています',
+    historySearchPlaceholder: '発話内容を検索…',
+    historySearchClear: '検索をクリア',
+    historySearchNoResults: '一致する履歴がありません',
+    historySearchCount: '{count}件の一致',
     preset: 'プリセット:',
     presetFast: '速い',
     presetBalanced: 'バランス',
@@ -115,6 +125,23 @@ const STRINGS = {
     copyDiagnostics: '診断情報をコピー',
     diagnosticsCopied: '診断情報をコピーしました',
     diagnosticsCopyFailed: 'コピーに失敗しました',
+    // STT品質改善 i18n
+    vadPresetLabel: '環境プリセット',
+    vadPresetQuiet: '静か（会議室等）',
+    vadPresetNormal: '標準',
+    vadPresetNoisy: '騒がしい（カフェ等）',
+    vadPresetCustom: 'カスタム（手動設定）',
+    noiseReductionLabel: 'ノイズ抑制',
+    noiseReductionAuto: '自動（API既定）',
+    noiseReductionNearField: '標準（近距離マイク）',
+    noiseReductionFarField: '強（遠距離マイク）',
+    noiseReductionOff: '無効',
+    langDetecting: '言語: 自動検出中…',
+    langLocked: '言語: {lang}に固定',
+    langUncertain: '言語: 判定保留',
+    langLockedNotice: '言語を「{lang}」に固定しました（タップで再検出）',
+    langResetNotice: '言語の自動検出を再開しました',
+    langUncertainHint: '言語が判定しづらいです。日本語/英語/中国語を選ぶと安定します。',
   },
   en: {
     login: 'Login',
@@ -133,6 +160,16 @@ const STRINGS = {
     historyEmptyFiltered: 'Expired history entries are hidden.',
     historyNoOriginal: '(no original)',
     historyNoTranslation: '(no translation)',
+    historyEditTitle: 'Edit title',
+    historyTitleSaved: 'Title saved',
+    historyTitleError: 'Failed to save title',
+    historyTitleTooLong: 'Title must be 80 characters or less',
+    historyTitleRequired: 'Please enter a title',
+    historyTitleInvalidChars: 'Title contains invalid characters',
+    historySearchPlaceholder: 'Search utterances…',
+    historySearchClear: 'Clear search',
+    historySearchNoResults: 'No matching history',
+    historySearchCount: '{count} match(es)',
     preset: 'Preset:',
     presetFast: 'Fast',
     presetBalanced: 'Balanced',
@@ -228,6 +265,23 @@ const STRINGS = {
     copyDiagnostics: 'Copy Diagnostics',
     diagnosticsCopied: 'Diagnostics copied',
     diagnosticsCopyFailed: 'Copy failed',
+    // STT quality i18n
+    vadPresetLabel: 'Environment Preset',
+    vadPresetQuiet: 'Quiet (meeting room)',
+    vadPresetNormal: 'Normal',
+    vadPresetNoisy: 'Noisy (cafe, etc.)',
+    vadPresetCustom: 'Custom (manual)',
+    noiseReductionLabel: 'Noise Reduction',
+    noiseReductionAuto: 'Auto (API default)',
+    noiseReductionNearField: 'Standard (Near-field mic)',
+    noiseReductionFarField: 'High (Far-field mic)',
+    noiseReductionOff: 'Off',
+    langDetecting: 'Language: Detecting…',
+    langLocked: 'Language: Locked to {lang}',
+    langUncertain: 'Language: Uncertain',
+    langLockedNotice: 'Locked language to {lang}. (Tap to re-detect)',
+    langResetNotice: 'Language auto-detection restarted.',
+    langUncertainHint: 'Language is unclear. Choosing Japanese/English/Chinese improves stability.',
   },
   'zh-Hans': {
     login: '登录',
@@ -262,6 +316,24 @@ const STRINGS = {
     // 拼音: （Wú fānyì）
     // 日本語訳: （翻訳なし）
     historyNoTranslation: '（无翻译）',
+    historyEditTitle: '编辑标题',
+    historyTitleSaved: '标题已保存',
+    historyTitleError: '保存标题失败',
+    historyTitleTooLong: '标题不能超过80个字符',
+    historyTitleRequired: '请输入标题',
+    historyTitleInvalidChars: '标题包含无效字符',
+    // 拼音: Sōusuǒ fāyán nèiróng…
+    // 日本語訳: 発話内容を検索…
+    historySearchPlaceholder: '搜索发言内容…',
+    // 拼音: Qīngchú sōusuǒ
+    // 日本語訳: 検索をクリア
+    historySearchClear: '清除搜索',
+    // 拼音: Méiyǒu pǐpèi de jìlù
+    // 日本語訳: 一致する履歴がありません
+    historySearchNoResults: '没有匹配的记录',
+    // 拼音: {count} tiáo pǐpèi
+    // 日本語訳: {count}件の一致
+    historySearchCount: '{count}条匹配',
     preset: '预设:',
     presetFast: '快速',
     presetBalanced: '平衡',
@@ -363,6 +435,39 @@ const STRINGS = {
     copyDiagnostics: '复制诊断信息',
     diagnosticsCopied: '诊断信息已复制',
     diagnosticsCopyFailed: '复制失败',
+    // STT品质改善 i18n
+    // 拼音: Huánjìng yùshè
+    vadPresetLabel: '环境预设',
+    // 拼音: Ānjìng (huìyìshì děng)
+    vadPresetQuiet: '安静（会议室等）',
+    // 拼音: Biāozhǔn
+    vadPresetNormal: '标准',
+    // 拼音: Cáozá (kāfēitīng děng)
+    vadPresetNoisy: '嘈杂（咖啡厅等）',
+    // 拼音: Zìdìngyì (shǒudòng)
+    vadPresetCustom: '自定义（手动）',
+    // 拼音: Jiàngzào
+    noiseReductionLabel: '降噪',
+    // 拼音: Zìdòng (API mòrèn)
+    noiseReductionAuto: '自动（API默认）',
+    // 拼音: Biāozhǔn (jìn jùlí màikèfēng)
+    noiseReductionNearField: '标准（近距离麦克风）',
+    // 拼音: Qiáng (yuǎn jùlí màikèfēng)
+    noiseReductionFarField: '强（远距离麦克风）',
+    // 拼音: Guānbì
+    noiseReductionOff: '关闭',
+    // 拼音: Yǔyán: zìdòng jiǎncè zhōng…
+    langDetecting: '语言：自动检测中…',
+    // 拼音: Yǔyán: yǐ suǒdìng wèi {lang}
+    langLocked: '语言：已锁定为{lang}',
+    // 拼音: Yǔyán: zànshí wúfǎ quèdìng
+    langUncertain: '语言：暂时无法确定',
+    // 拼音: Yǐ jiāng yǔyán suǒdìng wèi "{lang}" (diǎnjī chóngxīn jiǎncè)
+    langLockedNotice: '已将语言锁定为"{lang}"（点击重新检测）',
+    // 拼音: Yǐ chóngxīn kāishǐ zìdòng jiǎncè yǔyán
+    langResetNotice: '已重新开始自动检测语言',
+    // 拼音: Yǔyán bù tài míngquè. Xuǎnzé rìyǔ/yīngyǔ/zhōngwén huì gèng wěndìng.
+    langUncertainHint: '语言不太明确。选择日语/英语/中文会更稳定。',
   },
 };
 
@@ -375,10 +480,24 @@ const t = (key) => {
   return STRINGS[lang]?.[key] || STRINGS['ja'][key] || key;
 };
 
+// Localized language names for {lang} placeholder substitution
+const LANG_NAMES_I18N = {
+  ja: { ja: '日本語', en: '英語', zh: '中国語' },
+  en: { ja: 'Japanese', en: 'English', zh: 'Chinese' },
+  'zh-Hans': { ja: '日语', en: '英语', zh: '中文' },
+};
+
 // Apply i18n to all elements with data-i18n attribute
 const applyI18n = () => {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
+    if (key && STRINGS[getUiLang()]?.[key]) {
+      el.textContent = t(key);
+    }
+  });
+  // Also translate <option> elements with data-i18n-option attribute
+  document.querySelectorAll('[data-i18n-option]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-option');
     if (key && STRINGS[getUiLang()]?.[key]) {
       el.textContent = t(key);
     }
@@ -1119,7 +1238,7 @@ const EVENT_SCHEMA = {
   logout:            [],
   try_start:         ['entry'],
   session_start:     ['input_lang', 'output_lang'],
-  session_end:       ['duration_bucket', 'utterance_count_bucket', 'result'],
+  session_end:       ['duration_bucket', 'utterance_count_bucket', 'result', 'stt_total', 'stt_filtered', 'stt_committed', 'lang_locked', 'lang_locked_to'],
   session_error:     ['error_class', 'phase'],
   quota_blocked:     ['reason'],
   upgrade_initiated: ['source'],
@@ -1327,7 +1446,10 @@ const state = {
   uiBound: false, // UIイベントハンドラが登録済みか（二重登録防止）
   linkAnalyticsBound: false, // 導線クリック計測の二重登録防止
   historyListBound: false, // 履歴一覧クリックハンドラの二重登録防止
+  titleEditInFlight: false, // タイトル編集中のAPI呼び出しガード
   historyEmptyDefault: '',
+  historySearchQuery: '',          // 履歴検索クエリ
+  historySearchDebounceId: null,   // 検索debounce用タイマーID
   serverTimeOffsetMs: null, // サーバ時刻との差分（ms）
   // スロットル/クールダウン管理
   lastJobCreateAt: 0, // 最後にjobs/createを呼んだ時刻（Date.now()）
@@ -1342,11 +1464,11 @@ const state = {
   sttSettings: {
     // Selected values (persisted to localStorage)
     inputLang: localStorage.getItem('stt_input_lang') || 'auto', // auto/zh/ja/en
-    vadPreset: localStorage.getItem('stt_vad_preset') || 'stable', // stable/fast/custom
+    vadPreset: (() => { const v = localStorage.getItem('stt_vad_preset'); if (v === 'stable') return 'normal'; if (v === 'fast') return 'quiet'; return v || 'normal'; })(), // quiet/normal/noisy/custom (legacy: stable→normal, fast→quiet)
     vadThreshold: Number(localStorage.getItem('stt_vad_threshold')) || 0.65,
     vadSilence: Number(localStorage.getItem('stt_vad_silence')) || 800,
     vadPrefix: Number(localStorage.getItem('stt_vad_prefix')) || 500,
-    noiseReduction: localStorage.getItem('stt_noise_reduction') || 'auto', // auto=don't send, near_field/far_field/off
+    noiseReduction: localStorage.getItem('stt_noise_reduction') || 'near_field', // near_field=default, auto=don't send, far_field/off
     transcriptionModel: localStorage.getItem('stt_transcription_model') || 'auto', // auto=gpt-4o-mini-transcribe (default), gpt-4o-transcribe
     // Dirty flags (true = user changed this setting, should be sent to API)
     dirty: {
@@ -1365,6 +1487,15 @@ const state = {
   currentSessionResult: null, // { id, timestamp, title, originals, translations, summary, audioUrl, m4aUrl }
   // Temporary Blob URLs for cleanup (memory management)
   objectUrls: [],
+  // STT quality telemetry counters (reset per session)
+  sttCounters: {
+    totalCompleted: 0,
+    filteredNoise: 0,
+    committedTranscripts: 0,
+    langVotesCast: 0,
+    langLocked: false,
+    langLockedTo: null,
+  },
 };
 
 // ========== Glossary Storage Adapter ==========
@@ -1657,7 +1788,9 @@ const historyStorage = {
 
 // ========== Title Generation (MVP) ==========
 const TITLE_MAX_LENGTH = 40;
+const TITLE_EDIT_MAX_LENGTH = 80;
 const TITLE_FORBIDDEN_CHARS = /[\/\\:*?"<>|]/g;
+const TITLE_FORBIDDEN_CHARS_RE = /[\/\\:*?"<>|]/;
 
 const generateSessionTitle = (text) => {
   if (!text || typeof text !== 'string') return '';
@@ -1825,15 +1958,15 @@ const buildSttPayload = () => {
       turn_detection.silence_duration_ms = stt.vadSilence;
       turn_detection.prefix_padding_ms = stt.vadPrefix;
     } else {
-      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.stable;
+      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.normal;
       turn_detection.threshold = preset.threshold;
       turn_detection.silence_duration_ms = preset.silence_duration_ms;
       turn_detection.prefix_padding_ms = preset.prefix_padding_ms;
     }
   }
 
-  // Noise reduction (only if dirty and not auto)
-  if (dirty.noiseReduction && stt.noiseReduction !== 'auto') {
+  // Noise reduction: always send when not 'auto' (regardless of dirty flag)
+  if (stt.noiseReduction && stt.noiseReduction !== 'auto') {
     noiseReduction = stt.noiseReduction;
   }
 
@@ -1919,7 +2052,7 @@ const sendSessionUpdate = () => {
         prefix_padding_ms: stt.vadPrefix,
       };
     } else {
-      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.stable;
+      const preset = STT_VAD_PRESETS[stt.vadPreset] || STT_VAD_PRESETS.normal;
       vadConfig = {
         threshold: preset.threshold,
         silence_duration_ms: preset.silence_duration_ms,
@@ -1927,9 +2060,9 @@ const sendSessionUpdate = () => {
       };
     }
   } else {
-    // Use legacy settings (backward compatible - existing behavior)
+    // Use legacy settings (backward compatible - raised threshold for noise reduction)
     vadConfig = {
-      threshold: 0.5,
+      threshold: 0.6,
       silence_duration_ms: Number(state.vadSilence) || 500,
       prefix_padding_ms: 300,
     };
@@ -1958,8 +2091,8 @@ const sendSessionUpdate = () => {
     },
   };
 
-  // Add noise reduction if dirty and not auto
-  if (stt.dirty.noiseReduction && stt.noiseReduction !== 'auto') {
+  // Noise reduction: always send when not 'auto' (regardless of dirty flag)
+  if (stt.noiseReduction && stt.noiseReduction !== 'auto') {
     input.noise_reduction = { type: stt.noiseReduction };
   }
 
@@ -2171,10 +2304,30 @@ const PRESETS = {
   stable: { maxChars: 360, gapMs: 1500, vadSilence: 550 },
 };
 
-// STT VAD Presets for OpenAI Realtime API turn_detection
+// STT VAD Presets: environment-based (quiet/normal/noisy)
+// Legacy mapping: stable→normal, fast→quiet
 const STT_VAD_PRESETS = {
-  stable: { threshold: 0.65, silence_duration_ms: 800, prefix_padding_ms: 500 },
-  fast: { threshold: 0.45, silence_duration_ms: 400, prefix_padding_ms: 300 },
+  quiet:  { threshold: 0.55, silence_duration_ms: 350, prefix_padding_ms: 400, minVoteChars: 10 },
+  normal: { threshold: 0.60, silence_duration_ms: 450, prefix_padding_ms: 400, minVoteChars: 12 },
+  noisy:  { threshold: 0.68, silence_duration_ms: 600, prefix_padding_ms: 500, minVoteChars: 16 },
+  // Legacy aliases
+  stable: { threshold: 0.60, silence_duration_ms: 450, prefix_padding_ms: 400, minVoteChars: 12 },
+  fast:   { threshold: 0.55, silence_duration_ms: 350, prefix_padding_ms: 400, minVoteChars: 10 },
+};
+
+// Transcript noise filtering: skip translation for noise/filler transcripts
+const MIN_COMMIT_CHARS = 2;
+const NOISE_PATTERNS = [
+  /^[.…。、,，\s\u200B\u3000]+$/,                    // punctuation/whitespace only
+  /^(uh+|um+|hmm+|ah+|oh+|eh+|mhm+)\.?$/i,         // English fillers
+  /^(えっ?と?|あの[ー～]?|うん|ん[ー～]?)$/,           // Japanese fillers
+  /^(那个|嗯+|啊+|哦+)$/,                              // Chinese fillers
+];
+
+const isNoiseTranscript = (text) => {
+  const t = text.trim();
+  if (t.length < MIN_COMMIT_CHARS) return true;
+  return NOISE_PATTERNS.some(re => re.test(t));
 };
 
 const applyPreset = (name) => {
@@ -3380,6 +3533,102 @@ const isSessionExpired = (session) => {
   return nowMs - tsInfo.ts >= retentionMs;
 };
 
+// ========== History Search ==========
+const ensureHistorySearchUI = () => {
+  const existing = document.getElementById('historySearchBar');
+  if (existing) {
+    const input = document.getElementById('historySearchInput');
+    if (input) {
+      input.placeholder = t('historySearchPlaceholder');
+      input.setAttribute('aria-label', t('historySearchPlaceholder'));
+      input.value = state.historySearchQuery || '';
+    }
+    const clearBtn = document.getElementById('historySearchClearBtn');
+    if (clearBtn) {
+      clearBtn.title = t('historySearchClear');
+      clearBtn.setAttribute('aria-label', t('historySearchClear'));
+      clearBtn.style.display = state.historySearchQuery ? 'inline-block' : 'none';
+    }
+    return;
+  }
+
+  const bar = document.createElement('div');
+  bar.className = 'history-search-bar';
+  bar.id = 'historySearchBar';
+
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.id = 'historySearchInput';
+  input.className = 'history-search-input';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  input.placeholder = t('historySearchPlaceholder');
+  input.setAttribute('aria-label', t('historySearchPlaceholder'));
+  input.value = state.historySearchQuery || '';
+
+  const clearBtn = document.createElement('button');
+  clearBtn.type = 'button';
+  clearBtn.id = 'historySearchClearBtn';
+  clearBtn.className = 'history-search-clear secondary small';
+  clearBtn.textContent = '\u00D7';
+  clearBtn.title = t('historySearchClear');
+  clearBtn.setAttribute('aria-label', t('historySearchClear'));
+  clearBtn.style.display = state.historySearchQuery ? 'inline-block' : 'none';
+
+  const statusEl = document.createElement('div');
+  statusEl.id = 'historySearchStatus';
+  statusEl.className = 'history-search-status';
+  statusEl.style.display = 'none';
+
+  bar.appendChild(input);
+  bar.appendChild(clearBtn);
+  bar.appendChild(statusEl);
+
+  if (els.historyListLoading && els.historyView) {
+    const container = els.historyView.querySelector('.history-view-container');
+    if (container) {
+      container.insertBefore(bar, els.historyListLoading);
+    }
+  }
+
+  input.addEventListener('input', () => {
+    if (state.historySearchDebounceId) {
+      clearTimeout(state.historySearchDebounceId);
+    }
+    state.historySearchDebounceId = setTimeout(() => {
+      state.historySearchQuery = input.value;
+      clearBtn.style.display = state.historySearchQuery ? 'inline-block' : 'none';
+      loadHistoryList();
+    }, 200);
+  });
+
+  clearBtn.addEventListener('click', () => {
+    state.historySearchQuery = '';
+    input.value = '';
+    clearBtn.style.display = 'none';
+    loadHistoryList();
+  });
+};
+
+const sessionMatchesQuery = (session, query) => {
+  if (!query) return true;
+  const originals = Array.isArray(session.originals) ? session.originals.join('\n') : '';
+  const translations = Array.isArray(session.translations) ? session.translations.join('\n') : '';
+  const haystack = (originals + '\n' + translations).toLowerCase();
+  return haystack.includes(query);
+};
+
+const updateHistorySearchStatus = (matchCount) => {
+  const statusEl = document.getElementById('historySearchStatus');
+  if (!statusEl) return;
+  if (!state.historySearchQuery) {
+    statusEl.style.display = 'none';
+    return;
+  }
+  statusEl.textContent = t('historySearchCount').replace('{count}', matchCount);
+  statusEl.style.display = 'block';
+};
+
 // ========== History View Navigation ==========
 const navigateToHistory = () => {
   window.location.hash = '#/history';
@@ -3421,6 +3670,12 @@ const handleHistoryListClick = (e) => {
     window.location.hash = `#/history/${id}`;
   } else if (btn.classList.contains('hist-delete-btn')) {
     deleteHistoryEntry(id);
+  } else if (btn.classList.contains('hist-edit-title-btn')) {
+    const item = btn.closest('.history-item');
+    if (!item) return;
+    const titleEl = item.querySelector('.history-item-title');
+    if (!titleEl) return;
+    startInlineTitleEdit(titleEl, id, titleEl.textContent);
   }
 };
 
@@ -3428,11 +3683,16 @@ const showHistoryView = async () => {
   if (!els.historyView) return;
   if (els.appShell) els.appShell.style.display = 'none';
   els.historyView.style.display = 'block';
+  ensureHistorySearchUI();
   await loadHistoryList();
 };
 
 const hideHistoryView = () => {
   if (!els.historyView) return;
+  if (state.historySearchDebounceId) {
+    clearTimeout(state.historySearchDebounceId);
+    state.historySearchDebounceId = null;
+  }
   els.historyView.style.display = 'none';
   if (els.appShell) els.appShell.style.display = 'flex';
 };
@@ -3447,6 +3707,10 @@ const loadHistoryList = async () => {
   try {
     const sessions = await historyStorage.getAll();
     const visibleSessions = sessions.filter((session) => !isSessionExpired(session));
+    const query = (state.historySearchQuery || '').toLowerCase();
+    const filteredSessions = query
+      ? visibleSessions.filter((s) => sessionMatchesQuery(s, query))
+      : visibleSessions;
 
     els.historyListLoading.style.display = 'none';
 
@@ -3455,31 +3719,55 @@ const loadHistoryList = async () => {
         els.historyListEmpty.textContent = state.historyEmptyDefault;
       }
       els.historyListEmpty.style.display = 'block';
+      updateHistorySearchStatus(0);
       return;
     }
 
     if (visibleSessions.length === 0) {
       els.historyListEmpty.textContent = t('historyEmptyFiltered');
       els.historyListEmpty.style.display = 'block';
+      updateHistorySearchStatus(0);
+      return;
+    }
+
+    if (query && filteredSessions.length === 0) {
+      clearElement(els.historyList);
+      els.historyList.style.display = 'none';
+      els.historyListEmpty.textContent = t('historySearchNoResults');
+      els.historyListEmpty.style.display = 'block';
+      updateHistorySearchStatus(0);
       return;
     }
 
     clearElement(els.historyList);
-    visibleSessions.forEach((session) => {
+    filteredSessions.forEach((session) => {
       const item = document.createElement('div');
       item.className = 'history-item';
       const info = document.createElement('div');
       info.className = 'history-item-info';
 
+      const titleRow = document.createElement('div');
+      titleRow.className = 'history-item-title-row';
+
       const title = document.createElement('div');
       title.className = 'history-item-title';
       title.textContent = session.title || 'Untitled';
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'icon-button small hist-edit-title-btn';
+      editBtn.dataset.id = session.id;
+      editBtn.textContent = '\u270E';
+      editBtn.title = t('historyEditTitle');
+      editBtn.setAttribute('aria-label', t('historyEditTitle'));
+
+      titleRow.appendChild(title);
+      titleRow.appendChild(editBtn);
 
       const meta = document.createElement('div');
       meta.className = 'history-item-meta';
       meta.textContent = buildHistoryMetaText(session);
 
-      info.appendChild(title);
+      info.appendChild(titleRow);
       info.appendChild(meta);
 
       const actions = document.createElement('div');
@@ -3508,6 +3796,7 @@ const loadHistoryList = async () => {
       state.historyListBound = true;
     }
 
+    updateHistorySearchStatus(filteredSessions.length);
     els.historyList.style.display = 'flex';
   } catch (err) {
     els.historyListLoading.style.display = 'none';
@@ -3526,6 +3815,141 @@ const deleteHistoryEntry = async (id) => {
   } catch (err) {
     setError(`削除エラー: ${err.message}`);
   }
+};
+
+// ========== Title Editing ==========
+
+const normalizeTitleInput = (raw) => {
+  if (typeof raw !== 'string') return '';
+  return raw.replace(/\s+/g, ' ').trim();
+};
+
+const validateTitle = (title) => {
+  if (!title) return 'historyTitleRequired';
+  if (title.length > TITLE_EDIT_MAX_LENGTH) return 'historyTitleTooLong';
+  if (TITLE_FORBIDDEN_CHARS_RE.test(title)) return 'historyTitleInvalidChars';
+  return null;
+};
+
+const updateSessionTitle = async (sessionId, rawNewTitle) => {
+  const newTitle = normalizeTitleInput(rawNewTitle);
+  const error = validateTitle(newTitle);
+  if (error) return { success: false, error };
+
+  const session = await historyStorage.get(sessionId);
+  if (!session) return { success: false, error: 'not_found' };
+
+  const previousTitle = session.title;
+  session.title = newTitle;
+  await historyStorage.save(session);
+
+  if (session.jobId) {
+    state.titleEditInFlight = true;
+    try {
+      const res = await authFetch(`/api/v1/jobs/${session.jobId}/title`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: newTitle }),
+      });
+      if (!res.ok) {
+        throw new Error(`Server returned ${res.status}`);
+      }
+      addDiagLog(`Title updated: sessionId=${sessionId} jobId=${session.jobId}`);
+      return { success: true };
+    } catch (err) {
+      session.title = previousTitle;
+      await historyStorage.save(session);
+      addDiagLog(`Title update failed, rolled back: ${err.message}`);
+      return { success: false, error: 'server_error' };
+    } finally {
+      state.titleEditInFlight = false;
+    }
+  }
+
+  addDiagLog(`Title updated (local only): sessionId=${sessionId}`);
+  return { success: true };
+};
+
+const startInlineTitleEdit = (titleEl, sessionId, currentTitle, onDone) => {
+  if (state.titleEditInFlight) return;
+
+  const container = titleEl.parentElement;
+  const originalDisplay = titleEl.style.display;
+  titleEl.style.display = 'none';
+
+  const wrapper = document.createElement('div');
+  wrapper.className = 'history-title-edit-wrapper';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'history-title-editing';
+  input.value = currentTitle || '';
+  input.maxLength = TITLE_EDIT_MAX_LENGTH;
+  input.setAttribute('aria-label', t('historyEditTitle'));
+
+  const actions = document.createElement('div');
+  actions.className = 'history-title-edit-actions';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'secondary small hist-title-save-btn';
+  saveBtn.textContent = '\u2713';
+  saveBtn.title = t('save');
+
+  const cancelBtn = document.createElement('button');
+  cancelBtn.className = 'secondary small hist-title-cancel-btn';
+  cancelBtn.textContent = '\u2717';
+  cancelBtn.title = t('close');
+
+  actions.appendChild(saveBtn);
+  actions.appendChild(cancelBtn);
+  wrapper.appendChild(input);
+  wrapper.appendChild(actions);
+  container.insertBefore(wrapper, titleEl.nextSibling);
+
+  input.focus();
+  input.select();
+
+  const cleanup = () => {
+    wrapper.remove();
+    titleEl.style.display = originalDisplay;
+  };
+
+  const commit = async () => {
+    const normalized = normalizeTitleInput(input.value);
+    if (!normalized || normalized === currentTitle) {
+      cleanup();
+      return;
+    }
+    const validationError = validateTitle(normalized);
+    if (validationError) {
+      setError(t(validationError));
+      return;
+    }
+    saveBtn.disabled = true;
+    cancelBtn.disabled = true;
+    input.disabled = true;
+    const result = await updateSessionTitle(sessionId, normalized);
+    if (result.success) {
+      titleEl.textContent = normalized;
+      cleanup();
+      if (onDone) onDone(normalized);
+    } else {
+      setError(t('historyTitleError'));
+      saveBtn.disabled = false;
+      cancelBtn.disabled = false;
+      input.disabled = false;
+      input.focus();
+    }
+  };
+
+  const cancel = () => cleanup();
+
+  saveBtn.addEventListener('click', commit);
+  cancelBtn.addEventListener('click', cancel);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
 };
 
 const showHistoryDetailView = async (sessionId) => {
@@ -3560,6 +3984,19 @@ const showHistoryDetailView = async (sessionId) => {
 
     if (els.historyDetailTitle) {
       els.historyDetailTitle.textContent = session.title || 'セッション詳細';
+
+      const existingEditBtn = els.historyDetailTitle.parentElement.querySelector('.hist-detail-edit-title-btn');
+      if (existingEditBtn) existingEditBtn.remove();
+
+      const editTitleBtn = document.createElement('button');
+      editTitleBtn.className = 'icon-button small hist-detail-edit-title-btn';
+      editTitleBtn.textContent = '\u270E';
+      editTitleBtn.title = t('historyEditTitle');
+      editTitleBtn.setAttribute('aria-label', t('historyEditTitle'));
+      editTitleBtn.addEventListener('click', () => {
+        startInlineTitleEdit(els.historyDetailTitle, session.id, els.historyDetailTitle.textContent);
+      });
+      els.historyDetailTitle.parentElement.appendChild(editTitleBtn);
     }
 
     const originals = (session.originals || []).join('\n');
@@ -4821,6 +5258,15 @@ const translateCompleted = async (text) => {
 
 const commitLog = (text, itemId = null) => {
   if (!text || !text.trim()) return;
+  // Noise transcript filtering: skip translation but keep diag log
+  if (isNoiseTranscript(text)) {
+    addDiagLog(`commitLog filtered noise: "${text.trim().substring(0, 30)}"`);
+    if (state.sttCounters) state.sttCounters.filteredNoise++;
+    if (itemId) state.committedItems.add(itemId);
+    state.liveOriginal = '';
+    return;
+  }
+  if (state.sttCounters) state.sttCounters.committedTranscripts++;
   state.logs.push(text);
   addTranscriptLog(text);
   translateCompleted(text);
@@ -4876,6 +5322,8 @@ const handleCompleted = (payload) => {
   const buffered = state.partialByItem.get(itemId) || '';
   const text =
     payload.transcript || payload.text || payload.content?.[0]?.transcript || buffered;
+
+  if (state.sttCounters) state.sttCounters.totalCompleted++;
 
   if (!text) {
     state.partialByItem.delete(itemId);
@@ -4979,6 +5427,12 @@ const fetchToken = async () => {
   state.sessionId = `sess_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   addDiagLog(`Session started: sid=${state.sessionId} build=${state.buildVersion || 'unknown'}`);
 
+  // Reset STT quality counters for new session
+  state.sttCounters = {
+    totalCompleted: 0, filteredNoise: 0, committedTranscripts: 0,
+    langVotesCast: 0, langLocked: false, langLockedTo: null,
+  };
+
   const pc = new RTCPeerConnection();
   state.pc = pc;
 
@@ -5013,7 +5467,24 @@ const fetchToken = async () => {
     }
   };
 
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+  // Staged getUserMedia with progressive constraint fallback
+  const audioConstraints = [
+    { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    { echoCancellation: true, noiseSuppression: true },
+    { echoCancellation: true },
+    true,
+  ];
+  let stream;
+  for (let i = 0; i < audioConstraints.length; i++) {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints[i] });
+      if (i > 0) addDiagLog(`getUserMedia: fell back to constraint level ${i}`);
+      break;
+    } catch (err) {
+      if (i === audioConstraints.length - 1) throw err;
+      addDiagLog(`getUserMedia: constraint level ${i} failed (${err.name}), trying next`);
+    }
+  }
   state.mediaStream = stream;
   stream.getTracks().forEach((track) => pc.addTrack(track, stream));
   startRecorder(stream);
@@ -5149,6 +5620,7 @@ const start = async () => {
     if (!hasQuotaForStart()) {
       els.start.disabled = false;
       els.stop.disabled = true;
+      document.querySelector('.app-shell')?.removeAttribute('data-recording');
       return;
     }
 
@@ -5162,6 +5634,7 @@ const start = async () => {
     // Update UI state
     els.start.disabled = true;
     els.stop.disabled = false;
+    document.querySelector('.app-shell')?.setAttribute('data-recording', '1');
   clearGapTimer();
   resetDownloads();
   clearLogs();
@@ -5208,6 +5681,7 @@ const start = async () => {
         setStatus('Standby');
         els.start.disabled = false;
         els.stop.disabled = true;
+        document.querySelector('.app-shell')?.removeAttribute('data-recording');
         return;
       }
       // 429 Rate Limit エラーの特別処理
@@ -5215,6 +5689,7 @@ const start = async () => {
         addDiagLog(`Start blocked: 429 rate limit | waitMs=${err._waitMs}`);
         stopMedia();
         closeRtc();
+        document.querySelector('.app-shell')?.removeAttribute('data-recording');
         startCooldown(err._waitMs, '429_rate_limit');
         return; // クールダウン中なのでここで終了
       }
@@ -5256,6 +5731,7 @@ const start = async () => {
 
   els.start.disabled = false;
   els.stop.disabled = true;
+  document.querySelector('.app-shell')?.removeAttribute('data-recording');
   stopMedia();
   closeRtc();
 
@@ -5275,6 +5751,7 @@ const stop = async () => {
   addDiagLog(`Stop requested | jobActive=${state.jobActive}`);
   els.start.disabled = false;
   els.stop.disabled = true;
+  document.querySelector('.app-shell')?.removeAttribute('data-recording');
   clearGapTimer();
   stopMedia();
   closeRtc();
@@ -5296,6 +5773,7 @@ const stop = async () => {
     serverTimestampMs: null,
     inputLang: state.inputLang,
     outputLang: state.outputLang,
+    jobId: state.currentJob?.jobId || null,
   };
 
   if (state.recorder) {
@@ -5340,10 +5818,17 @@ const stop = async () => {
     addDiagLog('Stop: no active job to complete');
   }
 
+  const ctr = state.sttCounters || {};
+  addDiagLog(`STT_COUNTERS | total=${ctr.totalCompleted || 0} filtered=${ctr.filteredNoise || 0} committed=${ctr.committedTranscripts || 0} langLocked=${ctr.langLocked || false} langLockedTo=${ctr.langLockedTo || 'none'}`);
   analytics.log('session_end', {
     duration_bucket: analytics.durationBucket(elapsedSeconds),
     utterance_count_bucket: 'unknown',
     result: sessionEndResult,
+    stt_total: ctr.totalCompleted || 0,
+    stt_filtered: ctr.filteredNoise || 0,
+    stt_committed: ctr.committedTranscripts || 0,
+    lang_locked: ctr.langLocked ? 'yes' : 'no',
+    lang_locked_to: ctr.langLockedTo || 'none',
   });
 
   if (completionData && typeof completionData.actualSeconds === 'number') {
@@ -5370,7 +5855,7 @@ const stop = async () => {
   // Save to history (even if incomplete)
   try {
     await historyStorage.save(state.currentSessionResult);
-    addDiagLog(`History saved: ${sessionId}`);
+    addDiagLog(`History saved: sessionId=${sessionId} jobId=${state.currentSessionResult.jobId || 'none'}`);
   } catch (err) {
     addDiagLog(`History save failed: ${err.message}`);
   }
@@ -5860,6 +6345,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const initSttSettingsUI = () => {
     const stt = state.sttSettings;
     if (els.sttInputLang) els.sttInputLang.value = stt.inputLang;
+    // Legacy vadPreset migration: stable→normal, fast→quiet (+ persist to localStorage)
+    if (stt.vadPreset === 'stable') { stt.vadPreset = 'normal'; localStorage.setItem('stt_vad_preset', 'normal'); }
+    if (stt.vadPreset === 'fast') { stt.vadPreset = 'quiet'; localStorage.setItem('stt_vad_preset', 'quiet'); }
     if (els.sttVadPreset) els.sttVadPreset.value = stt.vadPreset;
     if (els.sttVadThreshold) els.sttVadThreshold.value = stt.vadThreshold;
     if (els.sttVadSilence) els.sttVadSilence.value = stt.vadSilence;
