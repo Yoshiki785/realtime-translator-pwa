@@ -5476,6 +5476,7 @@ const start = async () => {
     if (!hasQuotaForStart()) {
       els.start.disabled = false;
       els.stop.disabled = true;
+      document.querySelector('.app-shell')?.removeAttribute('data-recording');
       return;
     }
 
@@ -5489,6 +5490,7 @@ const start = async () => {
     // Update UI state
     els.start.disabled = true;
     els.stop.disabled = false;
+    document.querySelector('.app-shell')?.setAttribute('data-recording', '1');
   clearGapTimer();
   resetDownloads();
   clearLogs();
@@ -5535,6 +5537,7 @@ const start = async () => {
         setStatus('Standby');
         els.start.disabled = false;
         els.stop.disabled = true;
+        document.querySelector('.app-shell')?.removeAttribute('data-recording');
         return;
       }
       // 429 Rate Limit エラーの特別処理
@@ -5542,6 +5545,7 @@ const start = async () => {
         addDiagLog(`Start blocked: 429 rate limit | waitMs=${err._waitMs}`);
         stopMedia();
         closeRtc();
+        document.querySelector('.app-shell')?.removeAttribute('data-recording');
         startCooldown(err._waitMs, '429_rate_limit');
         return; // クールダウン中なのでここで終了
       }
@@ -5583,6 +5587,7 @@ const start = async () => {
 
   els.start.disabled = false;
   els.stop.disabled = true;
+  document.querySelector('.app-shell')?.removeAttribute('data-recording');
   stopMedia();
   closeRtc();
 
@@ -5602,6 +5607,7 @@ const stop = async () => {
   addDiagLog(`Stop requested | jobActive=${state.jobActive}`);
   els.start.disabled = false;
   els.stop.disabled = true;
+  document.querySelector('.app-shell')?.removeAttribute('data-recording');
   clearGapTimer();
   stopMedia();
   closeRtc();

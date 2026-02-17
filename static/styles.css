@@ -1641,3 +1641,46 @@ button.disabled {
   max-height: 150px;
   overflow-y: auto;
 }
+
+/* ========== LIVE Recording Mode: Mobile Space Recovery ========== */
+@media (max-width: 599px) {
+  .app-shell[data-recording] .home-policy-summary,
+  .app-shell[data-recording] .footer-nav {
+    display: none;
+  }
+
+  .app-shell[data-recording] #startBtn {
+    display: none;
+  }
+
+  .app-shell[data-recording] .live-area {
+    padding: 10px;
+  }
+
+  .app-shell[data-recording] .live-text {
+    min-height: 40px;
+  }
+
+  .app-shell[data-recording] .controls {
+    gap: 6px;
+  }
+
+  .app-shell[data-recording] .cta {
+    padding: 14px;
+    font-size: 18px;
+  }
+
+  .app-shell[data-recording] .log-container {
+    grid-auto-rows: 1fr;
+  }
+
+  .app-shell[data-recording] .error:empty {
+    min-height: 0;
+    display: none;
+  }
+
+  .app-shell[data-recording] {
+    gap: 8px;
+    padding: 12px;
+  }
+}
