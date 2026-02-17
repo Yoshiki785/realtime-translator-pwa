@@ -153,14 +153,14 @@
         <button type="button" id="presetStable" class="secondary small" data-i18n="presetStable">安定</button>
       </div>
       <hr class="settings-divider" />
-      <label data-i18n="uiLangLabel">表示言語
+      <label><span data-i18n="uiLangLabel">表示言語</span>
         <select id="uiLang" class="settings-select">
           <option value="ja">日本語</option>
           <option value="en">English</option>
           <option value="zh-Hans">简体中文</option>
         </select>
       </label>
-      <label data-i18n="inputLangLabel">入力言語
+      <label><span data-i18n="inputLangLabel">入力言語</span>
         <select id="inputLang" class="settings-select">
           <option value="auto" data-i18n="langAuto">自動検出</option>
           <option value="ja">日本語</option>
@@ -168,7 +168,7 @@
           <option value="zh">中文</option>
         </select>
       </label>
-      <label data-i18n="outputLangLabel">出力言語
+      <label><span data-i18n="outputLangLabel">出力言語</span>
         <select id="outputLang" class="settings-select">
           <option value="ja">日本語</option>
           <option value="en">English</option>
@@ -186,7 +186,7 @@
             <option value="zh">中文</option>
           </select>
         </label>
-        <label data-i18n="vadPresetLabel">環境プリセット
+        <label><span data-i18n="vadPresetLabel">環境プリセット</span>
           <select id="sttVadPreset" class="settings-select">
             <option value="quiet" data-i18n-option="vadPresetQuiet">静か（会議室等）</option>
             <option value="normal" selected data-i18n-option="vadPresetNormal">標準</option>
@@ -205,7 +205,7 @@
             <input id="sttVadPrefix" type="number" min="100" max="1000" step="50" value="500" />
           </label>
         </div>
-        <label data-i18n="noiseReductionLabel">ノイズ抑制
+        <label><span data-i18n="noiseReductionLabel">ノイズ抑制</span>
           <select id="sttNoiseReduction" class="settings-select">
             <option value="auto" data-i18n-option="noiseReductionAuto">自動（API既定）</option>
             <option value="near_field" selected data-i18n-option="noiseReductionNearField">標準（近距離マイク）</option>
@@ -225,14 +225,14 @@
         </div>
       </details>
       <hr class="settings-divider" />
-      <label data-i18n="glossaryLabel">辞書（用語集）
+      <label><span data-i18n="glossaryLabel">辞書（用語集）</span>
         <textarea id="glossaryTextInput" class="settings-textarea" rows="4" placeholder="1行1エントリ: source=target 例）半導体=semiconductor"></textarea>
       </label>
       <div class="dictionary-summary">
         <span class="dictionary-count" id="dictionaryCountDisplay">辞書: 0/10</span>
         <button type="button" id="openDictionaryBtn" class="cta small secondary">辞書を開く</button>
       </div>
-      <label data-i18n="summaryPromptLabel">要約カスタムプロンプト
+      <label><span data-i18n="summaryPromptLabel">要約カスタムプロンプト</span>
         <textarea id="summaryPromptInput" class="settings-textarea" rows="3" placeholder="要約の指示を自由に書けます（例：決裁用に3行で、リスクと次アクション必須）"></textarea>
       </label>
       <div class="settings-actions-row">
@@ -377,29 +377,29 @@
       </header>
       <p class="company-note" data-i18n="companyNote">※ Stripeの請求先情報・解約は「サブスク管理」から行えます</p>
       <div class="company-form">
-        <label data-i18n="companyName">会社名
+        <label><span data-i18n="companyName">会社名</span>
           <input id="companyName" type="text" placeholder="" />
         </label>
-        <label data-i18n="department">部署
+        <label><span data-i18n="department">部署</span>
           <input id="companyDepartment" type="text" placeholder="" />
         </label>
-        <label data-i18n="position">役職
+        <label><span data-i18n="position">役職</span>
           <input id="companyPosition" type="text" placeholder="" />
         </label>
-        <label data-i18n="companyAddress">住所
+        <label><span data-i18n="companyAddress">住所</span>
           <input id="companyAddress" type="text" placeholder="" />
         </label>
-        <label data-i18n="postalCode">郵便番号
+        <label><span data-i18n="postalCode">郵便番号</span>
           <input id="companyPostalCode" type="text" placeholder="" />
         </label>
-        <label data-i18n="country">国
+        <label><span data-i18n="country">国</span>
           <input id="companyCountry" type="text" placeholder="" />
         </label>
         <div class="tax-id-row">
-          <label data-i18n="taxIdLabel">税ID種別
+          <label><span data-i18n="taxIdLabel">税ID種別</span>
             <input id="companyTaxIdLabel" type="text" placeholder="例: 法人番号" />
           </label>
-          <label data-i18n="taxIdValue">税ID値
+          <label><span data-i18n="taxIdValue">税ID値</span>
             <input id="companyTaxIdValue" type="text" placeholder="" />
           </label>
         </div>
