@@ -1198,6 +1198,7 @@ const cacheElements = () => {
     buildShaDisplay: document.getElementById('buildShaDisplay'),
     forceUpdateBtn: document.getElementById('forceUpdateBtn'),
     copyDiagnosticsBtn: document.getElementById('copyDiagnosticsBtn'),
+    showOnboardingBtn: document.getElementById('showOnboardingBtn'),
     diagnosticsStatus: document.getElementById('diagnosticsStatus'),
     // Result Card (after Stop)
     resultCard: document.getElementById('resultCard'),
@@ -6051,6 +6052,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Live text display
     updateLiveText();
+
+    // Onboarding: show settings on first visit
+    if (localStorage.getItem('onboardingDone') !== '1') {
+      els.settingsModal?.showModal();
+    }
+
+    els.settingsModal?.addEventListener('close', () => {
+      if (localStorage.getItem('onboardingDone') !== '1') {
+        localStorage.setItem('onboardingDone', '1');
+      }
+    });
+
+    if (els.showOnboardingBtn) {
+      els.showOnboardingBtn.addEventListener('click', () => {
+        if (els.settingsModal && !els.settingsModal.open) {
+          els.settingsModal.showModal();
+        }
+      });
+    }
   }
 
   // ============================================================
