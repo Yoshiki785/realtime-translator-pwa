@@ -284,6 +284,40 @@ body {
   display: block;
 }
 
+/* Settings dialog: keep within viewport on mobile (iPhone Safari) */
+#settingsModal {
+  max-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  overflow: hidden;
+  padding: 0;
+  border: none;
+  border-radius: 14px;
+  width: min(96vw, 720px);
+  margin: auto;
+  box-sizing: border-box;
+}
+
+@supports not (height: 100dvh) {
+  #settingsModal {
+    max-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom));
+  }
+}
+
+#settingsModal > .modal {
+  max-height: inherit;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+#settingsModal textarea,
+#settingsModal input,
+#settingsModal select,
+#settingsModal button {
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .modal {
   background: var(--bg);
   color: var(--fg);
