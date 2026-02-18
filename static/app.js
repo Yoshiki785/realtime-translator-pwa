@@ -1447,6 +1447,7 @@ const state = {
   linkAnalyticsBound: false, // 導線クリック計測の二重登録防止
   historyListBound: false, // 履歴一覧クリックハンドラの二重登録防止
   titleEditInFlight: false, // タイトル編集中のAPI呼び出しガード
+  dismissedExampleCards: localStorage.getItem('dismissedExampleCards') === '1',
   historyEmptyDefault: '',
   historySearchQuery: '',          // 履歴検索クエリ
   historySearchDebounceId: null,   // 検索debounce用タイマーID
