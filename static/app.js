@@ -1083,6 +1083,7 @@ const cacheElements = () => {
     liveTranscript: document.getElementById('liveTranscript'),
     transcriptLog: document.getElementById('transcriptLog'),
     translationLog: document.getElementById('translationLog'),
+    exampleCards: document.getElementById('exampleCards'),
     start: document.getElementById('startBtn'),
     stop: document.getElementById('stopBtn'),
     error: document.getElementById('error'),
