@@ -54,6 +54,7 @@ fi
 REQUIRED_FILES=(
   "index.html"
   "products.html"
+  "pricing.html"
   "privacy.html"
   "terms.html"
   "contact.html"

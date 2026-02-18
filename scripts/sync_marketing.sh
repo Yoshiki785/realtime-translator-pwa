@@ -41,7 +41,7 @@ echo "Generating from marketing/config/products.json"
 node ./scripts/generate_marketing.js
 
 # ── Step 2: Copy and process pages with INCLUDE directives ──
-PAGES=("index.html" "products.html" "privacy.html" "terms.html" "contact.html" "404.html")
+PAGES=("index.html" "products.html" "pricing.html" "privacy.html" "terms.html" "contact.html" "404.html")
 copied=0
 
 # Load template partials
