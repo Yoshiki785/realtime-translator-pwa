@@ -139,6 +139,46 @@ body {
   overflow: hidden;
 }
 
+.example-cards {
+  padding: 8px 4px calc(12px + env(safe-area-inset-bottom));
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+
+.example-card {
+  width: 100%;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--fg);
+  text-align: left;
+  font-size: 14px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+
+.example-card:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.example-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.app-shell.show-example-cards .log-container {
+  display: none;
+}
+
+.app-shell:not(.show-example-cards) .example-cards {
+  display: none;
+}
+
 .log-panel {
   background: var(--card);
   border-radius: 16px;
