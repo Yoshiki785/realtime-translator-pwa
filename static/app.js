@@ -6198,6 +6198,90 @@ document.addEventListener('DOMContentLoaded', () => {
     console.warn('[INIT:non-critical] pricing config load failed:', err);
   }
 
+  const appShell = els.appShell;
+  let cardsRenderPending = false;
+
+  const renderExampleCards = () => {
+    if (!els.exampleCards) return;
+    const transcriptText = (els.transcriptLog?.textContent || '').trim();
+    const translationText = (els.translationLog?.textContent || '').trim();
+    const hasLogs = Boolean(transcriptText || translationText);
+    const isRecording = Boolean(appShell?.hasAttribute('data-recording'));
+    const showCards = !hasLogs && !isRecording && !state.dismissedExampleCards;
+    appShell?.classList.toggle('show-example-cards', showCards);
+    if (!showCards) return;
+
+    const cardTextByLang = {
+      ja: [
+        'Start を押すとリアルタイム翻訳を開始できます。',
+        'Settings で入力/出力の言語を変更できます。',
+        '話し始めるとログが自動で表示されます。',
+      ],
+      en: [
+        'Tap Start to begin real-time translation.',
+        'Use Settings to change input/output languages.',
+        'Logs will appear here automatically while you speak.',
+      ],
+      'zh-Hans': [
+        '点击 Start 开始实时翻译。',
+        '在 Settings 中可切换输入/输出语言。',
+        '开始说话后，这里会自动显示日志。',
+      ],
+    };
+    const uiLang = Object.prototype.hasOwnProperty.call(cardTextByLang, state.uiLang) ? state.uiLang : 'en';
+    if (els.exampleCards.dataset.lang === uiLang && els.exampleCards.children.length > 0) return;
+
+    els.exampleCards.replaceChildren();
+    cardTextByLang[uiLang].forEach((text) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'example-card';
+      card.textContent = text;
+      card.addEventListener('click', () => {
+        state.dismissedExampleCards = true;
+        try { localStorage.setItem('dismissedExampleCards', '1'); } catch (_) {}
+        scheduleRenderExampleCards();
+      });
+      els.exampleCards.appendChild(card);
+    });
+    els.exampleCards.dataset.lang = uiLang;
+  };
+
+  const scheduleRenderExampleCards = () => {
+    if (cardsRenderPending) return;
+    cardsRenderPending = true;
+    requestAnimationFrame(() => {
+      cardsRenderPending = false;
+      renderExampleCards();
+    });
+  };
+
+  if (appShell) {
+    const recordingObserver = new MutationObserver(() => {
+      scheduleRenderExampleCards();
+    });
+    recordingObserver.observe(appShell, {
+      attributes: true,
+      attributeFilter: ['data-recording'],
+    });
+  }
+
+  const logObserver = new MutationObserver(() => {
+    scheduleRenderExampleCards();
+  });
+  const logObserverOptions = {
+    childList: true,
+    subtree: true,
+    characterData: true,
+  };
+  if (els.transcriptLog) {
+    logObserver.observe(els.transcriptLog, logObserverOptions);
+  }
+  if (els.translationLog) {
+    logObserver.observe(els.translationLog, logObserverOptions);
+  }
+  scheduleRenderExampleCards();
+
   // ============================================================
   // ADDITIONAL UI EVENT HANDLERS
   // These are registered after core init to ensure login works first
@@ -6324,6 +6408,7 @@ document.addEventListener('DOMContentLoaded', () => {
       changedKeys.forEach((key) => analytics.log('settings_changed', { setting_key: key }));
 
       applyI18n();
+      scheduleRenderExampleCards();
       els.settingsModal?.close();
       addDiagLog(
         `Settings updated | maxChars=${state.maxChars} gapMs=${state.gapMs} vadSilence=${state.vadSilence} uiLang=${state.uiLang} inputLang=${state.inputLang} outputLang=${state.outputLang} glossary_entries=${glossaryEntries.length} summaryPrompt_len=${state.summaryPrompt.length}`
