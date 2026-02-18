@@ -5966,6 +5966,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (els.glossaryTextInput) els.glossaryTextInput.value = state.glossaryText;
     if (els.summaryPromptInput) els.summaryPromptInput.value = state.summaryPrompt;
 
+    document.documentElement.lang = state.uiLang;
     applyI18n();
     bindLinkAnalytics();
 
@@ -6408,6 +6409,9 @@ document.addEventListener('DOMContentLoaded', () => {
       changedKeys.forEach((key) => analytics.log('settings_changed', { setting_key: key }));
 
       applyI18n();
+      document.documentElement.lang = state.uiLang;
+      updateQuotaInfo();
+      updateQuotaBreakdown();
       scheduleRenderExampleCards();
       els.settingsModal?.close();
       addDiagLog(
