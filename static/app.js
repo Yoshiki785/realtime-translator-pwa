@@ -5254,6 +5254,15 @@ const translateCompleted = async (text) => {
     const translation = data.translation || '';
     state.translations.push(translation);
     addTranslationLog(translation);
+    // GA4: fire first_translation once for LP→PWA attribution
+    try {
+      var lpLangPair = sessionStorage.getItem('lp_lang_pair');
+      if (lpLangPair && typeof gtag === 'function') {
+        gtag('event', 'first_translation', { lang_pair: lpLangPair, page: '/app' });
+        sessionStorage.removeItem('lp_lang_pair');
+      }
+    } catch (_) { /* ignore */ }
+
   } catch (err) {
     setError(err.message);
   }
@@ -5882,6 +5891,17 @@ const applyAuthUiState = (user) => {
   }
   updateDevStatusSummary();
 };
+
+// ── UTM→GA4: Capture LP lang_pair for first_translation event ──
+(function () {
+  try {
+    var params = new URLSearchParams(location.search);
+    if (params.get('utm_source') === 'lp' && params.get('utm_content')) {
+      sessionStorage.setItem('lp_lang_pair', params.get('utm_content'));
+    }
+  } catch (_) { /* ignore */ }
+})();
+
 
 document.addEventListener('DOMContentLoaded', () => {
   // ============================================================

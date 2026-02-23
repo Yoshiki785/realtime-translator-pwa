@@ -557,3 +557,117 @@ a:hover {
 .lp-text-center {
   text-align: center;
 }
+
+/* ── Before/After Comparison Grid ── */
+.lp-comparison-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--lp-space-8);
+}
+
+@media (max-width: 768px) {
+  .lp-comparison-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.lp-comparison-before {
+  border-left: 3px solid var(--lp-fg-subtle);
+  padding-left: var(--lp-space-6);
+}
+
+.lp-comparison-after {
+  border-left: 3px solid var(--lp-accent);
+  padding-left: var(--lp-space-6);
+}
+
+.lp-comparison-before h3,
+.lp-comparison-after h3 {
+  font-size: var(--lp-text-lg);
+  font-weight: 600;
+  margin-bottom: var(--lp-space-4);
+}
+
+.lp-comparison-before li,
+.lp-comparison-after li {
+  color: var(--lp-fg-muted);
+  margin-bottom: var(--lp-space-2);
+  line-height: var(--lp-leading-relaxed);
+}
+
+/* ── Step Number ── */
+.lp-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border-radius: var(--lp-radius-full);
+  background: var(--lp-gradient-cta);
+  color: var(--lp-bg);
+  font-weight: 700;
+  margin-bottom: var(--lp-space-4);
+}
+
+/* ── FAQ Accordion (details/summary) ── */
+.lp-faq-item {
+  border-bottom: 1px solid var(--lp-border);
+}
+
+.lp-faq-question {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--lp-space-4) 0;
+  cursor: pointer;
+  width: 100%;
+  background: none;
+  border: none;
+  color: var(--lp-fg);
+  font-size: var(--lp-text-lg);
+  text-align: left;
+  list-style: none;
+}
+
+.lp-faq-question::-webkit-details-marker {
+  display: none;
+}
+
+.lp-faq-question::after {
+  content: '+';
+  font-size: var(--lp-text-2xl);
+  transition: transform var(--lp-duration-normal);
+  flex-shrink: 0;
+  margin-left: var(--lp-space-4);
+}
+
+.lp-faq-item[open] .lp-faq-question::after {
+  content: '\2212';
+}
+
+.lp-faq-answer {
+  padding: 0 0 var(--lp-space-6) 0;
+  color: var(--lp-fg-muted);
+  line-height: var(--lp-leading-relaxed);
+}
+
+/* ── Language Pair Card ── */
+.lp-lang-card {
+  text-align: center;
+}
+
+.lp-lang-card .lp-cta {
+  margin-top: var(--lp-space-4);
+}
+
+/* ── Consent Script Block ── */
+.lp-consent-script {
+  background: var(--lp-surface);
+  border: 1px solid var(--lp-border);
+  border-radius: var(--lp-radius-lg);
+  padding: var(--lp-space-6);
+  margin: var(--lp-space-4) 0;
+  font-style: italic;
+  color: var(--lp-fg-muted);
+  line-height: var(--lp-leading-relaxed);
+}

@@ -41,7 +41,8 @@ echo "Generating from marketing/config/products.json"
 node ./scripts/generate_marketing.js
 
 # ── Step 2: Copy and process pages with INCLUDE directives ──
-PAGES=("index.html" "products.html" "pricing.html" "privacy.html" "terms.html" "contact.html" "404.html")
+PAGES=("index.html" "products.html" "pricing.html" "privacy.html" "terms.html" "contact.html" "404.html" "meeting-translation.html")
+SUB_PAGES=("meeting-translation/ja-en.html" "meeting-translation/ja-zh.html" "en/meeting-translation.html" "zh-hans/meeting-translation.html")
 copied=0
 
 # Load template partials
@@ -69,6 +70,17 @@ open('$output_file', 'w').write(content)
 }
 
 for page in "${PAGES[@]}"; do
+  if [[ -f "marketing/pages/$page" ]]; then
+    process_includes "marketing/pages/$page" "marketing_public/$page"
+    echo "  Processed: marketing/pages/$page -> marketing_public/$page"
+    ((copied++))
+  fi
+done
+
+# ── Step 2b: Process sub-directory pages ──
+for page in "${SUB_PAGES[@]}"; do
+  dir=$(dirname "$page")
+  mkdir -p "marketing_public/$dir"
   if [[ -f "marketing/pages/$page" ]]; then
     process_includes "marketing/pages/$page" "marketing_public/$page"
     echo "  Processed: marketing/pages/$page -> marketing_public/$page"

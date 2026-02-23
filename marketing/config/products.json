@@ -36,6 +36,20 @@
       "og_image": "/assets/images/og-default.png",
       "status": "active",
       "sort_order": 1
+    },
+    {
+      "slug": "meeting-translation",
+      "name": "Meeting Translation",
+      "tagline": "対面の海外商談で、スマホ1台でリアルタイム翻訳。認識ズレゼロの合意形成を実現",
+      "description": "日英・日中の対面商談をリアルタイム翻訳でサポート。翻訳ログで合意内容を可視化し、「言った・言わない」をなくします。",
+      "features": [],
+      "cta_url": "/meeting-translation",
+      "cta_text": "詳しく見る",
+      "hero_image": "/assets/images/og-default.png",
+      "og_image": "/assets/images/og-default.png",
+      "status": "active",
+      "sort_order": 2,
+      "skipPageGeneration": true
     }
   ]
 }
