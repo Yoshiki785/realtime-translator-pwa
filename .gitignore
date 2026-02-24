@@ -45,5 +45,8 @@ scripts/poll_plan.sh
 tests/
 ops/tmp/
 
+# Launch gate verification raw logs (contain PII)
+proof/
+
 # local tool artifacts
 .claude/
