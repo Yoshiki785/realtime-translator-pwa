@@ -107,8 +107,17 @@
     demoView: function () {
       pushEvent('demo_view', 'engagement', 'view', 'demo-section');
     },
-    tryStart: function (productSlug) {
-      pushEvent('try_start', 'conversion', 'click', productSlug);
+    tryStart: function (productSlug, langPair) {
+      pushEvent('try_start', 'conversion', 'click', productSlug, undefined, {
+        lang_pair: langPair || '',
+        page: location.pathname
+      });
+    },
+    shareClick: function (langPair) {
+      pushEvent('share_click', 'engagement', 'click', 'share-log', undefined, {
+        lang_pair: langPair || '',
+        page: location.pathname
+      });
     }
   };
 })();

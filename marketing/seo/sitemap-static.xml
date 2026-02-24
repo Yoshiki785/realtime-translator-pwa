@@ -18,3 +18,28 @@
     <changefreq>yearly</changefreq>
     <priority>0.3</priority>
   </url>
+  <url>
+    <loc>https://lingoflow-ai.com/meeting-translation</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/meeting-translation/ja-en</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/meeting-translation/ja-zh</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/en/meeting-translation</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/zh-hans/meeting-translation</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>

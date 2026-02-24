@@ -72,6 +72,7 @@ const template = fs.readFileSync(TEMPLATE_PATH, 'utf8');
 fs.mkdirSync(path.join(OUT_DIR, 'products'), { recursive: true });
 
 products.forEach(product => {
+  if (product.skipPageGeneration) return;
   let page = template;
 
   const replacements = {
@@ -107,7 +108,10 @@ products.forEach(product => {
 // ── 2. Inject navigation links into header partial ──
 
 const navLinks = activeProducts
-  .map(p => `        <li><a href="/products/${p.slug}">${p.name}</a></li>`)
+  .map(p => {
+    const href = p.skipPageGeneration && p.cta_url ? p.cta_url : `/products/${p.slug}`;
+    return `        <li><a href="${href}">${p.name}</a></li>`;
+  })
   .join('\n');
 
 let headerContent = fs.readFileSync(HEADER_PARTIAL, 'utf8');
@@ -120,7 +124,10 @@ console.log('  Updated: _header.html nav links');
 
 let footerContent = fs.readFileSync(FOOTER_PARTIAL, 'utf8');
 const footerLinks = activeProducts
-  .map(p => `          <li><a href="/products/${p.slug}">${p.name}</a></li>`)
+  .map(p => {
+    const href = p.skipPageGeneration && p.cta_url ? p.cta_url : `/products/${p.slug}`;
+    return `          <li><a href="${href}">${p.name}</a></li>`;
+  })
   .join('\n');
 footerContent = replaceBlock(footerContent, 'FOOTER_PRODUCTS', footerLinks);
 fs.writeFileSync(FOOTER_PARTIAL, footerContent);
@@ -134,10 +141,11 @@ const productCards = products
     const badge = p.status === 'coming-soon'
       ? ' <span class="lp-badge lp-badge--coming-soon">Coming Soon</span>'
       : '';
+    const cardHref = p.skipPageGeneration && p.cta_url ? p.cta_url : `/products/${p.slug}`;
     return `        <article class="lp-product-card" data-animate="fade-up">
           <h3>${p.name}${badge}</h3>
           <p>${p.tagline}</p>
-          <a href="/products/${p.slug}" class="lp-link" data-analytics="cta_click" data-analytics-label="products-${p.slug}">Learn more &rarr;</a>
+          <a href="${cardHref}" class="lp-link" data-analytics="cta_click" data-analytics-label="products-${p.slug}">Learn more &rarr;</a>
         </article>`;
   }).join('\n');
 
@@ -149,10 +157,11 @@ console.log('  Updated: products.html product cards');
 // ── 5. Inject home page product cards ──
 
 const homeCards = activeProducts.map(p => {
+  const homeHref = p.skipPageGeneration && p.cta_url ? p.cta_url : `/products/${p.slug}`;
   return `        <article class="lp-product-card" data-animate="fade-up">
           <h3>${p.name}</h3>
           <p>${p.tagline}</p>
-          <a href="/products/${p.slug}" class="lp-link" data-analytics="cta_click" data-analytics-label="home-${p.slug}">Learn more &rarr;</a>
+          <a href="${homeHref}" class="lp-link" data-analytics="cta_click" data-analytics-label="home-${p.slug}">Learn more &rarr;</a>
         </article>`;
 }).join('\n');
 
@@ -171,6 +180,7 @@ if (fs.existsSync(STATIC_SITEMAP)) {
 }
 
 const productEntries = activeProducts
+  .filter(p => !p.skipPageGeneration)
   .map(p => `  <url>
     <loc>${SITE_URL}/products/${p.slug}</loc>
     <lastmod>${today}</lastmod>
