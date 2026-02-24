@@ -82,7 +82,7 @@ node -e "
   const p = require('./marketing/config/products.json');
   const fs = require('fs');
   let missing = 0;
-  p.products.filter(x => x.status === 'active').forEach(prod => {
+  p.products.filter(x => x.status === 'active' && !x.skipPageGeneration).forEach(prod => {
     const filePath = 'marketing_public/products/' + prod.slug + '.html';
     if (!fs.existsSync(filePath)) {
       console.error('MISSING PRODUCT PAGE: ' + filePath);
