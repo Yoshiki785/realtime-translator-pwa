@@ -50,8 +50,8 @@ check_file() {
   echo -e "==========================================${NC}"
 
   if [ ! -f "$APP_JS" ]; then
-    echo -e "${RED}ERROR: $APP_JS not found${NC}"
-    return 1
+    echo -e "${YELLOW}SKIP: $APP_JS not found (gitignored deploy artifact)${NC}"
+    return 0
   fi
 
   # 1. Check REALTIME_CALLS_URL is defined correctly
