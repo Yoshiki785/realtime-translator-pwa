@@ -213,7 +213,7 @@ a:hover {
   transform: rotate(180deg);
 }
 
-.lp-lang-dropdown {
+.lp-lang-switcher .lp-lang-dropdown {
   display: none;
   position: absolute;
   top: calc(100% + var(--lp-space-2));
@@ -230,7 +230,7 @@ a:hover {
   box-shadow: var(--lp-shadow-md);
 }
 
-.lp-lang-dropdown.is-open {
+.lp-lang-switcher .lp-lang-dropdown.is-open {
   display: block;
 }
 

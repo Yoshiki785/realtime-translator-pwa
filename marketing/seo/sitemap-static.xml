@@ -43,3 +43,55 @@
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
   </url>
+  <!-- ja pages -->
+  <url>
+    <loc>https://lingoflow-ai.com/ja</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/ja/products</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/ja/pricing</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/ja/contact</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/ja/products/realtime-translator</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <!-- zh-hans pages -->
+  <url>
+    <loc>https://lingoflow-ai.com/zh-hans</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/zh-hans/products</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/zh-hans/pricing</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/zh-hans/contact</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/zh-hans/products/realtime-translator</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>

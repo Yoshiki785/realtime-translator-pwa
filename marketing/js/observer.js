@@ -112,6 +112,23 @@
 
   var alternates = getLangAlternates();
 
+  // Fallback: if no hreflang alternates, derive URLs from path
+  if (Object.keys(alternates).length === 0) {
+    var parts = location.pathname.split('/').filter(Boolean);
+    // Strip explicit language prefixes
+    if (parts[0] === 'en' || parts[0] === 'ja' || parts[0] === 'zh-hans') parts.shift();
+    // Drop meeting-translation child suffix like "ja-en" / "ja-zh"
+    if (parts.length && /^ja-(en|zh)$/i.test(parts[parts.length - 1])) parts.pop();
+    var slug = parts.join('/').replace(/^\/+|\/+$/g, '');
+    // Insurance: prevent accidental double prefix
+    if (slug.startsWith('ja/')) slug = slug.replace(/^ja\//, '');
+    if (slug.startsWith('zh-hans/')) slug = slug.replace(/^zh-hans\//, '');
+    if (slug.startsWith('en/')) slug = slug.replace(/^en\//, '');
+    alternates['en'] = slug ? '/' + slug : '/';
+    alternates['ja'] = slug ? '/ja/' + slug : '/ja';
+    alternates['zh-hans'] = slug ? '/zh-hans/' + slug : '/zh-hans';
+  }
+
   function initSwitcherUI() {
     // Update desktop button label to current language
     var langCurrent = document.querySelector('.lp-lang-current');
