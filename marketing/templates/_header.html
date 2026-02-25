@@ -1,3 +1,20 @@
+<script>
+(function(){var K='lf_lang',S='lf_lang_redirected';try{
+var C={en:'en',ja:'ja','zh-hans':'zh-Hans'};
+function N(l){return C[String(l).toLowerCase()]||l;}
+var cl=document.documentElement.lang;
+var sl=localStorage.getItem(K);
+var ls=document.querySelectorAll('link[rel="alternate"][hreflang]');
+var alt={},n=0;
+for(var i=0;i<ls.length;i++){var h=ls[i].getAttribute('hreflang');if(h&&h.toLowerCase()!=='x-default'){alt[h.toLowerCase()]=ls[i].href;n++;}}
+if(n<2){if(!sl)localStorage.setItem(K,N(cl));return;}
+if(!sl){localStorage.setItem(K,N(cl));return;}
+if(sl.toLowerCase()===cl.toLowerCase())return;
+var url=alt[sl.toLowerCase()];if(!url)return;
+if(sessionStorage.getItem(S)==='true')return;
+sessionStorage.setItem(S,'true');location.replace(url);
+}catch(e){}})();
+</script>
 <header class="lp-header" role="banner">
   <div class="lp-container">
     <a href="/" class="lp-logo" aria-label="LingoFlow Home">LingoFlow</a>
@@ -10,6 +27,17 @@
         <li><a href="/products">Products</a></li>
         <li><a href="/pricing">Pricing</a></li>
         <li><a href="/contact">Contact</a></li>
+        <li class="lp-lang-switcher">
+          <button class="lp-lang-btn" aria-expanded="false" aria-haspopup="listbox" aria-label="Select language">
+            <span class="lp-lang-current">EN</span>
+            <svg class="lp-lang-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <ul class="lp-lang-dropdown" role="listbox" aria-label="Language options">
+            <li role="option"><a href="#" data-lang="en" class="lp-lang-option">EN</a></li>
+            <li role="option"><a href="#" data-lang="ja" class="lp-lang-option">日本語</a></li>
+            <li role="option"><a href="#" data-lang="zh-Hans" class="lp-lang-option">简体中文</a></li>
+          </ul>
+        </li>
         <li><a href="https://app.lingoflow-ai.com" class="lp-nav-cta" data-analytics="cta_click" data-analytics-label="header-try-app">Try Free</a></li>
       </ul>
     </nav>
@@ -28,5 +56,13 @@
     <li><a href="/pricing">Pricing</a></li>
     <li><a href="/contact">Contact</a></li>
     <li><a href="https://app.lingoflow-ai.com" data-analytics="cta_click" data-analytics-label="mobile-try-app">Try Free</a></li>
+    <li class="lp-lang-switcher-mobile">
+      <span class="lp-lang-mobile-label">Language</span>
+      <div class="lp-lang-mobile-options" role="listbox" aria-label="Language options">
+        <a href="#" data-lang="en" class="lp-lang-option-mobile">EN</a>
+        <a href="#" data-lang="ja" class="lp-lang-option-mobile">日本語</a>
+        <a href="#" data-lang="zh-Hans" class="lp-lang-option-mobile">简体中文</a>
+      </div>
+    </li>
   </ul>
 </div>

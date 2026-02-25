@@ -85,4 +85,124 @@
       toggle.setAttribute('aria-expanded', String(isOpen));
     });
   }
+
+  // ── Language Switcher ──
+  var LANG_KEY = 'lf_lang';
+  var LANG_SESSION = 'lf_lang_redirected';
+  var LANG_LABELS = { en: 'EN', ja: '日本語', 'zh-hans': '简体中文' };
+  // Canonical lang codes stored in lf_lang: "en" | "ja" | "zh-Hans"
+  var LANG_CANONICAL = { en: 'en', ja: 'ja', 'zh-hans': 'zh-Hans' };
+  function normalizeLang(lang) {
+    if (!lang) return lang;
+    return LANG_CANONICAL[String(lang).toLowerCase()] || lang;
+  }
+  var currentLang = document.documentElement.lang;
+
+  function getLangAlternates() {
+    var links = document.querySelectorAll('link[rel="alternate"][hreflang]');
+    var map = {};
+    for (var i = 0; i < links.length; i++) {
+      var h = links[i].getAttribute('hreflang');
+      if (h && h.toLowerCase() !== 'x-default') {
+        map[h.toLowerCase()] = links[i].href;
+      }
+    }
+    return map;
+  }
+
+  var alternates = getLangAlternates();
+
+  function initSwitcherUI() {
+    // Update desktop button label to current language
+    var langCurrent = document.querySelector('.lp-lang-current');
+    if (langCurrent) {
+      langCurrent.textContent = LANG_LABELS[currentLang.toLowerCase()] || currentLang.toUpperCase();
+    }
+
+    // Mark active option and set hrefs
+    var allOptions = document.querySelectorAll('.lp-lang-option, .lp-lang-option-mobile');
+    for (var i = 0; i < allOptions.length; i++) {
+      var opt = allOptions[i];
+      var lang = opt.getAttribute('data-lang');
+      if (!lang) continue;
+
+      if (lang.toLowerCase() === currentLang.toLowerCase()) {
+        opt.classList.add('is-active');
+        opt.setAttribute('aria-selected', 'true');
+      }
+
+      if (alternates[lang.toLowerCase()]) {
+        opt.href = alternates[lang.toLowerCase()];
+      } else if (lang.toLowerCase() === currentLang.toLowerCase()) {
+        opt.href = window.location.href;
+      }
+    }
+
+    // Desktop dropdown toggle
+    var langBtn = document.querySelector('.lp-lang-btn');
+    if (langBtn) {
+      var dropdown = langBtn.parentElement.querySelector('.lp-lang-dropdown');
+
+      langBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var isOpen = dropdown.classList.toggle('is-open');
+        langBtn.setAttribute('aria-expanded', String(isOpen));
+      });
+
+      document.addEventListener('click', function () {
+        dropdown.classList.remove('is-open');
+        langBtn.setAttribute('aria-expanded', 'false');
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') {
+          dropdown.classList.remove('is-open');
+          langBtn.setAttribute('aria-expanded', 'false');
+          langBtn.focus();
+        }
+      });
+    }
+  }
+
+  // Handle language option clicks (delegated)
+  document.addEventListener('click', function (e) {
+    var opt = e.target.closest('.lp-lang-option, .lp-lang-option-mobile');
+    if (!opt) return;
+
+    var lang = opt.getAttribute('data-lang');
+    if (!lang) return;
+
+    // Save preference
+    try {
+      localStorage.setItem(LANG_KEY, normalizeLang(lang));
+      sessionStorage.removeItem(LANG_SESSION);
+    } catch (ex) { /* private browsing */ }
+
+    // Analytics event
+    if (window.__lpAnalytics && window.__lpAnalytics.pushEvent) {
+      window.__lpAnalytics.pushEvent('lang_switch', 'engagement', 'click', lang);
+    }
+
+    // Same language — just close dropdown
+    if (lang.toLowerCase() === currentLang.toLowerCase()) {
+      e.preventDefault();
+      var dd = document.querySelector('.lp-lang-dropdown');
+      if (dd) dd.classList.remove('is-open');
+      return;
+    }
+
+    // No alternate page — save pref only
+    if (!alternates[lang.toLowerCase()]) {
+      e.preventDefault();
+      var cur = document.querySelector('.lp-lang-current');
+      if (cur) cur.textContent = LANG_LABELS[lang.toLowerCase()] || lang.toUpperCase();
+      var dd2 = document.querySelector('.lp-lang-dropdown');
+      if (dd2) dd2.classList.remove('is-open');
+      return;
+    }
+
+    // Alternate exists — let the <a href> navigate naturally
+  });
+
+  initSwitcherUI();
 })();
