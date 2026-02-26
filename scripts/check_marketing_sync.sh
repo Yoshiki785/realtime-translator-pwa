@@ -98,7 +98,7 @@ if [[ $? -ne 0 ]]; then
 fi
 
 # ── Check that INCLUDE placeholders are fully resolved ──
-for html_file in marketing_public/*.html marketing_public/products/*.html marketing_public/ja/*.html marketing_public/ja/products/*.html marketing_public/zh-hans/*.html marketing_public/zh-hans/products/*.html; do
+for html_file in marketing_public/*.html marketing_public/products/*.html marketing_public/ja/*.html marketing_public/ja/products/*.html marketing_public/zh-hans/*.html marketing_public/zh-hans/products/*.html marketing_public/vi/*.html; do
   if [[ -f "$html_file" ]] && grep -q '<!-- INCLUDE:' "$html_file"; then
     echo "UNRESOLVED INCLUDE in $html_file"
     drift_found=1

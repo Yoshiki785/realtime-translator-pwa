@@ -1,6 +1,6 @@
 <script>
 (function(){var K='lf_lang',S='lf_lang_redirected';try{
-var C={en:'en',ja:'ja','zh-hans':'zh-Hans'};
+var C={en:'en',ja:'ja','zh-hans':'zh-Hans',vi:'vi'};
 function N(l){return C[String(l).toLowerCase()]||l;}
 var cl=document.documentElement.lang;
 var sl=localStorage.getItem(K);
@@ -36,6 +36,7 @@ sessionStorage.setItem(S,'true');location.replace(url);
             <li role="option"><a href="#" data-lang="en" class="lp-lang-option">EN</a></li>
             <li role="option"><a href="#" data-lang="ja" class="lp-lang-option">日本語</a></li>
             <li role="option"><a href="#" data-lang="zh-Hans" class="lp-lang-option">简体中文</a></li>
+            <li role="option"><a href="#" data-lang="vi" class="lp-lang-option">Tiếng Việt</a></li>
           </ul>
         </li>
         <li><a href="https://app.lingoflow-ai.com" class="lp-nav-cta" data-analytics="cta_click" data-analytics-label="header-try-app">Try Free</a></li>
@@ -62,6 +63,7 @@ sessionStorage.setItem(S,'true');location.replace(url);
         <a href="#" data-lang="en" class="lp-lang-option-mobile">EN</a>
         <a href="#" data-lang="ja" class="lp-lang-option-mobile">日本語</a>
         <a href="#" data-lang="zh-Hans" class="lp-lang-option-mobile">简体中文</a>
+        <a href="#" data-lang="vi" class="lp-lang-option-mobile">Tiếng Việt</a>
       </div>
     </li>
   </ul>
@@ -70,13 +72,14 @@ sessionStorage.setItem(S,'true');location.replace(url);
 (function(){
   function buildFallback(){
     var parts=location.pathname.split('/').filter(Boolean);
-    if(parts[0]==='en'||parts[0]==='ja'||parts[0]==='zh-hans')parts.shift();
+    if(parts[0]==='en'||parts[0]==='ja'||parts[0]==='zh-hans'||parts[0]==='vi')parts.shift();
     if(parts.length&&/^ja-(en|zh)$/i.test(parts[parts.length-1]))parts.pop();
     var slug=parts.join('/').replace(/^\/+|\/+$/g,'');
     return{
       en:slug?'/'+slug:'/',
       ja:slug?'/ja/'+slug:'/ja',
-      'zh-hans':slug?'/zh-hans/'+slug:'/zh-hans'
+      'zh-hans':slug?'/zh-hans/'+slug:'/zh-hans',
+      vi:slug?'/vi/'+slug:'/vi'
     };
   }
   var alt={};

@@ -89,9 +89,9 @@
   // ── Language Switcher ──
   var LANG_KEY = 'lf_lang';
   var LANG_SESSION = 'lf_lang_redirected';
-  var LANG_LABELS = { en: 'EN', ja: '日本語', 'zh-hans': '简体中文' };
-  // Canonical lang codes stored in lf_lang: "en" | "ja" | "zh-Hans"
-  var LANG_CANONICAL = { en: 'en', ja: 'ja', 'zh-hans': 'zh-Hans' };
+  var LANG_LABELS = { en: 'EN', ja: '日本語', 'zh-hans': '简体中文', vi: 'Tiếng Việt' };
+  // Canonical lang codes stored in lf_lang: "en" | "ja" | "zh-Hans" | "vi"
+  var LANG_CANONICAL = { en: 'en', ja: 'ja', 'zh-hans': 'zh-Hans', vi: 'vi' };
   function normalizeLang(lang) {
     if (!lang) return lang;
     return LANG_CANONICAL[String(lang).toLowerCase()] || lang;
@@ -116,7 +116,7 @@
   if (Object.keys(alternates).length === 0) {
     var parts = location.pathname.split('/').filter(Boolean);
     // Strip explicit language prefixes
-    if (parts[0] === 'en' || parts[0] === 'ja' || parts[0] === 'zh-hans') parts.shift();
+    if (parts[0] === 'en' || parts[0] === 'ja' || parts[0] === 'zh-hans' || parts[0] === 'vi') parts.shift();
     // Drop meeting-translation child suffix like "ja-en" / "ja-zh"
     if (parts.length && /^ja-(en|zh)$/i.test(parts[parts.length - 1])) parts.pop();
     var slug = parts.join('/').replace(/^\/+|\/+$/g, '');
@@ -127,6 +127,7 @@
     alternates['en'] = slug ? '/' + slug : '/';
     alternates['ja'] = slug ? '/ja/' + slug : '/ja';
     alternates['zh-hans'] = slug ? '/zh-hans/' + slug : '/zh-hans';
+    alternates['vi'] = slug ? '/vi/' + slug : '/vi';
   }
 
   function initSwitcherUI() {

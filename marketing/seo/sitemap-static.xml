@@ -95,3 +95,29 @@
     <changefreq>monthly</changefreq>
     <priority>0.6</priority>
   </url>
+  <!-- vi pages -->
+  <url>
+    <loc>https://lingoflow-ai.com/vi</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/vi/products</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/vi/pricing</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/vi/contact</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+  <url>
+    <loc>https://lingoflow-ai.com/vi/meeting-translation</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+  </url>
