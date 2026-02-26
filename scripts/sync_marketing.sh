@@ -41,8 +41,8 @@ echo "Generating from marketing/config/products.json"
 node ./scripts/generate_marketing.js
 
 # ── Step 2: Copy and process pages with INCLUDE directives ──
-PAGES=("index.html" "products.html" "pricing.html" "privacy.html" "terms.html" "contact.html" "404.html" "meeting-translation.html" "ja.html" "zh-hans.html")
-SUB_PAGES=("meeting-translation/ja-en.html" "meeting-translation/ja-zh.html" "en/meeting-translation.html" "zh-hans/meeting-translation.html" "ja/products.html" "ja/pricing.html" "ja/contact.html" "ja/products/realtime-translator.html" "zh-hans/products.html" "zh-hans/pricing.html" "zh-hans/contact.html" "zh-hans/products/realtime-translator.html")
+PAGES=("index.html" "products.html" "pricing.html" "privacy.html" "terms.html" "contact.html" "404.html" "meeting-translation.html" "ja.html" "zh-hans.html" "vi.html")
+SUB_PAGES=("meeting-translation/ja-en.html" "meeting-translation/ja-zh.html" "en/meeting-translation.html" "zh-hans/meeting-translation.html" "ja/products.html" "ja/pricing.html" "ja/contact.html" "ja/products/realtime-translator.html" "zh-hans/products.html" "zh-hans/pricing.html" "zh-hans/contact.html" "zh-hans/products/realtime-translator.html" "vi/products.html" "vi/pricing.html" "vi/contact.html" "vi/meeting-translation.html")
 copied=0
 
 # Load template partials
