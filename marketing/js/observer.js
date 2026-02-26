@@ -208,8 +208,10 @@
       return;
     }
 
-    // No alternate page — save pref only
+    // No alternate page — allow if href already resolved (inline fallback)
     if (!alternates[lang.toLowerCase()]) {
+      var hrefAttr = opt.getAttribute('href');
+      if (hrefAttr && hrefAttr !== '#' && hrefAttr.charAt(0) !== '#') return;
       e.preventDefault();
       var cur = document.querySelector('.lp-lang-current');
       if (cur) cur.textContent = LANG_LABELS[lang.toLowerCase()] || lang.toUpperCase();
