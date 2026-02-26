@@ -52,9 +52,22 @@ const STRINGS = {
     total: '合計:',
     nextReset: '次回リセット:',
     today: '本日:',
+    dailyRemaining: '本日残り:',
     thisMonth: '今月:',
     remaining: '残り:',
     minutes: '分',
+    jobFmt: 'ジョブ: {used}/{limit}回',
+    dailyJobs: '今日のジョブ:',
+    times: '回',
+    noLimit: '制限なし',
+    planLimitsLabel: 'プラン上限:',
+    retentionPeriod: '保持期間:',
+    days: '日',
+    ticketAddon: '追加購入:',
+    monthlyLimitFmt: '月間{min}分',
+    dailyLimitFmt: '1日{min}分',
+    noDailyLimit: '日次制限なし',
+    ticketPacksFmt: '可（{count}種・{min}〜{max}分）',
     glossaryLabel: '辞書（用語集）',
     glossaryHint: '1行1エントリ：source=target',
     takeoverTitle: '別端末で使用中です',
@@ -192,9 +205,22 @@ const STRINGS = {
     total: 'Total:',
     nextReset: 'Next Reset:',
     today: 'Today:',
+    dailyRemaining: 'Today remaining:',
     thisMonth: 'Month:',
     remaining: 'Remaining:',
     minutes: 'min',
+    jobFmt: 'Jobs: {used}/{limit}',
+    dailyJobs: 'Jobs today:',
+    times: '',
+    noLimit: 'Unlimited',
+    planLimitsLabel: 'Plan limits:',
+    retentionPeriod: 'Retention:',
+    days: ' days',
+    ticketAddon: 'Add-on:',
+    monthlyLimitFmt: '{min}min/mo',
+    dailyLimitFmt: '{min}min/day',
+    noDailyLimit: 'No daily limit',
+    ticketPacksFmt: '({count} packs, {min}–{max}min)',
     glossaryLabel: 'Glossary',
     glossaryHint: 'One per line: source=target',
     takeoverTitle: 'Translation is active elsewhere',
@@ -332,9 +358,22 @@ const STRINGS = {
     total: 'Total:',
     nextReset: 'Next Reset:',
     today: 'Today:',
+    dailyRemaining: 'Còn lại hôm nay:',
     thisMonth: 'Month:',
     remaining: 'Remaining:',
     minutes: 'min',
+    jobFmt: 'Công việc: {used}/{limit}',
+    dailyJobs: 'Công việc hôm nay:',
+    times: '',
+    noLimit: 'Không giới hạn',
+    planLimitsLabel: 'Giới hạn gói:',
+    retentionPeriod: 'Lưu giữ:',
+    days: ' ngày',
+    ticketAddon: 'Mua thêm:',
+    monthlyLimitFmt: '{min}phút/tháng',
+    dailyLimitFmt: '{min}phút/ngày',
+    noDailyLimit: 'Không giới hạn hàng ngày',
+    ticketPacksFmt: '({count} gói, {min}–{max}phút)',
     glossaryLabel: 'Glossary',
     glossaryHint: 'One per line: source=target',
     takeoverTitle: 'Translation is active elsewhere',
@@ -496,9 +535,22 @@ const STRINGS = {
     total: '合计:',
     nextReset: '下次重置:',
     today: '今日:',
+    dailyRemaining: '今日剩余:',
     thisMonth: '本月:',
     remaining: '剩余:',
     minutes: '分钟',
+    jobFmt: '任务: {used}/{limit}次',
+    dailyJobs: '今日任务:',
+    times: '次',
+    noLimit: '无限制',
+    planLimitsLabel: '计划上限:',
+    retentionPeriod: '保留期:',
+    days: '天',
+    ticketAddon: '追加购买:',
+    monthlyLimitFmt: '月{min}分钟',
+    dailyLimitFmt: '每日{min}分钟',
+    noDailyLimit: '无每日限制',
+    ticketPacksFmt: '可（{count}种・{min}〜{max}分钟）',
     glossaryLabel: '词汇表',
     glossaryHint: '每行一条：source=target',
     takeoverTitle: '其他设备正在使用',
@@ -2555,19 +2607,19 @@ const updateQuotaInfo = () => {
     els.quotaInfo.textContent = '';
     return;
   }
+  const m = t('minutes');
   const totalText =
     typeof state.quota.totalAvailableThisMonth === 'number'
-      ? `${formatMinutes(state.quota.totalAvailableThisMonth)}分`
-      : '–分';
+      ? `${formatMinutes(state.quota.totalAvailableThisMonth)}${m}`
+      : `–${m}`;
   if (state.quota.plan === 'free' && typeof state.quota.dailyRemainingSeconds === 'number') {
-    const dailyText = `${formatMinutes(state.quota.dailyRemainingSeconds)}分`;
-    // ジョブ数表示を追加
+    const dailyText = `${formatMinutes(state.quota.dailyRemainingSeconds)}${m}`;
     const jobUsed = state.quota.dayJobUsed ?? 0;
     const jobLimit = state.quota.dayJobLimit ?? 10;
-    const jobText = `ジョブ: ${jobUsed}/${jobLimit}回`;
-    els.quotaInfo.textContent = `本日: ${dailyText} ${jobText} / 今月: ${totalText}`;
+    const jobText = t('jobFmt').replace('{used}', jobUsed).replace('{limit}', jobLimit);
+    els.quotaInfo.textContent = `${t('today')} ${dailyText} ${jobText} / ${t('thisMonth')} ${totalText}`;
   } else {
-    els.quotaInfo.textContent = `残り: ${totalText}`;
+    els.quotaInfo.textContent = `${t('remaining')} ${totalText}`;
   }
 };
 
@@ -2615,9 +2667,9 @@ const formatPlanLimitsText = (limits) => {
   if (!limits || !Number.isInteger(limits.monthlyMinutes) || limits.monthlyMinutes <= 0) return '';
   const dailyText =
     Number.isInteger(limits.dailyMinutes) && limits.dailyMinutes > 0
-      ? `1日${limits.dailyMinutes}分`
-      : '日次制限なし';
-  return `月間${limits.monthlyMinutes}分 / ${dailyText}`;
+      ? t('dailyLimitFmt').replace('{min}', limits.dailyMinutes)
+      : t('noDailyLimit');
+  return `${t('monthlyLimitFmt').replace('{min}', limits.monthlyMinutes)} / ${dailyText}`;
 };
 
 const getTicketDisplayFromPricingConfig = (plan) => {
@@ -2696,7 +2748,7 @@ const formatTicketPolicyText = (plan) => {
   const packs = getVisibleTicketPacksFromPricingConfig();
   const summary = summarizeTicketPacks(packs);
   if (!summary) return display;
-  return `可（${summary.count}種・${summary.minMinutes}〜${summary.maxMinutes}分）`;
+  return t('ticketPacksFmt').replace('{count}', summary.count).replace('{min}', summary.minMinutes).replace('{max}', summary.maxMinutes);
 };
 
 const loadPricingConfig = async () => {
@@ -2741,22 +2793,24 @@ const updateQuotaBreakdown = () => {
   const retentionDays = getRetentionDaysFromPricingConfig(q.plan) ?? q.retentionDays ?? 7;
   const planLimitsText = formatPlanLimitsText(getPlanLimitsFromPricingConfig(q.plan));
   const ticketPolicyText = formatTicketPolicyText(q.plan);
+  const m = t('minutes');
+  const ul = t('noLimit');
   const ticketBalanceText =
     q.plan === 'pro' && ticketPolicyText
-      ? `${ticketMin}分（追加購入: ${ticketPolicyText}）`
-      : `${ticketMin}分`;
+      ? `${ticketMin}${m}（${t('ticketAddon')} ${ticketPolicyText}）`
+      : `${ticketMin}${m}`;
   const nextReset = formatNextReset(q.nextResetAt);
 
   const rows = [
-    ['プラン:', planLabel],
-    ['本日残り:', q.plan === 'free' ? `${dayMin}分` : '制限なし'],
-    ['今日のジョブ:', q.plan === 'free' ? `${jobUsed}/${jobLimit}回` : '制限なし'],
-    ['月間残り:', `${monthlyMin}分`],
-    ['チケット残高:', ticketBalanceText],
-    ['合計:', `${totalMin}分`, 'total'],
-    ...(planLimitsText ? [['プラン上限:', planLimitsText]] : []),
-    ['保持期間:', `${retentionDays}日`],
-    ['次回リセット:', nextReset, 'reset'],
+    [t('planLabel'), planLabel],
+    [t('dailyRemaining'), q.plan === 'free' ? `${dayMin}${m}` : ul],
+    [t('dailyJobs'), q.plan === 'free' ? `${jobUsed}/${jobLimit}${t('times')}` : ul],
+    [t('monthlyRemaining'), `${monthlyMin}${m}`],
+    [t('ticketBalance'), ticketBalanceText],
+    [t('total'), `${totalMin}${m}`, 'total'],
+    ...(planLimitsText ? [[t('planLimitsLabel'), planLimitsText]] : []),
+    [t('retentionPeriod'), `${retentionDays}${t('days')}`],
+    [t('nextReset'), nextReset, 'reset'],
   ];
 
   rows.forEach(([label, value, extraClass]) => {
