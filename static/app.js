@@ -283,6 +283,146 @@ const STRINGS = {
     langResetNotice: 'Language auto-detection restarted.',
     langUncertainHint: 'Language is unclear. Choosing Japanese/English/Chinese improves stability.',
   },
+  vi: {
+    login: 'Login',
+    logout: 'Logout',
+    settings: 'Settings',
+    usageStatus: 'Usage',
+    save: 'Save',
+    close: 'Close',
+    transcriptLog: 'Transcript',
+    translationLog: 'Translation',
+    historyCreatedLabel: 'Created: ',
+    historyLangLabel: 'Languages: ',
+    historyDurationLabel: 'Duration: ',
+    historyUtterancesLabel: 'Utterances: ',
+    historyExpired: 'This entry has expired and cannot be displayed.',
+    historyEmptyFiltered: 'Expired history entries are hidden.',
+    historyNoOriginal: '(no original)',
+    historyNoTranslation: '(no translation)',
+    historyEditTitle: 'Edit title',
+    historyTitleSaved: 'Title saved',
+    historyTitleError: 'Failed to save title',
+    historyTitleTooLong: 'Title must be 80 characters or less',
+    historyTitleRequired: 'Please enter a title',
+    historyTitleInvalidChars: 'Title contains invalid characters',
+    historySearchPlaceholder: 'Search utterances…',
+    historySearchClear: 'Clear search',
+    historySearchNoResults: 'No matching history',
+    historySearchCount: '{count} match(es)',
+    preset: 'Preset:',
+    presetFast: 'Fast',
+    presetBalanced: 'Balanced',
+    presetStable: 'Stable',
+    uiLangLabel: 'Display Language',
+    inputLangLabel: 'Input Language',
+    outputLangLabel: 'Output Language',
+    langAuto: 'Auto-detect',
+    errorFirebaseInit: 'Firebase initialization failed. Please check configuration.',
+    errorLoginRequired: 'Login required',
+    errorLoginFailed: 'Login failed: ',
+    errorLogoutFailed: 'Logout failed: ',
+    errorTranslation: 'Translation failed',
+    errorQuotaCheck: 'Failed to check available time. Please try again later.',
+    errorMonthlyExhausted: 'No remaining time this month.',
+    errorDailyLimit: 'Daily limit (10 min) reached for Free plan.',
+    planLabel: 'Plan:',
+    monthlyRemaining: 'Monthly:',
+    ticketBalance: 'Tickets:',
+    total: 'Total:',
+    nextReset: 'Next Reset:',
+    today: 'Today:',
+    thisMonth: 'Month:',
+    remaining: 'Remaining:',
+    minutes: 'min',
+    glossaryLabel: 'Glossary',
+    glossaryHint: 'One per line: source=target',
+    takeoverTitle: 'Translation is active elsewhere',
+    takeoverMessage: 'Another device is translating. Please stop it there, then start here.',
+    takeoverStart: 'Start on this device (stop others)',
+    takeoverKeep: 'Close',
+    upgradeToPro: 'Upgrade to Pro',
+    upgrading: 'Processing...',
+    billingSuccess: 'Upgrade complete!',
+    billingPending: 'Applying plan...',
+    billingSyncDelayed: 'Sync is taking longer. Please reload in a moment.',
+    billingCancelled: 'Cancelled',
+    billingError: 'An error occurred',
+    alreadyPro: 'Pro plan active',
+    manageSubscription: 'Manage Subscription',
+    buyTicket: 'Buy Add-on',
+    buyTicketProOnly: 'Buy Add-on (Pro only)',
+    resyncQuota: 'Resync',
+    resyncInProgress: 'Resyncing…',
+    resyncFailed: 'Resync failed',
+    resyncSuccess: 'Quota info updated',
+    proRequiredHint: 'Available for Pro plans only. Please upgrade.',
+    purchasing: 'Purchasing...',
+    ticketSuccess: 'Ticket purchased!',
+    ticketCancelled: 'Purchase cancelled',
+    ticketSelectTitle: 'Select ticket pack',
+    ticketCheckoutError: 'Failed to start checkout',
+    proRequired: 'Pro only',
+    billingStatusFree: 'Free Plan',
+    billingStatusPro: 'Pro Plan',
+    billingStatusCanceling: 'Canceling (valid until {date})',
+    billingStatusPastDue: '⚠️ Payment overdue. Please update your payment method.',
+    billingStatusActive: 'Active (renews: {date})',
+    companyInfo: 'Company Info',
+    companyNote: '* For billing & cancellation, use "Manage Subscription"',
+    companyName: 'Company Name',
+    department: 'Department',
+    position: 'Position',
+    companyAddress: 'Address',
+    postalCode: 'Postal Code',
+    country: 'Country',
+    taxIdLabel: 'Tax ID Type',
+    taxIdValue: 'Tax ID',
+    saveCompany: 'Save',
+    editCompany: 'Edit Company Info',
+    companySaved: 'Saved',
+    companySavedWithStripe: 'Saved (Stripe synced)',
+    companySavedStripeSkipped: 'Saved (Stripe not synced)',
+    companySaveError: 'Failed to save',
+    errorPromptInjection: 'Invalid input pattern detected. Please check your input.',
+    errorNoTextToSummarize: 'No text to summarize',
+    errorSummaryFailed: 'Failed to generate summary',
+    errorInputTooLong: 'Input is too long (exceeded limit)',
+    networkDisconnected: 'Connection lost. Your text is saved. Please reconnect and press Start again.',
+    errorRateLimit: 'Rate limited. Please wait and try again.',
+    errorServerError: 'Server error. Please try again later.',
+    pricingPlan: 'Pricing & Plans',
+    privacyPolicy: 'Privacy Policy',
+    termsOfService: 'Terms of Service',
+    contact: 'Contact',
+    contactForm: 'Contact Form',
+    support: 'Legal & Support',
+    contactResponseSla: 'We usually reply within 3 business days.',
+    buildLabel: 'Build',
+    forceUpdate: 'Get Latest',
+    forceUpdateRunning: 'Updating…',
+    forceUpdateFailed: 'Update Failed',
+    copyDiagnostics: 'Copy Diagnostics',
+    diagnosticsCopied: 'Diagnostics copied',
+    diagnosticsCopyFailed: 'Copy failed',
+    // STT quality i18n
+    vadPresetLabel: 'Environment Preset',
+    vadPresetQuiet: 'Quiet (meeting room)',
+    vadPresetNormal: 'Normal',
+    vadPresetNoisy: 'Noisy (cafe, etc.)',
+    vadPresetCustom: 'Custom (manual)',
+    noiseReductionLabel: 'Noise Reduction',
+    noiseReductionAuto: 'Auto (API default)',
+    noiseReductionNearField: 'Standard (Near-field mic)',
+    noiseReductionFarField: 'High (Far-field mic)',
+    noiseReductionOff: 'Off',
+    langDetecting: 'Language: Detecting…',
+    langLocked: 'Language: Locked to {lang}',
+    langUncertain: 'Language: Uncertain',
+    langLockedNotice: 'Locked language to {lang}. (Tap to re-detect)',
+    langResetNotice: 'Language auto-detection restarted.',
+    langUncertainHint: 'Language is unclear. Choosing Japanese/English/Chinese improves stability.',
+  },
   'zh-Hans': {
     login: '登录',
     logout: '登出',
@@ -474,32 +614,48 @@ const STRINGS = {
 // Get current UI language
 const getUiLang = () => localStorage.getItem('uiLang') || 'ja';
 
+const getUiLocaleTag = () => {
+  const lang = getUiLang();
+  if (lang === 'en') return 'en-US';
+  if (lang === 'ja') return 'ja-JP';
+  if (lang === 'zh-Hans') return 'zh-CN';
+  if (lang === 'vi') return 'vi-VN';
+  return 'en-US';
+};
+
 // Translation function
 const t = (key) => {
   const lang = getUiLang();
-  return STRINGS[lang]?.[key] || STRINGS['ja'][key] || key;
+  return STRINGS[lang]?.[key] || STRINGS['en']?.[key] || STRINGS['ja']?.[key] || key;
 };
 
 // Localized language names for {lang} placeholder substitution
 const LANG_NAMES_I18N = {
-  ja: { ja: '日本語', en: '英語', zh: '中国語' },
-  en: { ja: 'Japanese', en: 'English', zh: 'Chinese' },
-  'zh-Hans': { ja: '日语', en: '英语', zh: '中文' },
+  ja: { ja: '日本語', en: '英語', zh: '中国語', vi: 'Tiếng Việt' },
+  en: { ja: 'Japanese', en: 'English', zh: 'Chinese', vi: 'Tiếng Việt' },
+  vi: { ja: 'Tiếng Nhật', en: 'Tiếng Anh', zh: 'Tiếng Trung', vi: 'Tiếng Việt' },
+  'zh-Hans': { ja: '日语', en: '英语', zh: '中文', vi: 'Tiếng Việt' },
 };
 
 // Apply i18n to all elements with data-i18n attribute
 const applyI18n = () => {
   document.querySelectorAll('[data-i18n]').forEach((el) => {
     const key = el.getAttribute('data-i18n');
-    if (key && STRINGS[getUiLang()]?.[key]) {
+    if (key) {
       el.textContent = t(key);
     }
   });
   // Also translate <option> elements with data-i18n-option attribute
   document.querySelectorAll('[data-i18n-option]').forEach((el) => {
     const key = el.getAttribute('data-i18n-option');
-    if (key && STRINGS[getUiLang()]?.[key]) {
+    if (key) {
       el.textContent = t(key);
+    }
+  });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((el) => {
+    const key = el.getAttribute('data-i18n-placeholder');
+    if (key) {
+      el.placeholder = t(key);
     }
   });
 };
@@ -550,7 +706,7 @@ const showTakeoverDialog = (activeSince = null) => {
   if (activeSince) {
     try {
       const sinceDate = new Date(activeSince);
-      const timeStr = sinceDate.toLocaleTimeString(getUiLang() === 'ja' ? 'ja-JP' : getUiLang() === 'zh' ? 'zh-CN' : 'en-US', { hour: '2-digit', minute: '2-digit' });
+      const timeStr = sinceDate.toLocaleTimeString(getUiLocaleTag(), { hour: '2-digit', minute: '2-digit' });
       messageText += `\n（開始時刻: ${timeStr}）`;
     } catch (_) { /* ignore parse errors */ }
   }
@@ -1869,7 +2025,7 @@ const buildSessionInstructions = (glossaryEntries, outputLang) => {
 
   // Add output language hint
   if (outputLang && outputLang !== 'auto') {
-    const langNames = { ja: 'Japanese', en: 'English', zh: 'Chinese' };
+    const langNames = { ja: 'Japanese', en: 'English', zh: 'Chinese', vi: 'Vietnamese' };
     const langName = langNames[outputLang] || outputLang;
     instructions += ` Translate into ${langName}.`;
   }
@@ -2231,7 +2387,7 @@ const copyDiagnosticsToClipboard = async () => {
 
 const runUiTestLines = () => {
   if (!isDebugMode()) return;
-  const timestamp = new Date().toLocaleTimeString();
+  const timestamp = new Date().toLocaleTimeString(getUiLocaleTag());
   const liveText = `[UI TEST ${timestamp}] layout check`;
   state.liveOriginal = liveText;
   updateLiveText();
@@ -2706,7 +2862,7 @@ const refreshBillingStatus = async () => {
       if (!isoString) return '';
       try {
         const d = new Date(isoString);
-        return d.toLocaleDateString(getUiLang() === 'en' ? 'en-US' : getUiLang() === 'zh-Hans' ? 'zh-CN' : 'ja-JP', {
+        return d.toLocaleDateString(getUiLocaleTag(), {
           year: 'numeric',
           month: 'short',
           day: 'numeric',
@@ -4596,6 +4752,17 @@ const ERROR_MESSAGES = {
     [ERROR_CATEGORY.SERVER_ERROR]: 'Server error. Please try again later.',
     [ERROR_CATEGORY.UNKNOWN]: 'Unexpected error. Please try again.',
   },
+  vi: {
+    [ERROR_CATEGORY.MIC_PERMISSION]: 'Microphone access denied. Please allow microphone access in browser settings.',
+    [ERROR_CATEGORY.TOKEN_AUTH]: 'Authentication error. Please log in again.',
+    [ERROR_CATEGORY.REALTIME_NEGOTIATE]: 'Failed to establish realtime connection. Please try again later.',
+    [ERROR_CATEGORY.ICE_FAILED]: 'Failed to establish communication path. Please check your network.',
+    [ERROR_CATEGORY.CONNECTION_TIMEOUT]: 'Connection timed out. Please check your network and try again.',
+    [ERROR_CATEGORY.NETWORK]: 'Network error. Please check your internet connection.',
+    [ERROR_CATEGORY.RATE_LIMIT]: 'Rate limited. Please wait and try again.',
+    [ERROR_CATEGORY.SERVER_ERROR]: 'Server error. Please try again later.',
+    [ERROR_CATEGORY.UNKNOWN]: 'Unexpected error. Please try again.',
+  },
   'zh-Hans': {
     [ERROR_CATEGORY.MIC_PERMISSION]: '麦克风权限被拒绝。请在浏览器设置中允许麦克风访问。',
     [ERROR_CATEGORY.TOKEN_AUTH]: '认证错误。请重新登录。',
@@ -4612,7 +4779,7 @@ const ERROR_MESSAGES = {
 // 言語に応じたエラーメッセージを取得
 const getErrorMessage = (category) => {
   const lang = getUiLang();
-  return ERROR_MESSAGES[lang]?.[category] || ERROR_MESSAGES.ja[category] || ERROR_MESSAGES.ja[ERROR_CATEGORY.UNKNOWN];
+  return ERROR_MESSAGES[lang]?.[category] || ERROR_MESSAGES.en[category] || ERROR_MESSAGES.ja[category] || ERROR_MESSAGES.ja[ERROR_CATEGORY.UNKNOWN];
 };
 
 const CONNECTION_TIMEOUT_MS = 10000; // 10秒でタイムアウト
@@ -6262,6 +6429,11 @@ document.addEventListener('DOMContentLoaded', () => {
         'Tap Start to begin real-time translation.',
         'Use Settings to change input/output languages.',
         'Logs will appear here automatically while you speak.',
+      ],
+      vi: [
+        'Nhấn Start để bắt đầu dịch thời gian thực.',
+        'Dùng Settings để thay đổi ngôn ngữ đầu vào/đầu ra.',
+        'Nhật ký sẽ tự động hiển thị tại đây khi bạn nói.',
       ],
       'zh-Hans': [
         '点击 Start 开始实时翻译。',

@@ -1161,7 +1161,7 @@ def parse_glossary_text(text: str | None) -> list[tuple[str, str]]:
 def build_session_instructions(glossary_entries: list[tuple[str, str]], output_lang: str | None) -> str:
     instructions = BASE_SESSION_INSTRUCTIONS
     if output_lang and output_lang != "auto":
-        lang_names = {"ja": "Japanese", "en": "English", "zh": "Chinese"}
+        lang_names = {"ja": "Japanese", "en": "English", "zh": "Chinese", "vi": "Vietnamese"}
         lang_name = lang_names.get(output_lang, output_lang)
         instructions += f" Translate into {lang_name}."
     if glossary_entries:
@@ -2547,10 +2547,11 @@ LANG_NAMES = {
     "ja": "Japanese",
     "en": "English",
     "zh": "Simplified Chinese",
+    "vi": "Vietnamese",
 }
 
-VALID_INPUT_LANGS = {"auto", "ja", "en", "zh"}
-VALID_OUTPUT_LANGS = {"ja", "en", "zh"}
+VALID_INPUT_LANGS = {"auto", "ja", "en", "zh", "vi"}
+VALID_OUTPUT_LANGS = {"ja", "en", "zh", "vi"}
 
 
 def normalize_input_lang(lang: str | None) -> str:
@@ -2608,6 +2609,7 @@ SUMMARIZE_HEADERS = {
     "ja": {"summary": "要約", "key_points": "重要ポイント", "actions": "次のアクション"},
     "en": {"summary": "Summary", "key_points": "Key Points", "actions": "Next Actions"},
     "zh": {"summary": "摘要", "key_points": "要点", "actions": "下一步行动"},
+    "vi": {"summary": "Tóm tắt", "key_points": "Điểm chính", "actions": "Hành động tiếp theo"},
 }
 
 
