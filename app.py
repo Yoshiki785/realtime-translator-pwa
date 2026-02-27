@@ -2552,6 +2552,8 @@ LANG_NAMES = {
 
 VALID_INPUT_LANGS = {"auto", "ja", "en", "zh", "vi"}
 VALID_OUTPUT_LANGS = {"ja", "en", "zh", "vi"}
+JAPANESE_KANA_RE = re.compile(r"[ぁ-んァ-ヶー]")
+JAPANESE_STYLE_RE = re.compile(r"(です|ます|だ|する)")
 
 
 def normalize_input_lang(lang: str | None) -> str:
@@ -2564,6 +2566,18 @@ def normalize_output_lang(lang: str | None) -> str:
     if lang and lang in VALID_OUTPUT_LANGS:
         return lang
     return "ja"
+
+
+def looks_like_japanese(text: str) -> bool:
+    if not text:
+        return False
+    kana_count = len(JAPANESE_KANA_RE.findall(text))
+    return (
+        kana_count >= 10
+        or "。" in text
+        or "、" in text
+        or bool(JAPANESE_STYLE_RE.search(text))
+    )
 
 
 @app.post("/translate")
@@ -2580,12 +2594,22 @@ async def translate_text(
         raise HTTPException(status_code=400, detail="text is required")
 
     # Normalize and validate language codes
+    output_lang_raw = output_lang
     input_lang = normalize_input_lang(input_lang)
     output_lang = normalize_output_lang(output_lang)
     target_lang_name = LANG_NAMES.get(output_lang, "Japanese")
+    logger.info(
+        f"/translate request | output_lang_raw={output_lang_raw!r} output_lang={output_lang} "
+        f"target={target_lang_name} text_len={len(text)}"
+    )
 
     # Build translation system prompt
-    system_prompt = f"Translate the user's text into natural {target_lang_name}. Output the translation only, nothing else."
+    system_prompt = (
+        f"Translate the user's text into natural {target_lang_name}. "
+        f"You MUST output in {target_lang_name} only. "
+        "Do NOT output in the same language as the input. "
+        "Output the translation only."
+    )
 
     payload = {
         "model": translate_model_default,
@@ -2600,6 +2624,35 @@ async def translate_text(
 
     result = await post_openai("https://api.openai.com/v1/responses", payload, headers)
     translated = extract_output_text(result)
+    logger.info(
+        f"/translate result | output_lang={output_lang} translation_len={len(translated)} "
+        f"translation_head={translated[:80]!r}"
+    )
+    if output_lang != "ja" and looks_like_japanese(translated):
+        logger.warning(
+            f"/translate ja_guard triggered | output_lang={output_lang} "
+            f"translation_head={translated[:80]!r}"
+        )
+        retry_prompt = (
+            f"The previous output was not in {target_lang_name}. "
+            f"Translate the user's text into natural {target_lang_name}. "
+            f"You MUST output in {target_lang_name} only. "
+            "Do NOT output in Japanese. "
+            "Output the translation only."
+        )
+        retry_payload = {
+            "model": translate_model_default,
+            "input": [
+                {"role": "system", "content": retry_prompt},
+                {"role": "user", "content": text},
+            ],
+        }
+        retry_result = await post_openai("https://api.openai.com/v1/responses", retry_payload, headers)
+        translated = extract_output_text(retry_result)
+        logger.info(
+            f"/translate retry_result | output_lang={output_lang} translation_len={len(translated)} "
+            f"translation_head={translated[:80]!r}"
+        )
     return JSONResponse({"translation": translated})
 
 
