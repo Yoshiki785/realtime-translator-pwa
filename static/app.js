@@ -5469,10 +5469,17 @@ const translateCompleted = async (text) => {
     fd.append('text', text);
     fd.append('input_lang', state.inputLang);
     fd.append('output_lang', state.outputLang);
+    addDiagLog(
+      `[translate] req | output_lang=${state.outputLang || 'ja'} input_lang=${state.inputLang || 'auto'} text_len=${(text || '').length} text_head=${(text || '').trim().substring(0, 40)}`
+    );
     const res = await authFetch('/translate', { method: 'POST', body: fd });
     if (!res.ok) throw new Error(t('errorTranslation'));
     const data = await res.json();
     const translation = data.translation || '';
+    const keys = data && typeof data === 'object' ? Object.keys(data).join(',') : 'non_object';
+    addDiagLog(
+      `[translate] res | keys=${keys} translation_len=${translation.length} translation_head=${translation.substring(0, 40)}`
+    );
     state.translations.push(translation);
     addTranslationLog(translation);
     // GA4: fire first_translation once for LP→PWA attribution
