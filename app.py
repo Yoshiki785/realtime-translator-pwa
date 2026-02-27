@@ -1163,7 +1163,7 @@ def build_session_instructions(glossary_entries: list[tuple[str, str]], output_l
     if output_lang and output_lang != "auto":
         lang_names = {"ja": "Japanese", "en": "English", "zh": "Chinese", "vi": "Vietnamese"}
         lang_name = lang_names.get(output_lang, output_lang)
-        instructions += f" Translate into {lang_name}."
+        instructions += f" You MUST translate into {lang_name}. Do NOT output in any other language."
     if glossary_entries:
         instructions += "\n\nGlossary (must-follow):"
         for source, target in glossary_entries:
