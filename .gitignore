@@ -50,3 +50,6 @@ proof/
 
 # local tool artifacts
 .claude/
+
+# Google Cloud SDK local config
+.gcloud/

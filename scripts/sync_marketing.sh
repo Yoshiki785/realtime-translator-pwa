@@ -34,7 +34,7 @@ echo "Build timestamp: $BUILD_TIME"
 
 # ── Step 0: Clean and create output directory ──
 rm -rf marketing_public
-mkdir -p marketing_public/css marketing_public/js marketing_public/assets/images marketing_public/products
+mkdir -p marketing_public/css marketing_public/js marketing_public/assets/images marketing_public/assets/hero marketing_public/products
 
 # ── Step 1: Generate product pages, nav links, sitemap ──
 echo "Generating from marketing/config/products.json"
@@ -110,6 +110,11 @@ echo "  Copied: JS files"
 if ls marketing/assets/images/* 1>/dev/null 2>&1; then
   cp marketing/assets/images/* marketing_public/assets/images/
   echo "  Copied: image assets"
+fi
+
+if ls marketing/assets/hero/* 1>/dev/null 2>&1; then
+  cp marketing/assets/hero/* marketing_public/assets/hero/
+  echo "  Copied: hero assets"
 fi
 
 # ── Step 5: Copy SEO files ──

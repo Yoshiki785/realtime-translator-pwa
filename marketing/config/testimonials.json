@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "testimonials": [
+    {
+      "id": "t1",
+      "quote": {
+        "en": "LingoFlow transformed our international meetings. Real-time translation means no more awkward pauses.",
+        "ja": "LingoFlowで国際会議が一変しました。リアルタイム翻訳のおかげで、もう気まずい沈黙はありません。",
+        "zh-Hans": "LingoFlow彻底改变了我们的国际会议。实时翻译意味着再也没有尴尬的停顿。",
+        "vi": "LingoFlow đã thay đổi hoàn toàn các cuộc họp quốc tế của chúng tôi. Dịch thuật thời gian thực giúp không còn những khoảng lặng khó xử."
+      },
+      "author": "Sarah K.",
+      "role": {
+        "en": "Product Manager, Global Tech Co.",
+        "ja": "プロダクトマネージャー、グローバルテック社",
+        "zh-Hans": "产品经理，全球科技公司",
+        "vi": "Quản lý sản phẩm, Công ty công nghệ toàn cầu"
+      }
+    },
+    {
+      "id": "t2",
+      "quote": {
+        "en": "The custom dictionary feature is a game-changer for our medical terminology. Accurate every time.",
+        "ja": "カスタム辞書機能は医療用語にとって画期的です。毎回正確に翻訳されます。",
+        "zh-Hans": "自定义词典功能对我们的医学术语来说是一个突破。每次都准确无误。",
+        "vi": "Tính năng từ điển tùy chỉnh thay đổi cuộc chơi cho thuật ngữ y khoa của chúng tôi. Chính xác mọi lúc."
+      },
+      "author": "Dr. Tanaka",
+      "role": {
+        "en": "Chief of Research, MedTech Inc.",
+        "ja": "リサーチ部長、MedTech社",
+        "zh-Hans": "研究主管，MedTech公司",
+        "vi": "Trưởng phòng nghiên cứu, MedTech Inc."
+      }
+    },
+    {
+      "id": "t3",
+      "quote": {
+        "en": "No installation needed. I just open my browser and start translating. It's that simple.",
+        "ja": "インストール不要。ブラウザを開くだけで翻訳開始。それだけです。",
+        "zh-Hans": "无需安装。我只需打开浏览器就能开始翻译。就是这么简单。",
+        "vi": "Không cần cài đặt. Tôi chỉ cần mở trình duyệt và bắt đầu dịch. Đơn giản vậy thôi."
+      },
+      "author": "Maria L.",
+      "role": {
+        "en": "Freelance Interpreter",
+        "ja": "フリーランス通訳",
+        "zh-Hans": "自由职业口译员",
+        "vi": "Phiên dịch tự do"
+      }
+    }
+  ]
+}

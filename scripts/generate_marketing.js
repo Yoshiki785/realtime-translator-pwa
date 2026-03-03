@@ -170,6 +170,45 @@ indexPage = replaceBlock(indexPage, 'HOME_PRODUCT_CARDS', homeCards);
 fs.writeFileSync(INDEX_PAGE, indexPage);
 console.log('  Updated: index.html home product cards');
 
+// ── 5b. Inject testimonials ──
+
+const TESTIMONIALS_PATH = path.join(ROOT, 'marketing', 'config', 'testimonials.json');
+
+if (fs.existsSync(TESTIMONIALS_PATH)) {
+  const testimonialsConfig = JSON.parse(fs.readFileSync(TESTIMONIALS_PATH, 'utf8'));
+  const testimonials = testimonialsConfig.testimonials || [];
+
+  const localePages = [
+    { file: path.join(ROOT, 'marketing', 'pages', 'index.html'), locale: 'en' },
+    { file: path.join(ROOT, 'marketing', 'pages', 'ja.html'), locale: 'ja' },
+    { file: path.join(ROOT, 'marketing', 'pages', 'zh-hans.html'), locale: 'zh-Hans' },
+    { file: path.join(ROOT, 'marketing', 'pages', 'vi.html'), locale: 'vi' },
+  ];
+
+  localePages.forEach(({ file, locale }) => {
+    if (!fs.existsSync(file)) return;
+
+    const cards = testimonials.map(t => {
+      const quote = t.quote[locale] || t.quote['en'];
+      const role = t.role[locale] || t.role['en'];
+      return `        <article class="lp-testimonial-card lp-feature-item" data-animate="fade-up">
+          <blockquote>
+            <p>&ldquo;${quote}&rdquo;</p>
+          </blockquote>
+          <div class="lp-testimonial-author">
+            <strong>${t.author}</strong>
+            <span>${role}</span>
+          </div>
+        </article>`;
+    }).join('\n');
+
+    let content = fs.readFileSync(file, 'utf8');
+    content = replaceBlock(content, 'TESTIMONIALS', cards);
+    fs.writeFileSync(file, content);
+    console.log(`  Updated: ${path.basename(file)} testimonials (${locale})`);
+  });
+}
+
 // ── 6. Generate sitemap.xml ──
 
 const today = new Date().toISOString().split('T')[0];
